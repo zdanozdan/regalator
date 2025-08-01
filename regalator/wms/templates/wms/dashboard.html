@@ -1,0 +1,135 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Dashboard - Regalator WMS{% endblock %}
+
+{% block extra_css %}
+<style>
+@keyframes slideFromBottom {
+    0% {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0%);
+        opacity: 1;
+    }
+}
+
+.splash-animation {
+    animation: slideFromBottom 2s ease-out;
+    background-size: cover !important;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Splash Screen z tłem -->
+{% if splash_image %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="position-relative splash-animation" style="background: url('{{ splash_image.file.url }}') center center; background-size: cover; min-height: 300px; border-radius: 10px; overflow: hidden;">
+            <div class="position-absolute top-0 start-0 w-100 h-100" style="background: rgba(0,0,0,0.4);">
+                <div class="container h-100 d-flex align-items-center">
+                    <div class="text-center text-white w-100">
+                        <h1 class="display-4 fw-bold mb-3">
+                            <i class="fas fa-warehouse me-3"></i>Regalator
+                        </h1>
+                        <p class="lead mb-0">"Regalator - zabójcza precyzja, mordercza dokładność"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Wybór procesu -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h4 class="mb-3">
+            <i class="fas fa-cogs me-2"></i>Wybierz proces
+        </h4>
+    </div>
+    
+    <!-- Kompletacja -->
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-shopping-cart fa-4x text-primary mb-3"></i>
+                <h3 class="card-title">Kompletacja (ZK)</h3>
+                <p class="card-text">Zarządzanie zamówieniami klientów i procesem kompletacji</p>
+                <a href="{% url 'wms:kompletacja_dashboard' %}" class="btn btn-primary btn-lg">
+                    <i class="fas fa-arrow-right me-2"></i>Przejdź do kompletacji
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Przyjęcia -->
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-truck fa-4x text-warning mb-3"></i>
+                <h3 class="card-title">Przyjęcia (ZD)</h3>
+                <p class="card-text">Zarządzanie zamówieniami do dostawców i procesem przyjęć</p>
+                <a href="{% url 'wms:przyjecia_dashboard' %}" class="btn btn-warning btn-lg">
+                    <i class="fas fa-arrow-right me-2"></i>Przejdź do przyjęć
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ogólne statystyki -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h4 class="mb-3">
+            <i class="fas fa-chart-bar me-2"></i>Ogólne statystyki
+        </h4>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="fas fa-shopping-cart fa-2x text-primary mb-2"></i>
+                <h5 class="card-title">Zamówienia ZK</h5>
+                <h2 class="text-primary">{{ total_zk_orders }}</h2>
+                <p class="card-text">Łącznie zamówień</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="fas fa-truck fa-2x text-warning mb-2"></i>
+                <h5 class="card-title">Zamówienia ZD</h5>
+                <h2 class="text-warning">{{ total_zd_orders }}</h2>
+                <p class="card-text">Łącznie zamówień</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="fas fa-box fa-2x text-success mb-2"></i>
+                <h5 class="card-title">Produkty</h5>
+                <h2 class="text-success">{{ total_products }}</h2>
+                <p class="card-text">W systemie</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <i class="fas fa-map-marker-alt fa-2x text-info mb-2"></i>
+                <h5 class="card-title">Lokalizacje</h5>
+                <h2 class="text-info">{{ total_locations }}</h2>
+                <p class="card-text">W magazynie</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

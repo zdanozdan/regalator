@@ -1,0 +1,155 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Wprowadzanie ilości - RegIn {{ receiving_order.order_number }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-calculator me-2"></i>Wprowadzanie ilości
+            </h1>
+            <a href="{% url 'wms:scan_receiving_product' receiving_order.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o RegIn -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">RegIn:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">ZD:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.supplier_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">Dostawca:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.supplier_order.supplier_name }}</dd>
+                    
+                    <dt class="col-sm-4">Produkt:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.product.name }}</dd>
+                    
+                    <dt class="col-sm-4">Kod produktu:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.product.barcode }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Wprowadzanie ilości -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-calculator me-2"></i>Wprowadź ilość przyjętą
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="quantity_received" class="form-label">Ilość przyjęta</label>
+                                <input type="number" class="form-control form-control-lg" id="quantity_received" 
+                                       name="quantity_received" min="0.01" step="0.01" 
+                                       placeholder="Wprowadź ilość" autocomplete="off" autofocus>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Ilość zamówiona</label>
+                                <div class="form-control form-control-lg bg-light">
+                                    {{ receiving_item.quantity_ordered }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Lokalizacja</label>
+                        <div class="form-control form-control-lg bg-light">
+                            {{ location.name }} ({{ location.code }})
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-check me-2"></i>Potwierdź przyjęcie
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Szybkie przyciski -->
+                <hr>
+                <h6>Szybkie przyciski:</h6>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(1)">1</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(5)">5</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(10)">10</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(25)">25</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(50)">50</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuantity(100)">100</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o produkcie
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Produkt:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.product.name }}</dd>
+                    
+                    <dt class="col-sm-4">Kod:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.product.barcode }}</dd>
+                    
+                    <dt class="col-sm-4">Zamówiono:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.quantity_ordered }}</dd>
+                    
+                    <dt class="col-sm-4">Przyjęto:</dt>
+                    <dd class="col-sm-8">
+                        {% if receiving_item.quantity_received > 0 %}
+                            <span class="text-success">{{ receiving_item.quantity_received }}</span>
+                        {% else %}
+                            <span class="text-muted">0</span>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Lokalizacja:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-info">{{ location.name }}</span>
+                    </dd>
+                </dl>
+                
+                {% if receiving_item.notes %}
+                    <hr>
+                    <dt class="col-sm-4">Uwagi:</dt>
+                    <dd class="col-sm-8">{{ receiving_item.notes }}</dd>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function setQuantity(quantity) {
+    document.getElementById('quantity_received').value = quantity;
+    document.getElementById('quantity_received').focus();
+}
+</script>
+{% endblock %} 

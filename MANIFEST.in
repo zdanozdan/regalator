@@ -1,0 +1,23 @@
+include README.md
+include LICENSE
+include requirements.txt
+include setup.py
+include MANIFEST.in
+
+recursive-include regalator/templates *
+recursive-include regalator/static *
+recursive-include regalator/media *
+
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude *.log
+global-exclude *.sqlite3
+global-exclude *.db
+
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co] 

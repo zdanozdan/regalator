@@ -1,0 +1,315 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}RegIn {{ receiving_order.order_number }} - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-clipboard-check me-2"></i>RegIn {{ receiving_order.order_number }}
+            </h1>
+            <div>
+                <a href="{% url 'wms:receiving_order_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Powrót
+                </a>
+                {% if receiving_order.status == 'pending' %}
+                    <a href="{% url 'wms:scan_receiving_location' receiving_order.id %}" class="btn btn-success">
+                        <i class="fas fa-play me-2"></i>Rozpocznij przyjęcie
+                    </a>
+                {% elif receiving_order.status == 'in_progress' %}
+                    <a href="{% url 'wms:scan_receiving_location' receiving_order.id %}" class="btn btn-info">
+                        <i class="fas fa-arrow-right me-2"></i>Kontynuuj przyjęcie
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o rejestrze przyjęć -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o RegIn
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Numer RegIn:</dt>
+                    <dd class="col-sm-8"><strong>{{ receiving_order.order_number }}</strong></dd>
+                    
+                    <dt class="col-sm-4">ZD:</dt>
+                    <dd class="col-sm-8">
+                        <a href="{% url 'wms:supplier_order_detail' receiving_order.supplier_order.id %}">
+                            {{ receiving_order.supplier_order.order_number }}
+                        </a>
+                    </dd>
+                    
+                    <dt class="col-sm-4">Dostawca:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.supplier_order.supplier_name }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge status-{{ receiving_order.status }}">
+                            {% if receiving_order.status == 'pending' %}
+                                <i class="fas fa-clock me-1"></i>Oczekujące
+                            {% elif receiving_order.status == 'in_progress' %}
+                                <i class="fas fa-cogs me-1"></i>W trakcie
+                            {% elif receiving_order.status == 'completed' %}
+                                <i class="fas fa-check me-1"></i>Zakończone
+                            {% elif receiving_order.status == 'cancelled' %}
+                                <i class="fas fa-times me-1"></i>Anulowane
+                            {% endif %}
+                        </span>
+                    </dd>
+                    
+                    <dt class="col-sm-4">Przypisane do:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.assigned_to|default:"-" }}</dd>
+                    
+                    <dt class="col-sm-4">Utworzone:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.created_at|date:"d.m.Y H:i" }}</dd>
+                    
+                    {% if receiving_order.started_at %}
+                        <dt class="col-sm-4">Rozpoczęte:</dt>
+                        <dd class="col-sm-8">{{ receiving_order.started_at|date:"d.m.Y H:i" }}</dd>
+                    {% endif %}
+                    
+                    {% if receiving_order.completed_at %}
+                        <dt class="col-sm-4">Zakończone:</dt>
+                        <dd class="col-sm-8">{{ receiving_order.completed_at|date:"d.m.Y H:i" }}</dd>
+                    {% endif %}
+                </dl>
+                
+                {% if receiving_order.notes %}
+                    <hr>
+                    <dt class="col-sm-4">Uwagi:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.notes }}</dd>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Podsumowanie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-end">
+                            <h3 class="text-primary">{{ receiving_order.total_items }}</h3>
+                            <p class="text-muted mb-0">Wszystkie pozycje</p>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-success">{{ receiving_order.received_items }}</h3>
+                        <p class="text-muted mb-0">Przyjęte pozycje</p>
+                    </div>
+                </div>
+                
+                {% if receiving_order.total_items > 0 %}
+                    <hr>
+                    <div class="progress mb-2">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {% widthratio receiving_order.received_items receiving_order.total_items 100 %}%">
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        Postęp przyjęcia: {{ receiving_order.received_items }}/{{ receiving_order.total_items }}
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pozycje do przyjęcia -->
+{% if pending_items %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock me-2"></i>Pozycje oczekujące na przyjęcie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Produkt</th>
+                                <th>Kod kreskowy</th>
+                                <th>Ilość do przyjęcia</th>
+                                <th>Ilość przyjęta</th>
+                                <th>Lokalizacja</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in pending_items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.product.name }}</strong>
+                                    {% if item.notes %}
+                                        <br><small class="text-muted">{{ item.notes }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.product.barcode }}</td>
+                                <td>{{ item.quantity_ordered }}</td>
+                                <td>
+                                    {% if item.quantity_received > 0 %}
+                                        <span class="text-success">{{ item.quantity_received }}</span>
+                                    {% else %}
+                                        <span class="text-muted">0</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.location %}
+                                        <span class="badge bg-info">{{ item.location.name }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.quantity_received == 0 %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Oczekujące
+                                        </span>
+                                    {% elif item.quantity_received == item.quantity_ordered %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Przyjęte
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-info">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Przyjęte pozycje -->
+{% if received_items %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-check-circle me-2"></i>Przyjęte pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Produkt</th>
+                                <th>Kod kreskowy</th>
+                                <th>Ilość zamówiona</th>
+                                <th>Ilość przyjęta</th>
+                                <th>Lokalizacja</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in received_items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.product.name }}</strong>
+                                    {% if item.notes %}
+                                        <br><small class="text-muted">{{ item.notes }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.product.barcode }}</td>
+                                <td>{{ item.quantity_ordered }}</td>
+                                <td>
+                                    <span class="text-success">{{ item.quantity_received }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ item.location.name }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check me-1"></i>Przyjęte
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Historia skanowań -->
+{% if history %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>Historia skanowań
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Produkt</th>
+                                <th>Lokalizacja</th>
+                                <th>Ilość</th>
+                                <th>Skanował</th>
+                                <th>Uwagi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in history %}
+                            <tr>
+                                <td>{{ entry.scanned_at|date:"d.m.Y H:i" }}</td>
+                                <td>
+                                    <strong>{{ entry.product.name }}</strong>
+                                    <br><small class="text-muted">{{ entry.product.barcode }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ entry.location.name }}</span>
+                                </td>
+                                <td>{{ entry.quantity_received }}</td>
+                                <td>{{ entry.scanned_by }}</td>
+                                <td>
+                                    {% if entry.notes %}
+                                        {{ entry.notes }}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %} 

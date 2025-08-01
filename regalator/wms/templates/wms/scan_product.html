@@ -1,0 +1,207 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Skanowanie produktu - RegOut {{ picking_order.order_number }}{% endblock %}
+
+{% block content %}
+<!-- DEBUG INFO -->
+<div class="alert alert-info">
+    <strong>DEBUG:</strong><br>
+    location = {{ location }}<br>
+    current_item = {{ current_item }}<br>
+    location.id = {{ location.id }}<br>
+    current_item.id = {{ current_item.id }}
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-box me-2"></i>Skanowanie produktu
+            </h1>
+            <div>
+                <a href="{% url 'wms:picking_detail' picking_order.id %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Powrót
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-box me-2"></i>Zeskanuj produkt
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Informacje o lokalizacji -->
+                {% if location %}
+                    <div class="alert alert-success">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-check-circle me-2"></i>Lokalizacja potwierdzona
+                        </h6>
+                        <p class="mb-0">
+                            <strong>{{ location.name }}</strong> ({{ location.code }})<br>
+                            <small class="text-muted">Kod: {{ location.barcode }}</small>
+                        </p>
+                    </div>
+                {% endif %}
+                
+                <!-- Informacje o produkcie -->
+                {% if current_item %}
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-arrow-right me-2"></i>Produkt do pobrania
+                        </h6>
+                        <p class="mb-1">
+                            <strong>{{ current_item.product.name }}</strong><br>
+                            <small class="text-muted">
+                                Kod: {{ current_item.product.code }} | 
+                                Ilość: {{ current_item.quantity_to_pick }} {{ current_item.product.unit }}
+                            </small>
+                        </p>
+                    </div>
+                {% endif %}
+                
+                <!-- Formularz skanowania -->
+                {% if location %}
+                <form method="post" id="scanForm" action="{% url 'wms:scan_product' picking_order.id %}">
+                    {% csrf_token %}
+                    
+                    <div class="scan-area mb-4">
+                        <i class="fas fa-barcode fa-3x text-primary mb-3"></i>
+                        <h5>Zeskanuj kod kreskowy produktu</h5>
+                        <p class="text-muted">Użyj skanera lub wpisz kod ręcznie</p>
+                        <div class="row justify-content-center">
+                            <div class="col-md-6">
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="fas fa-barcode"></i>
+                                    </span>
+                                    <input type="text" name="barcode" id="barcodeInput" 
+                                           class="form-control form-control-lg text-center" 
+                                           placeholder="Kod kreskowy produktu" 
+                                           autocomplete="off" autofocus>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-danger">
+                    Brak lokalizacji! Najpierw zeskanuj lokalizację.<br>
+                    <a href="{% url 'wms:scan_location' picking_order.id %}" class="btn btn-danger mt-3">
+                        <i class="fas fa-arrow-left me-1"></i>Wróć do skanowania lokalizacji
+                    </a>
+                </div>
+                {% endif %}
+                
+                <!-- Symulacja kodów kreskowych -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-info-circle me-2"></i>Symulacja kodów kreskowych
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">
+                            W demo możesz użyć tego kodu do symulacji skanowania:
+                        </p>
+                        {% if current_item %}
+                            <button type="button" class="btn btn-outline-primary btn-lg w-100" 
+                                    onclick="simulateScan('{{ current_item.product.barcode }}')">
+                                <i class="fas fa-barcode me-2"></i>
+                                {{ current_item.product.name }}: {{ current_item.product.barcode }}
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">RegOut:</dt>
+                    <dd class="col-sm-8">{{ picking_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">Klient:</dt>
+                    <dd class="col-sm-8">{{ picking_order.customer_order.customer_name }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        {% if picking_order.status == 'created' %}
+                            <span class="badge bg-secondary">Utworzone</span>
+                        {% elif picking_order.status == 'in_progress' %}
+                            <span class="badge bg-info">W trakcie</span>
+                        {% elif picking_order.status == 'completed' %}
+                            <span class="badge bg-success">Zakończone</span>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Pozycje:</dt>
+                    <dd class="col-sm-8">
+                        {{ picking_order.completed_items_count }} / {{ picking_order.total_items_count }}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozostałe pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                {% for item in picking_order.pending_items %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <strong>{{ item.product.name }}</strong><br>
+                        <small class="text-muted">{{ item.location.name }}</small>
+                    </div>
+                    <span class="badge bg-secondary">{{ item.quantity_to_pick }} {{ item.product.unit }}</span>
+                </div>
+                {% empty %}
+                <p class="text-muted mb-0">Wszystkie pozycje zostały skompletowane</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Automatyczne przejście do następnego pola po wpisaniu kodu
+    document.getElementById('barcodeInput').addEventListener('input', function(e) {
+        if (e.target.value.length >= 8) {
+            document.getElementById('scanForm').submit();
+        }
+    });
+    
+    // Symulacja skanowania
+    function simulateScan(barcode) {
+        document.getElementById('barcodeInput').value = barcode;
+        // Nie wysyłaj automatycznie - poczekaj na kliknięcie przycisku OK
+        document.getElementById('barcodeInput').focus();
+    }
+    
+    // Fokus na pole skanowania
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('barcodeInput').focus();
+    });
+</script>
+{% endblock %} 

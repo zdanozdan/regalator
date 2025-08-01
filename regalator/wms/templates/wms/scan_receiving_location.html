@@ -1,0 +1,131 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Skanowanie lokalizacji - RegIn {{ receiving_order.order_number }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-map-marker-alt me-2"></i>Skanowanie lokalizacji
+            </h1>
+            <a href="{% url 'wms:receiving_order_detail' receiving_order.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o RegIn -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">RegIn:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">ZD:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.supplier_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">Dostawca:</dt>
+                    <dd class="col-sm-8">{{ receiving_order.supplier_order.supplier_name }}</dd>
+                    
+                    <dt class="col-sm-4">Pozostało pozycji:</dt>
+                    <dd class="col-sm-8">{{ pending_items.count }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Skanowanie lokalizacji -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-barcode me-2"></i>Skanuj kod lokalizacji
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="location_code" class="form-label">Kod lokalizacji</label>
+                        <input type="text" class="form-control form-control-lg" id="location_code" 
+                               name="location_code" placeholder="Zeskanuj lub wpisz kod lokalizacji" 
+                               autocomplete="off" autofocus>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-arrow-right me-2"></i>Dalej
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Symulacja skanowania -->
+                <hr>
+                <h6>Symulacja skanowania:</h6>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC001')">
+                        LOC001
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC002')">
+                        LOC002
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC003')">
+                        LOC003
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC004')">
+                        LOC004
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC005')">
+                        LOC005
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setLocationCode('LOC006')">
+                        LOC006
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozostałe pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if pending_items %}
+                    <div class="list-group list-group-flush">
+                        {% for item in pending_items %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ item.product.name }}</strong>
+                                <br><small class="text-muted">{{ item.product.barcode }}</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">{{ item.quantity_ordered }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                        <p class="text-muted mb-0">Wszystkie pozycje zostały przyjęte!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function setLocationCode(code) {
+    document.getElementById('location_code').value = code;
+    document.getElementById('location_code').focus();
+}
+</script>
+{% endblock %} 

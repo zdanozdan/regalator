@@ -1,0 +1,220 @@
+{% extends 'assets/base.html' %}
+
+{% block title %}{{ asset.title }} - Asset Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-file me-2"></i>{{ asset.title }}
+            </h1>
+            <div class="btn-group" role="group">
+                <a href="{% url 'assets:asset_download' asset.slug %}" class="btn btn-success">
+                    <i class="fas fa-download me-1"></i>Pobierz
+                </a>
+                {% if asset.uploaded_by == user or user.is_staff %}
+                    <a href="{% url 'assets:asset_edit' asset.slug %}" class="btn btn-warning">
+                        <i class="fas fa-edit me-1"></i>Edytuj
+                    </a>
+                    <a href="{% url 'assets:asset_delete' asset.slug %}" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Usuń
+                    </a>
+                {% endif %}
+                <a href="{% url 'assets:asset_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Powrót
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Podgląd assetu -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-eye me-2"></i>Podgląd
+                </h5>
+            </div>
+            <div class="card-body text-center">
+                {% if asset.file_type == 'image' %}
+                    <img src="{{ asset.file.url }}" class="img-fluid" alt="{{ asset.title }}" style="max-height: 500px;">
+                {% elif asset.file_type == 'pdf' %}
+                    <div class="bg-light p-4 rounded">
+                        <i class="fas fa-file-pdf fa-5x text-danger mb-3"></i>
+                        <h5>Plik PDF</h5>
+                        <p class="text-muted">{{ asset.filename }}</p>
+                        <a href="{{ asset.file.url }}" target="_blank" class="btn btn-primary">
+                            <i class="fas fa-external-link-alt me-1"></i>Otwórz w nowej karcie
+                        </a>
+                    </div>
+                {% elif asset.file_type == 'video' %}
+                    <video controls class="w-100" style="max-height: 500px;">
+                        <source src="{{ asset.file.url }}" type="video/mp4">
+                        Twoja przeglądarka nie obsługuje odtwarzania wideo.
+                    </video>
+                {% elif asset.file_type == 'audio' %}
+                    <div class="bg-light p-4 rounded">
+                        <i class="fas fa-file-audio fa-5x text-success mb-3"></i>
+                        <h5>Plik Audio</h5>
+                        <p class="text-muted">{{ asset.filename }}</p>
+                        <audio controls class="w-100">
+                            <source src="{{ asset.file.url }}" type="audio/mpeg">
+                            Twoja przeglądarka nie obsługuje odtwarzania audio.
+                        </audio>
+                    </div>
+                {% else %}
+                    <div class="bg-light p-4 rounded">
+                        <i class="fas fa-file fa-5x text-muted mb-3"></i>
+                        <h5>Plik {{ asset.file_extension|upper }}</h5>
+                        <p class="text-muted">{{ asset.filename }}</p>
+                        <a href="{{ asset.file.url }}" class="btn btn-primary">
+                            <i class="fas fa-download me-1"></i>Pobierz plik
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Informacje o assetcie -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Tytuł:</dt>
+                    <dd class="col-sm-8">{{ asset.title }}</dd>
+                    
+                    {% if asset.description %}
+                        <dt class="col-sm-4">Opis:</dt>
+                        <dd class="col-sm-8">{{ asset.description }}</dd>
+                    {% endif %}
+                    
+                    <dt class="col-sm-4">Typ:</dt>
+                    <dd class="col-sm-8">
+                        {% if asset.file_type == 'image' %}
+                            <span class="badge bg-primary">Obraz</span>
+                        {% elif asset.file_type == 'pdf' %}
+                            <span class="badge bg-danger">PDF</span>
+                        {% elif asset.file_type == 'document' %}
+                            <span class="badge bg-info">Dokument</span>
+                        {% elif asset.file_type == 'video' %}
+                            <span class="badge bg-warning">Wideo</span>
+                        {% elif asset.file_type == 'audio' %}
+                            <span class="badge bg-success">Audio</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Inne</span>
+                        {% endif %}
+                    </dd>
+                    
+                    {% if asset.category %}
+                        <dt class="col-sm-4">Kategoria:</dt>
+                        <dd class="col-sm-8">
+                            <a href="{% url 'assets:category_detail' asset.category.id %}" class="text-decoration-none">
+                                {{ asset.category.name }}
+                            </a>
+                        </dd>
+                    {% endif %}
+                    
+                    <dt class="col-sm-4">Rozmiar:</dt>
+                    <dd class="col-sm-8">{{ asset.file_size }}</dd>
+                    
+                    <dt class="col-sm-4">Nazwa pliku:</dt>
+                    <dd class="col-sm-8"><code>{{ asset.filename }}</code></dd>
+                    
+                    <dt class="col-sm-4">Dodane przez:</dt>
+                    <dd class="col-sm-8">{{ asset.uploaded_by.username }}</dd>
+                    
+                    <dt class="col-sm-4">Data dodania:</dt>
+                    <dd class="col-sm-8">{{ asset.uploaded_at|date:"d.m.Y H:i" }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        {% if asset.is_public %}
+                            <span class="badge bg-success">Publiczny</span>
+                        {% else %}
+                            <span class="badge bg-warning">Prywatny</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+                
+                {% if asset.tags.all %}
+                    <hr>
+                    <h6><i class="fas fa-tags me-2"></i>Tagi:</h6>
+                    <div class="mb-3">
+                        {% for tag in asset.tags.all %}
+                            <a href="{% url 'assets:tag_detail' tag.id %}" class="text-decoration-none">
+                                <span class="badge tag-badge" style="background-color: {{ tag.color }};">
+                                    {{ tag.name }}
+                                </span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Podobne assety -->
+{% if similar_assets %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-thumbs-up me-2"></i>Podobne assety
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for similar_asset in similar_assets %}
+                            <div class="col-md-3 col-lg-2 mb-3">
+                                <div class="card asset-card h-100">
+                                    <div class="card-img-top position-relative">
+                                        {% if similar_asset.file_type == 'image' %}
+                                            <img src="{{ similar_asset.file.url }}" class="asset-thumbnail" alt="{{ similar_asset.title }}">
+                                        {% else %}
+                                            <div class="asset-thumbnail d-flex align-items-center justify-content-center bg-light">
+                                                {% if similar_asset.file_type == 'pdf' %}
+                                                    <i class="fas fa-file-pdf file-type-icon text-danger"></i>
+                                                {% elif similar_asset.file_type == 'document' %}
+                                                    <i class="fas fa-file-word file-type-icon text-primary"></i>
+                                                {% elif similar_asset.file_type == 'video' %}
+                                                    <i class="fas fa-file-video file-type-icon text-warning"></i>
+                                                {% elif similar_asset.file_type == 'audio' %}
+                                                    <i class="fas fa-file-audio file-type-icon text-success"></i>
+                                                {% else %}
+                                                    <i class="fas fa-file file-type-icon"></i>
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="card-body p-2">
+                                        <h6 class="card-title small">{{ similar_asset.title|truncatechars:20 }}</h6>
+                                        <small class="text-muted">{{ similar_asset.uploaded_at|date:"d.m.Y" }}</small>
+                                    </div>
+                                    
+                                    <div class="card-footer bg-transparent p-2">
+                                        <a href="{% url 'assets:asset_detail' similar_asset.slug %}" class="btn btn-outline-primary btn-sm w-100">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %} 

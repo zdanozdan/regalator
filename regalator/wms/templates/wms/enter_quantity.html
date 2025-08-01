@@ -1,0 +1,220 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Wprowadź ilość - {{ picking_order.order_number }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-calculator me-2"></i>Wprowadź ilość
+            </h1>
+            <div>
+                <a href="{% url 'wms:picking_detail' picking_order.id %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Powrót
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-calculator me-2"></i>Potwierdź ilość
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Informacje o produkcie -->
+                {% if current_item and product %}
+                    <div class="alert alert-success">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-check-circle me-2"></i>Produkt potwierdzony
+                        </h6>
+                        <p class="mb-0">
+                            <strong>{{ product.name }}</strong> ({{ product.code }})<br>
+                            <small class="text-muted">Kod: {{ product.barcode }}</small>
+                        </p>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-info-circle me-2"></i>Informacje o pobraniu
+                        </h6>
+                        <p class="mb-1">
+                            <strong>Ilość do pobrania:</strong> {{ current_item.quantity_to_pick }} {{ current_item.product.unit }}<br>
+                            <strong>Stan magazynowy:</strong> {{ stock.quantity }} {{ current_item.product.unit }}<br>
+                            <strong>Lokalizacja:</strong> {{ current_item.location.name }}
+                        </p>
+                    </div>
+                {% endif %}
+                
+                <!-- Formularz wprowadzania ilości -->
+                <form method="post" id="quantityForm" action="{% url 'wms:enter_quantity' picking_order.id current_item.id %}">
+                    {% csrf_token %}
+                    
+                    <div class="scan-area mb-4">
+                        <i class="fas fa-calculator fa-3x text-primary mb-3"></i>
+                        <h5>Wprowadź ilość pobraną</h5>
+                        <p class="text-muted">Podaj rzeczywistą ilość pobraną z magazynu</p>
+                        
+                        <div class="row justify-content-center">
+                            <div class="col-md-6">
+                                <div class="input-group input-group-lg">
+                                    <input type="number" name="quantity_picked" id="quantityInput" 
+                                           class="form-control text-center" 
+                                           placeholder="0.00" 
+                                           step="0.01" min="0" max="{{ current_item.quantity_to_pick }}"
+                                           value="{{ current_item.quantity_to_pick }}"
+                                           autocomplete="off" autofocus>
+                                    <span class="input-group-text">{{ current_item.product.unit }}</span>
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-check"></i> Potwierdź
+                                    </button>
+                                </div>
+                                
+                                <div class="mt-3">
+                                    <div class="btn-group w-100" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="setQuantity({{ current_item.quantity_to_pick }})">
+                                            Pełna ilość
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="setQuantity({{ current_item.quantity_to_pick|add:'-1' }})">
+                                            -1
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="setQuantity({{ current_item.quantity_to_pick|add:'-0.5' }})">
+                                            -0.5
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                
+                <!-- Szybkie akcje -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-bolt me-2"></i>Szybkie akcje
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4 mb-2">
+                                <button type="button" class="btn btn-outline-primary w-100" onclick="setQuantity({{ current_item.quantity_to_pick }})">
+                                    <i class="fas fa-check me-1"></i>Pełna ilość
+                                </button>
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <button type="button" class="btn btn-outline-warning w-100" onclick="setQuantity({{ current_item.quantity_to_pick|add:'-1' }})">
+                                    <i class="fas fa-minus me-1"></i>Brak 1 szt
+                                </button>
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <button type="button" class="btn btn-outline-danger w-100" onclick="setQuantity(0)">
+                                    <i class="fas fa-times me-1"></i>Brak towaru
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">RegOut:</dt>
+                    <dd class="col-sm-8">{{ picking_order.order_number }}</dd>
+                    
+                    <dt class="col-sm-4">Klient:</dt>
+                    <dd class="col-sm-8">{{ picking_order.customer_order.customer_name }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        {% if picking_order.status == 'created' %}
+                            <span class="badge bg-secondary">Utworzone</span>
+                        {% elif picking_order.status == 'in_progress' %}
+                            <span class="badge bg-info">W trakcie</span>
+                        {% elif picking_order.status == 'completed' %}
+                            <span class="badge bg-success">Zakończone</span>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Pozycje:</dt>
+                    <dd class="col-sm-8">
+                        {{ picking_order.completed_items_count }} / {{ picking_order.total_items_count }}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozostałe pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                {% for item in picking_order.pending_items %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <strong>{{ item.product.name }}</strong><br>
+                        <small class="text-muted">{{ item.location.name }}</small>
+                    </div>
+                    <span class="badge bg-secondary">{{ item.quantity_to_pick }} {{ item.product.unit }}</span>
+                </div>
+                {% empty %}
+                <p class="text-muted mb-0">Wszystkie pozycje zostały skompletowane</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Funkcja ustawiania ilości
+    function setQuantity(quantity) {
+        document.getElementById('quantityInput').value = Math.max(0, quantity);
+        document.getElementById('quantityInput').focus();
+    }
+    
+    // Walidacja ilości
+    document.getElementById('quantityInput').addEventListener('input', function(e) {
+        const value = parseFloat(e.target.value);
+        const max = parseFloat(e.target.max);
+        
+        if (value > max) {
+            e.target.value = max;
+        }
+        
+        if (value < 0) {
+            e.target.value = 0;
+        }
+    });
+    
+    // Automatyczne przejście po wpisaniu ilości
+    document.getElementById('quantityInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('quantityForm').submit();
+        }
+    });
+    
+    // Fokus na pole ilości
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('quantityInput').focus();
+        document.getElementById('quantityInput').select();
+    });
+</script>
+{% endblock %} 

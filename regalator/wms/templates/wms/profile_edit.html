@@ -1,0 +1,177 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Edycja profilu - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-user-edit me-2"></i>Edycja profilu
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <!-- Avatar -->
+                    <div class="row mb-4">
+                        <div class="col-12 text-center">
+                            <div class="position-relative d-inline-block">
+                                {% if profile.avatar %}
+                                    <img src="{{ profile.avatar.url }}" 
+                                         alt="Avatar" 
+                                         class="rounded-circle border avatar-preview"
+                                         style="width: 120px; height: 120px; object-fit: cover;">
+                                {% else %}
+                                    <div class="rounded-circle border d-flex align-items-center justify-content-center bg-light avatar-container"
+                                         style="width: 120px; height: 120px;">
+                                        <i class="fas fa-user fa-3x text-muted avatar-icon"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="position-absolute bottom-0 end-0">
+                                    <label for="{{ form.avatar.id_for_label }}" class="btn btn-sm btn-primary rounded-circle">
+                                        <i class="fas fa-camera"></i>
+                                    </label>
+                                    {{ form.avatar }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Dane osobowe -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.first_name.id_for_label }}" class="form-label">
+                                <i class="fas fa-user me-1"></i>{{ form.first_name.label }}
+                            </label>
+                            {{ form.first_name }}
+                            {% if form.first_name.errors %}
+                                <div class="text-danger small">{{ form.first_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.last_name.id_for_label }}" class="form-label">
+                                <i class="fas fa-user me-1"></i>{{ form.last_name.label }}
+                            </label>
+                            {{ form.last_name }}
+                            {% if form.last_name.errors %}
+                                <div class="text-danger small">{{ form.last_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Email -->
+                    <div class="mb-3">
+                        <label for="{{ form.email.id_for_label }}" class="form-label">
+                            <i class="fas fa-envelope me-1"></i>{{ form.email.label }}
+                        </label>
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                            <div class="text-danger small">{{ form.email.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Telefon -->
+                    <div class="mb-3">
+                        <label for="{{ form.phone.id_for_label }}" class="form-label">
+                            <i class="fas fa-phone me-1"></i>{{ form.phone.label }}
+                        </label>
+                        {{ form.phone }}
+                        {% if form.phone.errors %}
+                            <div class="text-danger small">{{ form.phone.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Dział i stanowisko -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.department.id_for_label }}" class="form-label">
+                                <i class="fas fa-building me-1"></i>{{ form.department.label }}
+                            </label>
+                            {{ form.department }}
+                            {% if form.department.errors %}
+                                <div class="text-danger small">{{ form.department.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.position.id_for_label }}" class="form-label">
+                                <i class="fas fa-briefcase me-1"></i>{{ form.position.label }}
+                            </label>
+                            {{ form.position }}
+                            {% if form.position.errors %}
+                                <div class="text-danger small">{{ form.position.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Przyciski -->
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'wms:dashboard' %}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Powrót
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Zapisz zmiany
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#{{ form.avatar.id_for_label }} {
+    display: none;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const avatarInput = document.getElementById('{{ form.avatar.id_for_label }}');
+    const avatarPreview = document.querySelector('.avatar-preview');
+    const avatarIcon = document.querySelector('.avatar-icon');
+    
+    avatarInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            // Sprawdź czy to obrazek
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    // Ukryj ikonę użytkownika
+                    if (avatarIcon) {
+                        avatarIcon.style.display = 'none';
+                    }
+                    
+                    // Pokaż podgląd obrazka
+                    if (avatarPreview) {
+                        avatarPreview.src = e.target.result;
+                        avatarPreview.style.display = 'block';
+                    } else {
+                        // Jeśli nie ma elementu podglądu, utwórz go
+                        const newPreview = document.createElement('img');
+                        newPreview.src = e.target.result;
+                        newPreview.alt = 'Avatar';
+                        newPreview.className = 'rounded-circle border avatar-preview';
+                        newPreview.style.cssText = 'width: 120px; height: 120px; object-fit: cover; display: block;';
+                        
+                        const container = document.querySelector('.position-relative.d-inline-block');
+                        const iconContainer = container.querySelector('.rounded-circle.border.bg-light');
+                        if (iconContainer) {
+                            iconContainer.appendChild(newPreview);
+                        }
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else {
+                alert('Proszę wybrać plik obrazka (JPG, PNG, GIF, etc.)');
+                avatarInput.value = '';
+            }
+        }
+    });
+});
+</script>
+
+{% endblock %} 

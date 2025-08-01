@@ -1,0 +1,142 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Zamówienia ZD - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-truck me-2"></i>Zamówienia ZD
+            </h1>
+            <a href="{% url 'wms:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-6">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Numer ZD, nazwa dostawcy lub kod">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="status" class="form-label">Status</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="">Wszystkie statusy</option>
+                            {% for status_code, status_name in status_choices %}
+                                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>
+                                    {{ status_name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search me-2"></i>Szukaj
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista zamówień -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Lista zamówień do dostawców
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if supplier_orders %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Numer ZD</th>
+                                    <th>Dostawca</th>
+                                    <th>Data zamówienia</th>
+                                    <th>Data dostawy</th>
+                                    <th>Status</th>
+                                    <th>Pozycje</th>
+                                    <th>Przyjęte</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for order in supplier_orders %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ order.order_number }}</strong>
+                                    </td>
+                                    <td>
+                                        <div>{{ order.supplier_name }}</div>
+                                        {% if order.supplier_code %}
+                                            <small class="text-muted">{{ order.supplier_code }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ order.order_date|date:"d.m.Y" }}</td>
+                                    <td>{{ order.expected_delivery_date|date:"d.m.Y" }}</td>
+                                    <td>
+                                        <span class="badge status-{{ order.status }}">
+                                            {% if order.status == 'pending' %}
+                                                <i class="fas fa-clock me-1"></i>Oczekujące
+                                            {% elif order.status == 'confirmed' %}
+                                                <i class="fas fa-check me-1"></i>Potwierdzone
+                                            {% elif order.status == 'in_transit' %}
+                                                <i class="fas fa-shipping-fast me-1"></i>W transporcie
+                                            {% elif order.status == 'received' %}
+                                                <i class="fas fa-box-open me-1"></i>Przyjęte
+                                            {% elif order.status == 'partially_received' %}
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
+                                            {% elif order.status == 'cancelled' %}
+                                                <i class="fas fa-times me-1"></i>Anulowane
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>{{ order.total_items }}</td>
+                                    <td>{{ order.received_items }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'wms:supplier_order_detail' order.id %}" 
+                                               class="btn btn-sm btn-outline-primary" title="Szczegóły">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if order.status in 'pending,confirmed,in_transit' %}
+                                                <a href="{% url 'wms:create_receiving_order' order.id %}" 
+                                                   class="btn btn-sm btn-outline-success" title="Utwórz RegIn">
+                                                    <i class="fas fa-clipboard-check"></i>
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-truck fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Brak zamówień do dostawców do wyświetlenia</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

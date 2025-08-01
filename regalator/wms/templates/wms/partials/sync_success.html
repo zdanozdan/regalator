@@ -1,0 +1,113 @@
+<!-- Update the product row with new data -->
+<tr id="product-row-{{ product.id }}">
+    <td>
+        {% if product.subiekt_id %}
+            <code>{{ product.subiekt_id }}</code>
+        {% else %}
+            <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        <div>{{ product.name }}</div>
+        {% if product.description %}
+            <small class="text-muted">{{ product.description|truncatechars:50 }}</small>
+        {% endif %}
+    </td>
+    <td>
+        {% if product.groups.all %}
+            {% for group in product.groups.all %}
+                <span class="badge me-1" style="background-color: #6c757d; color: white;">
+                    {{ group.name }}
+                </span>
+            {% endfor %}
+        {% else %}
+            <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        <code>{{ product.barcode }}</code>
+    </td>
+    <td>
+        <span class="fw-bold">{{ product.total_stock|floatformat:2 }}</span>
+    </td>
+    <td>
+        {% if product.subiekt_id %}
+            <span class="fw-bold">{{ product.subiekt_stock|floatformat:2 }}</span>
+        {% else %}
+            <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        {% if product.subiekt_id %}
+            {% if product.stock_difference > 0 %}
+                <span class="text-success fw-bold">+{{ product.stock_difference|floatformat:2 }}</span>
+            {% elif product.stock_difference < 0 %}
+                <span class="text-danger fw-bold">{{ product.stock_difference|floatformat:2 }}</span>
+            {% else %}
+                <span class="text-success">✓</span>
+            {% endif %}
+        {% else %}
+            <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        {% if product.subiekt_id %}
+            {% if product.needs_sync %}
+                <span class="badge bg-warning">
+                    <i class="fas fa-exclamation-triangle me-1"></i>Wymaga sync
+                </span>
+            {% else %}
+                <span class="badge bg-success">
+                    <i class="fas fa-check me-1"></i>Zsynchronizowany
+                </span>
+            {% endif %}
+        {% else %}
+            <span class="badge bg-secondary">
+                <i class="fas fa-times me-1"></i>Nie zsync
+            </span>
+        {% endif %}
+    </td>
+    <td>{{ product.unit }}</td>
+    <td>
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                    type="button" 
+                    data-bs-toggle="dropdown" 
+                    aria-expanded="false">
+                <i class="fas fa-cogs"></i>
+            </button>
+            <ul class="dropdown-menu" style="z-index: 9999;">
+                <li>
+                    <a class="dropdown-item" href="#" 
+                       onclick="copyToClipboard('{{ product.barcode }}'); return false;">
+                        <i class="fas fa-barcode me-2"></i>Kopiuj kod kreskowy
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" href="{% url 'wms:stock_list' %}?product={{ product.code }}">
+                        <i class="fas fa-warehouse me-2"></i>Pokaż stany magazynowe
+                    </a>
+                </li>
+                {% if product.subiekt_id %}
+                <li>
+                    <a class="dropdown-item" href="#" 
+                       hx-post="{% url 'wms:htmx_sync_product' product.id %}"
+                       hx-target="#product-row-{{ product.id }}"
+                       hx-swap="outerHTML">
+                        <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
+                    </a>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item" href="#" 
+                       onclick="showProductDetails('{{ product.id }}'); return false;">
+                        <i class="fas fa-info-circle me-2"></i>Szczegóły produktu
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </td>
+</tr>
+
+ 

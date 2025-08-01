@@ -1,0 +1,193 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}{{ group.name }} - Grupa produktów - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-layer-group me-2"></i>{{ group.name }}
+            </h1>
+            <a href="{% url 'wms:product_group_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Powrót do listy
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o grupie -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header" style="background-color: #6c757d; color: white;">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o grupie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Nazwa:</strong></td>
+                                <td>{{ group.name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Kod:</strong></td>
+                                <td><code>{{ group.code }}</code></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    {% if group.is_active %}
+                                        <span class="badge bg-success">Aktywna</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Nieaktywna</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Produktów:</strong></td>
+                                <td>{{ total_products }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Z zapasami:</strong></td>
+                                <td>{{ products_with_stock }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Łączny stan:</strong></td>
+                                <td>{{ total_stock|floatformat:2 }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                {% if group.description %}
+                    <hr>
+                    <div>
+                        <strong>Opis:</strong>
+                        <p class="mb-0">{{ group.description }}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Statystyki
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'wms:product_list' %}?group={{ group.id }}" class="btn btn-primary">
+                        <i class="fas fa-box me-2"></i>Zobacz wszystkie produkty
+                    </a>
+                    <a href="{% url 'wms:stock_list' %}?group={{ group.code }}" class="btn btn-outline-info">
+                        <i class="fas fa-warehouse me-2"></i>Stany magazynowe
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista produktów w grupie -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-box me-2"></i>Produkty w grupie
+                    <span class="badge bg-secondary ms-2">{{ products.count }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if products %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Kod</th>
+                                    <th>Nazwa</th>
+                                    <th>Kod kreskowy</th>
+                                    <th>Stan WMS</th>
+                                    <th>Stan Subiekt</th>
+                                    <th>Status sync</th>
+                                    <th>Jednostka</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in products %}
+                                <tr>
+                                    <td>
+                                        <code>{{ product.code }}</code>
+                                    </td>
+                                    <td>
+                                        <div>{{ product.name }}</div>
+                                        {% if product.description %}
+                                            <small class="text-muted">{{ product.description|truncatechars:50 }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <code>{{ product.barcode }}</code>
+                                    </td>
+                                    <td>
+                                        <span class="fw-bold">{{ product.total_stock|floatformat:2 }}</span>
+                                    </td>
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            <span class="fw-bold">{{ product.subiekt_stock|floatformat:2 }}</span>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            {% if product.needs_sync %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-exclamation-triangle me-1"></i>Wymaga sync
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check me-1"></i>Zsynchronizowany
+                                                </span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-times me-1"></i>Nie zsync
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ product.unit }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'wms:stock_list' %}?product={{ product.code }}" 
+                                               class="btn btn-sm btn-outline-info" title="Pokaż stany magazynowe">
+                                                <i class="fas fa-warehouse"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-box fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Brak produktów</h5>
+                        <p class="text-muted">Ta grupa nie zawiera żadnych produktów.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

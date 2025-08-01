@@ -1,0 +1,213 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Zlecenia kompletacji - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-clipboard-list me-2"></i>Zlecenia kompletacji
+            </h1>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Numer RegOut lub nazwa klienta">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="status" class="form-label">Status</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="">Wszystkie</option>
+                            {% for status_code, status_name in status_choices %}
+                                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>
+                                    {{ status_name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i class="fas fa-search me-1"></i>Szukaj
+                            </button>
+                            <a href="{% url 'wms:picking_list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-1"></i>Wyczyść
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista zleceń kompletacji -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Lista zleceń kompletacji
+                    {% if page_obj %}
+                        <span class="badge bg-secondary ms-2">{{ page_obj.paginator.count }}</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Numer RegOut</th>
+                                    <th>Zamówienie</th>
+                                    <th>Klient</th>
+                                    <th>Status</th>
+                                    <th>Przypisane do</th>
+                                    <th>Utworzono</th>
+                                    <th>Pozycje</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for picking in page_obj %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ picking.order_number }}</strong>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'wms:order_detail' picking.customer_order.id %}">
+                                            {{ picking.customer_order.order_number }}
+                                        </a>
+                                    </td>
+                                    <td>{{ picking.customer_order.customer_name }}</td>
+                                    <td>
+                                        {% if picking.status == 'created' %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-file me-1"></i>Utworzone
+                                            </span>
+                                        {% elif picking.status == 'in_progress' %}
+                                            <span class="badge bg-info">
+                                                <i class="fas fa-cogs me-1"></i>W trakcie
+                                            </span>
+                                        {% elif picking.status == 'completed' %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Zakończone
+                                            </span>
+                                        {% elif picking.status == 'cancelled' %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-times me-1"></i>Anulowane
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if picking.assigned_to %}
+                                            {{ picking.assigned_to.username }}
+                                        {% else %}
+                                            <span class="text-muted">Nie przypisane</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ picking.created_at|date:"d.m.Y H:i" }}</td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {{ picking.completed_items_count }}/{{ picking.total_items_count }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'wms:picking_detail' picking.id %}" 
+                                               class="btn btn-sm btn-outline-primary" title="Szczegóły">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if picking.status == 'created' %}
+                                                <a href="{% url 'wms:start_picking' picking.id %}" 
+                                                   class="btn btn-sm btn-outline-success" title="Rozpocznij">
+                                                    <i class="fas fa-play"></i>
+                                                </a>
+                                            {% elif picking.status == 'in_progress' %}
+                                                <a href="{% url 'wms:scan_location' picking.id %}" 
+                                                   class="btn btn-sm btn-outline-info" title="Kontynuuj">
+                                                    <i class="fas fa-barcode"></i>
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginacja -->
+                    {% if page_obj.has_other_pages %}
+                        <nav aria-label="Nawigacja stron">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-clipboard fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Brak zleceń kompletacji</h5>
+                        <p class="text-muted">
+                            {% if search_query or status_filter %}
+                                Nie znaleziono zleceń spełniających kryteria wyszukiwania.
+                            {% else %}
+                                Brak zleceń kompletacji w systemie.
+                            {% endif %}
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

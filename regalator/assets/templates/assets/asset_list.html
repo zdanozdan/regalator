@@ -1,0 +1,212 @@
+{% extends 'assets/base.html' %}
+
+{% block title %}Assety - Asset Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-images me-2"></i>Assety
+            </h1>
+            <a href="{% url 'assets:asset_upload' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>Dodaj Asset
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Tytuł, opis, tagi...">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="category" class="form-label">Kategoria</label>
+                        <select class="form-control" id="category" name="category">
+                            <option value="">Wszystkie kategorie</option>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}" {% if category_filter == category.id|stringformat:"s" %}selected{% endif %}>
+                                    {{ category.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="type" class="form-label">Typ pliku</label>
+                        <select class="form-control" id="type" name="type">
+                            <option value="">Wszystkie typy</option>
+                            {% for type_code, type_name in asset_types %}
+                                <option value="{{ type_code }}" {% if type_filter == type_code %}selected{% endif %}>
+                                    {{ type_name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label for="sort" class="form-label">Sortuj</label>
+                        <select class="form-control" id="sort" name="sort">
+                            <option value="-uploaded_at" {% if sort_by == '-uploaded_at' %}selected{% endif %}>Najnowsze</option>
+                            <option value="uploaded_at" {% if sort_by == 'uploaded_at' %}selected{% endif %}>Najstarsze</option>
+                            <option value="title" {% if sort_by == 'title' %}selected{% endif %}>A-Z</option>
+                            <option value="-title" {% if sort_by == '-title' %}selected{% endif %}>Z-A</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-1"></i>Filtruj
+                        </button>
+                        <a href="{% url 'assets:asset_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i>Wyczyść
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista assetów -->
+<div class="row">
+    {% if page_obj %}
+        {% for asset in page_obj %}
+            <div class="col-md-4 col-lg-3 mb-4">
+                <div class="card asset-card h-100">
+                    <div class="card-img-top position-relative">
+                        {% if asset.file_type == 'image' %}
+                            <img src="{{ asset.file.url }}" class="asset-thumbnail" alt="{{ asset.title }}">
+                        {% else %}
+                            <div class="asset-thumbnail d-flex align-items-center justify-content-center bg-light">
+                                {% if asset.file_type == 'pdf' %}
+                                    <i class="fas fa-file-pdf file-type-icon text-danger"></i>
+                                {% elif asset.file_type == 'document' %}
+                                    <i class="fas fa-file-word file-type-icon text-primary"></i>
+                                {% elif asset.file_type == 'video' %}
+                                    <i class="fas fa-file-video file-type-icon text-warning"></i>
+                                {% elif asset.file_type == 'audio' %}
+                                    <i class="fas fa-file-audio file-type-icon text-success"></i>
+                                {% else %}
+                                    <i class="fas fa-file file-type-icon"></i>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                        
+                        <!-- Status publiczny -->
+                        {% if not asset.is_public %}
+                            <span class="position-absolute top-0 end-0 badge bg-warning m-2">
+                                <i class="fas fa-lock"></i>
+                            </span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="card-body d-flex flex-column">
+                        <h6 class="card-title">{{ asset.title }}</h6>
+                        <p class="card-text text-muted small">{{ asset.description|truncatewords:10 }}</p>
+                        
+                        <!-- Tagi -->
+                        {% if asset.tags.all %}
+                            <div class="mb-2">
+                                {% for tag in asset.tags.all|slice:":3" %}
+                                    <span class="badge tag-badge" style="background-color: {{ tag.color }};">
+                                        {{ tag.name }}
+                                    </span>
+                                {% endfor %}
+                                {% if asset.tags.count > 3 %}
+                                    <span class="badge bg-secondary tag-badge">+{{ asset.tags.count|add:"-3" }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                        
+                        <!-- Informacje -->
+                        <div class="mt-auto">
+                            <small class="text-muted">
+                                <i class="fas fa-user me-1"></i>{{ asset.uploaded_by.username }}<br>
+                                <i class="fas fa-calendar me-1"></i>{{ asset.uploaded_at|date:"d.m.Y" }}<br>
+                                <i class="fas fa-file me-1"></i>{{ asset.file_size }}
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <div class="card-footer bg-transparent">
+                        <div class="btn-group w-100" role="group">
+                            <a href="{% url 'assets:asset_detail' asset.slug %}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <a href="{% url 'assets:asset_download' asset.slug %}" class="btn btn-outline-success btn-sm">
+                                <i class="fas fa-download"></i>
+                            </a>
+                            {% if asset.uploaded_by == user or user.is_staff %}
+                                <a href="{% url 'assets:asset_edit' asset.slug %}" class="btn btn-outline-warning btn-sm">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-images fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">Brak assetów</h4>
+                <p class="text-muted">Nie znaleziono żadnych assetów spełniających kryteria wyszukiwania.</p>
+                <a href="{% url 'assets:asset_upload' %}" class="btn btn-primary">
+                    <i class="fas fa-plus me-1"></i>Dodaj pierwszy asset
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Paginacja -->
+{% if page_obj.has_other_pages %}
+    <nav aria-label="Nawigacja stron">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}">
+                        <i class="fas fa-angle-double-left"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}">
+                        <i class="fas fa-angle-left"></i>
+                    </a>
+                </li>
+            {% endif %}
+            
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}">
+                        <i class="fas fa-angle-right"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}">
+                        <i class="fas fa-angle-double-right"></i>
+                    </a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %} 

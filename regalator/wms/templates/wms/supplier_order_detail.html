@@ -1,0 +1,274 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Szczegóły ZD {{ supplier_order.order_number }} - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-truck me-2"></i>ZD {{ supplier_order.order_number }}
+            </h1>
+            <div>
+                <a href="{% url 'wms:supplier_order_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Powrót
+                </a>
+                {% if supplier_order.status in 'pending,confirmed,in_transit' %}
+                    <form method="post" action="{% url 'wms:create_receiving_order' supplier_order.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-clipboard-check me-2"></i>Utwórz RegIn
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o zamówieniu -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o zamówieniu
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Numer ZD:</dt>
+                    <dd class="col-sm-8"><strong>{{ supplier_order.order_number }}</strong></dd>
+                    
+                    <dt class="col-sm-4">Dostawca:</dt>
+                    <dd class="col-sm-8">{{ supplier_order.supplier_name }}</dd>
+                    
+                    {% if supplier_order.supplier_code %}
+                        <dt class="col-sm-4">Kod dostawcy:</dt>
+                        <dd class="col-sm-8">{{ supplier_order.supplier_code }}</dd>
+                    {% endif %}
+                    
+                    <dt class="col-sm-4">Data zamówienia:</dt>
+                    <dd class="col-sm-8">{{ supplier_order.order_date|date:"d.m.Y" }}</dd>
+                    
+                    <dt class="col-sm-4">Data dostawy:</dt>
+                    <dd class="col-sm-8">{{ supplier_order.expected_delivery_date|date:"d.m.Y" }}</dd>
+                    
+                    {% if supplier_order.actual_delivery_date %}
+                        <dt class="col-sm-4">Data przyjęcia:</dt>
+                        <dd class="col-sm-8">{{ supplier_order.actual_delivery_date|date:"d.m.Y" }}</dd>
+                    {% endif %}
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge status-{{ supplier_order.status }}">
+                            {% if supplier_order.status == 'pending' %}
+                                <i class="fas fa-clock me-1"></i>Oczekujące
+                            {% elif supplier_order.status == 'confirmed' %}
+                                <i class="fas fa-check me-1"></i>Potwierdzone
+                            {% elif supplier_order.status == 'in_transit' %}
+                                <i class="fas fa-shipping-fast me-1"></i>W transporcie
+                            {% elif supplier_order.status == 'received' %}
+                                <i class="fas fa-box-open me-1"></i>Przyjęte
+                            {% elif supplier_order.status == 'partially_received' %}
+                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
+                            {% elif supplier_order.status == 'cancelled' %}
+                                <i class="fas fa-times me-1"></i>Anulowane
+                            {% endif %}
+                        </span>
+                    </dd>
+                </dl>
+                
+                {% if supplier_order.notes %}
+                    <hr>
+                    <dt class="col-sm-4">Uwagi:</dt>
+                    <dd class="col-sm-8">{{ supplier_order.notes }}</dd>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Podsumowanie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-end">
+                            <h3 class="text-primary">{{ supplier_order.total_items }}</h3>
+                            <p class="text-muted mb-0">Wszystkie pozycje</p>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-success">{{ supplier_order.received_items }}</h3>
+                        <p class="text-muted mb-0">Przyjęte pozycje</p>
+                    </div>
+                </div>
+                
+                {% if supplier_order.total_items > 0 %}
+                    <hr>
+                    <div class="progress mb-2">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {% widthratio supplier_order.received_items supplier_order.total_items 100 %}%">
+                        </div>
+                    </div>
+                    <small class="text-muted">
+                        Postęp przyjęcia: {{ supplier_order.received_items }}/{{ supplier_order.total_items }}
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pozycje zamówienia -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozycje zamówienia
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if supplier_order.items.all %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Produkt</th>
+                                    <th>Kod kreskowy</th>
+                                    <th>Ilość zamówiona</th>
+                                    <th>Ilość przyjęta</th>
+                                    <th>Cena jednostkowa</th>
+                                    <th>Wartość</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in supplier_order.items.all %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ item.product.name }}</strong>
+                                        {% if item.notes %}
+                                            <br><small class="text-muted">{{ item.notes }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ item.product.barcode }}</td>
+                                    <td>{{ item.quantity_ordered }}</td>
+                                    <td>
+                                        {% if item.quantity_received > 0 %}
+                                            <span class="text-success">{{ item.quantity_received }}</span>
+                                        {% else %}
+                                            <span class="text-muted">0</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ item.unit_price|floatformat:2 }} zł</td>
+                                    <td>{{ item.total_value|floatformat:2 }} zł</td>
+                                    <td>
+                                        {% if item.quantity_received == 0 %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-clock me-1"></i>Oczekujące
+                                            </span>
+                                        {% elif item.quantity_received == item.quantity_ordered %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Przyjęte
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-info">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-box fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Brak pozycji w zamówieniu</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rejestry przyjęć -->
+{% if receiving_orders %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-clipboard-check me-2"></i>Rejestry przyjęć (RegIn)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Numer RegIn</th>
+                                <th>Status</th>
+                                <th>Przypisane do</th>
+                                <th>Utworzone</th>
+                                <th>Zakończone</th>
+                                <th>Pozycje</th>
+                                <th>Przyjęte</th>
+                                <th>Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for receiving in receiving_orders %}
+                            <tr>
+                                <td>
+                                    <strong>{{ receiving.order_number }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge status-{{ receiving.status }}">
+                                        {% if receiving.status == 'pending' %}
+                                            <i class="fas fa-clock me-1"></i>Oczekujące
+                                        {% elif receiving.status == 'in_progress' %}
+                                            <i class="fas fa-cogs me-1"></i>W trakcie
+                                        {% elif receiving.status == 'completed' %}
+                                            <i class="fas fa-check me-1"></i>Zakończone
+                                        {% elif receiving.status == 'cancelled' %}
+                                            <i class="fas fa-times me-1"></i>Anulowane
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ receiving.assigned_to|default:"-" }}</td>
+                                <td>{{ receiving.created_at|date:"d.m.Y H:i" }}</td>
+                                <td>
+                                    {% if receiving.completed_at %}
+                                        {{ receiving.completed_at|date:"d.m.Y H:i" }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ receiving.total_items }}</td>
+                                <td>{{ receiving.received_items }}</td>
+                                <td>
+                                    <a href="{% url 'wms:receiving_order_detail' receiving.id %}" 
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye me-1"></i>Szczegóły
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %} 

@@ -1,0 +1,291 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Zlecenie kompletacji {{ picking_order.order_number }} - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-clipboard-list me-2"></i>Zlecenie kompletacji {{ picking_order.order_number }}
+            </h1>
+            <div>
+                <a href="{% url 'wms:picking_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Powrót
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o zleceniu -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o zleceniu
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">Numer RegOut:</dt>
+                            <dd class="col-sm-8"><strong>{{ picking_order.order_number }}</strong></dd>
+                            
+                            <dt class="col-sm-4">Zamówienie:</dt>
+                            <dd class="col-sm-8">
+                                <a href="{% url 'wms:order_detail' picking_order.customer_order.id %}">
+                                    {{ picking_order.customer_order.order_number }}
+                                </a>
+                            </dd>
+                            
+                            <dt class="col-sm-4">Klient:</dt>
+                            <dd class="col-sm-8">{{ picking_order.customer_order.customer_name }}</dd>
+                            
+                            <dt class="col-sm-4">Przypisane do:</dt>
+                            <dd class="col-sm-8">
+                                {% if picking_order.assigned_to %}
+                                    {{ picking_order.assigned_to.username }}
+                                {% else %}
+                                    <span class="text-muted">Nie przypisane</span>
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">Status:</dt>
+                            <dd class="col-sm-8">
+                                {% if picking_order.status == 'created' %}
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-file me-1"></i>Utworzone
+                                    </span>
+                                {% elif picking_order.status == 'in_progress' %}
+                                    <span class="badge bg-info">
+                                        <i class="fas fa-cogs me-1"></i>W trakcie
+                                    </span>
+                                {% elif picking_order.status == 'completed' %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check me-1"></i>Zakończone
+                                    </span>
+                                {% elif picking_order.status == 'cancelled' %}
+                                    <span class="badge bg-danger">
+                                        <i class="fas fa-times me-1"></i>Anulowane
+                                    </span>
+                                {% endif %}
+                            </dd>
+                            
+                            <dt class="col-sm-4">Utworzono:</dt>
+                            <dd class="col-sm-8">{{ picking_order.created_at|date:"d.m.Y H:i" }}</dd>
+                            
+                            {% if picking_order.started_at %}
+                                <dt class="col-sm-4">Rozpoczęto:</dt>
+                                <dd class="col-sm-8">{{ picking_order.started_at|date:"d.m.Y H:i" }}</dd>
+                            {% endif %}
+                            
+                            {% if picking_order.completed_at %}
+                                <dt class="col-sm-4">Zakończono:</dt>
+                                <dd class="col-sm-8">{{ picking_order.completed_at|date:"d.m.Y H:i" }}</dd>
+                            {% endif %}
+                        </dl>
+                    </div>
+                </div>
+                
+                {% if picking_order.notes %}
+                    <div class="mt-3">
+                        <strong>Uwagi:</strong>
+                        <p class="mb-0">{{ picking_order.notes }}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-tools me-2"></i>Akcje
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if picking_order.status == 'created' %}
+                    <a href="{% url 'wms:start_picking' picking_order.id %}" class="btn btn-success w-100 mb-2">
+                        <i class="fas fa-play me-2"></i>Rozpocznij kompletację
+                    </a>
+                {% elif picking_order.status == 'in_progress' %}
+                    <a href="{% url 'wms:scan_location' picking_order.id %}" class="btn btn-primary w-100 mb-2">
+                        <i class="fas fa-barcode me-2"></i>Kontynuuj kompletację
+                    </a>
+                {% elif picking_order.status == 'completed' %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>Kompletacja zakończona
+                    </div>
+                {% endif %}
+                
+                <div class="d-grid gap-2">
+                    <a href="{% url 'wms:picking_list' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-list me-2"></i>Lista zleceń
+                    </a>
+                    <a href="{% url 'wms:order_detail' picking_order.customer_order.id %}" class="btn btn-outline-info">
+                        <i class="fas fa-shopping-cart me-2"></i>Zamówienie
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Statystyki -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Statystyki
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h4 class="text-primary">{{ picking_order.items.count }}</h4>
+                        <small class="text-muted">Wszystkie</small>
+                    </div>
+                    <div class="col-4">
+                        <h4 class="text-success">{{ picking_order.completed_items_count }}</h4>
+                        <small class="text-muted">Zakończone</small>
+                    </div>
+                    <div class="col-4">
+                        <h4 class="text-warning">{{ picking_order.pending_items_count }}</h4>
+                        <small class="text-muted">Oczekujące</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pozycje kompletacji -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozycje kompletacji
+                    <span class="badge bg-secondary ms-2">{{ picking_order.items.count }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if picking_order.items.all %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Kolejność</th>
+                                    <th>Produkt</th>
+                                    <th>Lokalizacja</th>
+                                    <th>Ilość do pobrania</th>
+                                    <th>Ilość pobrana</th>
+                                    <th>Status</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in picking_order.items.all %}
+                                <tr>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ item.sequence }}</span>
+                                    </td>
+                                    <td>
+                                        <div>{{ item.product.name }}</div>
+                                        <small class="text-muted">{{ item.product.code }}</small>
+                                    </td>
+                                    <td>
+                                        <div>{{ item.location.name }}</div>
+                                        <small class="text-muted">{{ item.location.code }}</small>
+                                    </td>
+                                    <td>{{ item.quantity_to_pick }} {{ item.product.unit }}</td>
+                                    <td>
+                                        {% if item.quantity_picked > 0 %}
+                                            <span class="text-success">{{ item.quantity_picked }} {{ item.product.unit }}</span>
+                                        {% else %}
+                                            <span class="text-muted">0 {{ item.product.unit }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.is_completed %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Zakończone
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-clock me-1"></i>Oczekujące
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if not item.is_completed and picking_order.status == 'in_progress' %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-arrow-right me-1"></i>Następne
+                                            </span>
+                                        {% elif item.is_completed %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Gotowe
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Brak pozycji w zleceniu kompletacji</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Historia kompletacji -->
+{% if picking_order.completed_items %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>Historia kompletacji
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Użytkownik</th>
+                                <th>Produkt</th>
+                                <th>Lokalizacja</th>
+                                <th>Ilość</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for history in picking_order.completed_items.first.pickinghistory_set.all %}
+                            <tr>
+                                <td>{{ history.scanned_at|date:"d.m.Y H:i:s" }}</td>
+                                <td>{{ history.user.username }}</td>
+                                <td>{{ history.product_scanned.name }}</td>
+                                <td>{{ history.location_scanned.name }}</td>
+                                <td>{{ history.quantity_picked }} {{ history.product_scanned.unit }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %} 

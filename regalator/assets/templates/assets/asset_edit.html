@@ -1,0 +1,174 @@
+{% extends 'assets/base.html' %}
+
+{% block title %}Edytuj {{ asset.title }} - Asset Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-edit me-2"></i>Edytuj Asset
+            </h1>
+            <a href="{% url 'assets:asset_detail' asset.slug %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-edit me-2"></i>Formularz edycji
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.title.id_for_label }}" class="form-label">
+                                    <i class="fas fa-heading me-1"></i>Tytuł *
+                                </label>
+                                {{ form.title }}
+                                {% if form.title.errors %}
+                                    <div class="text-danger small">{{ form.title.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.file_type.id_for_label }}" class="form-label">
+                                    <i class="fas fa-tag me-1"></i>Typ pliku
+                                </label>
+                                {{ form.file_type }}
+                                {% if form.file_type.errors %}
+                                    <div class="text-danger small">{{ form.file_type.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="{{ form.description.id_for_label }}" class="form-label">
+                            <i class="fas fa-align-left me-1"></i>Opis
+                        </label>
+                        {{ form.description }}
+                        {% if form.description.errors %}
+                            <div class="text-danger small">{{ form.description.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.category.id_for_label }}" class="form-label">
+                                    <i class="fas fa-folder me-1"></i>Kategoria
+                                </label>
+                                {{ form.category }}
+                                {% if form.category.errors %}
+                                    <div class="text-danger small">{{ form.category.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.tags.id_for_label }}" class="form-label">
+                                    <i class="fas fa-tags me-1"></i>Tagi
+                                </label>
+                                {{ form.tags }}
+                                {% if form.tags.errors %}
+                                    <div class="text-danger small">{{ form.tags.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="{{ form.file.id_for_label }}" class="form-label">
+                            <i class="fas fa-file me-1"></i>Plik (opcjonalnie)
+                        </label>
+                        {{ form.file }}
+                        {% if form.file.errors %}
+                            <div class="text-danger small">{{ form.file.errors }}</div>
+                        {% endif %}
+                        <small class="text-muted">Zostaw puste, aby zachować obecny plik</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ form.is_public }}
+                            <label class="form-check-label" for="{{ form.is_public.id_for_label }}">
+                                <i class="fas fa-globe me-1"></i>Asset publiczny
+                            </label>
+                        </div>
+                        {% if form.is_public.errors %}
+                            <div class="text-danger small">{{ form.is_public.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-save me-1"></i>Zapisz zmiany
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Obecny asset
+                </h6>
+            </div>
+            <div class="card-body">
+                <h6>{{ asset.title }}</h6>
+                <p class="text-muted small">{{ asset.description|truncatewords:20 }}</p>
+                
+                <div class="mb-3">
+                    <strong>Typ:</strong> 
+                    {% if asset.file_type == 'image' %}
+                        <span class="badge bg-primary">Obraz</span>
+                    {% elif asset.file_type == 'pdf' %}
+                        <span class="badge bg-danger">PDF</span>
+                    {% elif asset.file_type == 'document' %}
+                        <span class="badge bg-info">Dokument</span>
+                    {% elif asset.file_type == 'video' %}
+                        <span class="badge bg-warning">Wideo</span>
+                    {% elif asset.file_type == 'audio' %}
+                        <span class="badge bg-success">Audio</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Inne</span>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Rozmiar:</strong> {{ asset.file_size }}
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Dodane:</strong> {{ asset.uploaded_at|date:"d.m.Y H:i" }}
+                </div>
+                
+                {% if asset.tags.all %}
+                    <div class="mb-3">
+                        <strong>Tagi:</strong><br>
+                        {% for tag in asset.tags.all %}
+                            <span class="badge tag-badge" style="background-color: {{ tag.color }};">
+                                {{ tag.name }}
+                            </span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

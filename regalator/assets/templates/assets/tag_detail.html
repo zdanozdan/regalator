@@ -1,0 +1,199 @@
+{% extends 'assets/base.html' %}
+
+{% block title %}{{ tag.name }} - Asset Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <span class="badge" style="background-color: {{ tag.color }}; font-size: 1.5rem;">
+                    <i class="fas fa-tag me-2"></i>{{ tag.name }}
+                </span>
+            </h1>
+            <a href="{% url 'assets:asset_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-3">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Informacje o tagu
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Nazwa:</strong><br>
+                    <span class="badge" style="background-color: {{ tag.color }}; font-size: 1rem;">
+                        {{ tag.name }}
+                    </span>
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Kolor:</strong><br>
+                    <div class="d-flex align-items-center">
+                        <div class="color-preview me-2" style="width: 30px; height: 30px; background-color: {{ tag.color }}; border-radius: 4px;"></div>
+                        <code>{{ tag.color }}</code>
+                    </div>
+                </div>
+                
+                <p class="mb-2">
+                    <strong>Utworzono:</strong><br>
+                    {{ tag.created_at|date:"d.m.Y H:i" }}
+                </p>
+                
+                <p class="mb-0">
+                    <strong>Liczba assetów:</strong><br>
+                    {{ page_obj.paginator.count }}
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-9">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-images me-2"></i>Assety z tagiem "{{ tag.name }}"
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="row">
+                        {% for asset in page_obj %}
+                            <div class="col-md-4 col-lg-3 mb-4">
+                                <div class="card asset-card h-100">
+                                    <div class="card-img-top position-relative">
+                                        {% if asset.file_type == 'image' %}
+                                            <img src="{{ asset.file.url }}" class="asset-thumbnail" alt="{{ asset.title }}">
+                                        {% else %}
+                                            <div class="asset-thumbnail d-flex align-items-center justify-content-center bg-light">
+                                                {% if asset.file_type == 'pdf' %}
+                                                    <i class="fas fa-file-pdf file-type-icon text-danger"></i>
+                                                {% elif asset.file_type == 'document' %}
+                                                    <i class="fas fa-file-word file-type-icon text-primary"></i>
+                                                {% elif asset.file_type == 'video' %}
+                                                    <i class="fas fa-file-video file-type-icon text-warning"></i>
+                                                {% elif asset.file_type == 'audio' %}
+                                                    <i class="fas fa-file-audio file-type-icon text-success"></i>
+                                                {% else %}
+                                                    <i class="fas fa-file file-type-icon"></i>
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                        
+                                        <!-- Status publiczny -->
+                                        {% if not asset.is_public %}
+                                            <span class="position-absolute top-0 end-0 badge bg-warning m-2">
+                                                <i class="fas fa-lock"></i>
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="card-body d-flex flex-column">
+                                        <h6 class="card-title">{{ asset.title }}</h6>
+                                        <p class="card-text text-muted small">{{ asset.description|truncatewords:10 }}</p>
+                                        
+                                        <!-- Tagi -->
+                                        {% if asset.tags.all %}
+                                            <div class="mb-2">
+                                                {% for asset_tag in asset.tags.all|slice:":3" %}
+                                                    <span class="badge tag-badge" style="background-color: {{ asset_tag.color }};">
+                                                        {{ asset_tag.name }}
+                                                    </span>
+                                                {% endfor %}
+                                                {% if asset.tags.count > 3 %}
+                                                    <span class="badge bg-secondary tag-badge">+{{ asset.tags.count|add:"-3" }}</span>
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                        
+                                        <!-- Informacje -->
+                                        <div class="mt-auto">
+                                            <small class="text-muted">
+                                                <i class="fas fa-user me-1"></i>{{ asset.uploaded_by.username }}<br>
+                                                <i class="fas fa-calendar me-1"></i>{{ asset.uploaded_at|date:"d.m.Y" }}<br>
+                                                <i class="fas fa-file me-1"></i>{{ asset.file_size }}
+                                            </small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="card-footer bg-transparent">
+                                        <div class="btn-group w-100" role="group">
+                                            <a href="{% url 'assets:asset_detail' asset.slug %}" class="btn btn-outline-primary btn-sm">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="{% url 'assets:asset_download' asset.slug %}" class="btn btn-outline-success btn-sm">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- Paginacja -->
+                    {% if page_obj.has_other_pages %}
+                        <nav aria-label="Nawigacja stron">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                                            <i class="fas fa-angle-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                                            <i class="fas fa-angle-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-tag fa-3x text-muted mb-3"></i>
+                        <h4 class="text-muted">Brak assetów</h4>
+                        <p class="text-muted">Nie ma jeszcze assetów z tagiem "{{ tag.name }}".</p>
+                        <a href="{% url 'assets:asset_upload' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i>Dodaj pierwszy asset
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

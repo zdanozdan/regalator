@@ -1,0 +1,232 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Stany magazynowe - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-warehouse me-2"></i>Stany magazynowe
+            </h1>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3" id="search-form">
+                    <div class="col-md-6">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Nazwa produktu, kod lub lokalizacja">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="location" class="form-label">Lokalizacja</label>
+                        <input type="text" class="form-control" id="location" name="location" 
+                               value="{{ location_filter }}" placeholder="Kod lokalizacji">
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Przyciski wyszukiwania -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-center">
+            <button type="submit" form="search-form" class="btn btn-primary btn-sm me-2">
+                <i class="fas fa-search me-1"></i>Szukaj
+            </button>
+            <a href="{% url 'wms:stock_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-times me-1"></i>Wyczyść
+            </a>
+            {% if product_filter %}
+                <a href="{% url 'wms:stock_list' %}?search={{ search_query }}&location={{ location_filter }}" 
+                   class="btn btn-outline-info btn-sm">
+                    <i class="fas fa-filter me-1"></i>Wyczyść filtr produktu
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista stanów magazynowych -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Lista stanów magazynowych
+                    {% if page_obj %}
+                        <span class="badge bg-secondary ms-2">{{ page_obj.paginator.count }}</span>
+                    {% endif %}
+                    {% if product_filter %}
+                        <span class="badge bg-info ms-2">
+                            <i class="fas fa-filter me-1"></i>Filtrowane po produkcie: {{ product_filter }}
+                        </span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Produkt</th>
+                                    <th>Kod produktu</th>
+                                    <th>Lokalizacja</th>
+                                    <th>Ilość dostępna</th>
+                                    <th>Ilość zarezerwowana</th>
+                                    <th>Ostatnia aktualizacja</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for stock in page_obj %}
+                                <tr>
+                                    <td>
+                                        <div>{{ stock.product.name }}</div>
+                                        <small class="text-muted">{{ stock.product.description|truncatechars:50 }}</small>
+                                    </td>
+                                    <td>
+                                        <code>{{ stock.product.code }}</code>
+                                    </td>
+                                    <td>
+                                        <div>{{ stock.location.name }}</div>
+                                        <small class="text-muted">{{ stock.location.code }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-success">{{ stock.quantity }} {{ stock.product.unit }}</span>
+                                    </td>
+                                    <td>
+                                        {% if stock.reserved_quantity > 0 %}
+                                            <span class="badge bg-warning">{{ stock.reserved_quantity }} {{ stock.product.unit }}</span>
+                                        {% else %}
+                                            <span class="text-muted">0 {{ stock.product.unit }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ stock.updated_at|date:"d.m.Y H:i" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginacja -->
+                    {% if page_obj.has_other_pages %}
+                        <nav aria-label="Nawigacja stron">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                            <i class="fas fa-angle-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                            <i class="fas fa-angle-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-warehouse fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Brak stanów magazynowych</h5>
+                        <p class="text-muted">
+                            {% if search_query or location_filter %}
+                                Nie znaleziono stanów magazynowych spełniających kryteria wyszukiwania.
+                            {% else %}
+                                Brak stanów magazynowych w systemie.
+                            {% endif %}
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statystyki -->
+{% if page_obj %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Statystyki
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h4 class="text-primary">{{ page_obj.paginator.count }}</h4>
+                        <small class="text-muted">Wszystkie pozycje</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-success">
+                            {% with total_quantity=page_obj|length %}
+                                {{ total_quantity }}
+                            {% endwith %}
+                        </h4>
+                        <small class="text-muted">Produkty z zapasami</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-warning">
+                            {% with reserved_count=page_obj|length %}
+                                {{ reserved_count }}
+                            {% endwith %}
+                        </h4>
+                        <small class="text-muted">Zarezerwowane</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-info">
+                            {% with locations=page_obj|length %}
+                                {{ locations }}
+                            {% endwith %}
+                        </h4>
+                        <small class="text-muted">Lokalizacje</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %} 

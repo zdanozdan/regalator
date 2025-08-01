@@ -1,0 +1,193 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Zamówienia ZK - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-shopping-cart me-2"></i>Zamówienia ZK
+            </h1>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Numer ZK lub nazwa klienta">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="status" class="form-label">Status</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="">Wszystkie</option>
+                            {% for status_code, status_name in status_choices %}
+                                <option value="{{ status_code }}" {% if status_filter == status_code %}selected{% endif %}>
+                                    {{ status_name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i class="fas fa-search me-1"></i>Szukaj
+                            </button>
+                            <a href="{% url 'wms:order_list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-1"></i>Wyczyść
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista zamówień -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Lista zamówień
+                    {% if page_obj %}
+                        <span class="badge bg-secondary ms-2">{{ page_obj.paginator.count }}</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Numer ZK</th>
+                                    <th>Klient</th>
+                                    <th>Data zamówienia</th>
+                                    <th>Status</th>
+                                    <th>Wartość</th>
+                                    <th>Pozycje</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for order in page_obj %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ order.order_number }}</strong>
+                                    </td>
+                                    <td>
+                                        <div>{{ order.customer_name }}</div>
+                                        <small class="text-muted">{{ order.customer_address|truncatechars:50 }}</small>
+                                    </td>
+                                    <td>{{ order.order_date|date:"d.m.Y H:i" }}</td>
+                                    <td>
+                                        <span class="badge status-{{ order.status }}">
+                                            {% if order.status == 'pending' %}
+                                                <i class="fas fa-clock me-1"></i>Oczekujące
+                                            {% elif order.status == 'in_progress' %}
+                                                <i class="fas fa-cogs me-1"></i>W kompletacji
+                                            {% elif order.status == 'completed' %}
+                                                <i class="fas fa-check me-1"></i>Zrealizowane
+                                            {% elif order.status == 'partially_completed' %}
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo zrealizowane
+                                            {% elif order.status == 'cancelled' %}
+                                                <i class="fas fa-times me-1"></i>Anulowane
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>{{ order.total_value|floatformat:2 }} zł</td>
+                                    <td>
+                                        <span class="badge bg-info">{{ order.items.count }}</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'wms:order_detail' order.id %}" 
+                                               class="btn btn-sm btn-outline-primary" title="Szczegóły">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if order.status == 'pending' %}
+                                                <a href="{% url 'wms:create_picking_order' order.id %}" 
+                                                   class="btn btn-sm btn-outline-success" title="Utwórz RegOut">
+                                                    <i class="fas fa-clipboard-list"></i>
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginacja -->
+                    {% if page_obj.has_other_pages %}
+                        <nav aria-label="Nawigacja stron">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Brak zamówień</h5>
+                        <p class="text-muted">
+                            {% if search_query or status_filter %}
+                                Nie znaleziono zamówień spełniających kryteria wyszukiwania.
+                            {% else %}
+                                Brak zamówień w systemie.
+                            {% endif %}
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

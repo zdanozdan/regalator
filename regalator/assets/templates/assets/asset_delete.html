@@ -1,0 +1,119 @@
+{% extends 'assets/base.html' %}
+
+{% block title %}Usuń {{ asset.title }} - Asset Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-trash me-2"></i>Usuń Asset
+            </h1>
+            <a href="{% url 'assets:asset_detail' asset.slug %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Powrót
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Potwierdź usunięcie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <h6 class="alert-heading">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Uwaga!
+                    </h6>
+                    <p class="mb-0">
+                        Ta operacja jest nieodwracalna. Po usunięciu assetu, plik zostanie trwale usunięty z serwera.
+                    </p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        {% if asset.file_type == 'image' %}
+                            <img src="{{ asset.file.url }}" class="img-fluid rounded" alt="{{ asset.title }}">
+                        {% else %}
+                            <div class="bg-light p-4 rounded text-center">
+                                {% if asset.file_type == 'pdf' %}
+                                    <i class="fas fa-file-pdf fa-3x text-danger"></i>
+                                {% elif asset.file_type == 'document' %}
+                                    <i class="fas fa-file-word fa-3x text-primary"></i>
+                                {% elif asset.file_type == 'video' %}
+                                    <i class="fas fa-file-video fa-3x text-warning"></i>
+                                {% elif asset.file_type == 'audio' %}
+                                    <i class="fas fa-file-audio fa-3x text-success"></i>
+                                {% else %}
+                                    <i class="fas fa-file fa-3x text-muted"></i>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-8">
+                        <h5>{{ asset.title }}</h5>
+                        {% if asset.description %}
+                            <p class="text-muted">{{ asset.description }}</p>
+                        {% endif %}
+                        
+                        <dl class="row">
+                            <dt class="col-sm-4">Typ:</dt>
+                            <dd class="col-sm-8">
+                                {% if asset.file_type == 'image' %}
+                                    <span class="badge bg-primary">Obraz</span>
+                                {% elif asset.file_type == 'pdf' %}
+                                    <span class="badge bg-danger">PDF</span>
+                                {% elif asset.file_type == 'document' %}
+                                    <span class="badge bg-info">Dokument</span>
+                                {% elif asset.file_type == 'video' %}
+                                    <span class="badge bg-warning">Wideo</span>
+                                {% elif asset.file_type == 'audio' %}
+                                    <span class="badge bg-success">Audio</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inne</span>
+                                {% endif %}
+                            </dd>
+                            
+                            <dt class="col-sm-4">Rozmiar:</dt>
+                            <dd class="col-sm-8">{{ asset.file_size }}</dd>
+                            
+                            <dt class="col-sm-4">Dodane:</dt>
+                            <dd class="col-sm-8">{{ asset.uploaded_at|date:"d.m.Y H:i" }}</dd>
+                            
+                            <dt class="col-sm-4">Dodane przez:</dt>
+                            <dd class="col-sm-8">{{ asset.uploaded_by.username }}</dd>
+                        </dl>
+                        
+                        {% if asset.tags.all %}
+                            <div class="mb-3">
+                                <strong>Tagi:</strong><br>
+                                {% for tag in asset.tags.all %}
+                                    <span class="badge tag-badge" style="background-color: {{ tag.color }};">
+                                        {{ tag.name }}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <form method="post" class="mt-4">
+                    {% csrf_token %}
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'assets:asset_detail' asset.slug %}" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i>Anuluj
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash me-1"></i>Usuń na zawsze
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

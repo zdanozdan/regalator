@@ -1,0 +1,527 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Produkty - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-box me-2"></i>Produkty
+            </h1>
+        </div>
+    </div>
+</div>
+
+<!-- Wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3" id="search-form">
+                    <div class="col-md-3">
+                        <label for="search" class="form-label">Wyszukaj produkt</label>
+                        <input type="text" class="form-control" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Nazwa, kod lub kod kreskowy produktu">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="group" class="form-label">Grupa</label>
+                        <select class="form-control" id="group" name="group">
+                            <option value="">Wszystkie grupy</option>
+                            <option value="no_group" {% if group_filter == 'no_group' %}selected{% endif %}>
+                                Bez grupy
+                            </option>
+                            {% for group in groups %}
+                                <option value="{{ group.id }}" {% if group_filter == group.id|stringformat:"s" %}selected{% endif %}>
+                                    {{ group.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sync" class="form-label">Status synchronizacji</label>
+                        <select class="form-control" id="sync" name="sync">
+                            <option value="">Wszystkie</option>
+                            <option value="needs_sync" {% if sync_filter == 'needs_sync' %}selected{% endif %}>
+                                Wymaga synchronizacji
+                            </option>
+                            <option value="synced" {% if sync_filter == 'synced' %}selected{% endif %}>
+                                Zsynchronizowane
+                            </option>
+                            <option value="not_synced" {% if sync_filter == 'not_synced' %}selected{% endif %}>
+                                Nie zsynchronizowane
+                            </option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="subiekt" class="form-label">ID Subiekt</label>
+                        <input type="text" class="form-control" id="subiekt" name="subiekt" 
+                               value="{{ subiekt_filter }}" placeholder="Wprowadź ID Subiekt">
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Przyciski wyszukiwania -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-center">
+            <button type="submit" form="search-form" class="btn btn-primary btn-sm me-2">
+                <i class="fas fa-search me-1"></i>Szukaj
+            </button>
+            <a href="{% url 'wms:product_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-times me-1"></i>Wyczyść
+            </a>
+        </div>
+    </div>
+</div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista produktów -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Lista produktów
+                    {% if page_obj %}
+                        <span class="badge bg-secondary ms-2">{{ page_obj.paginator.count }}</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID Subiekt</th>
+                                    <th>Nazwa</th>
+                                    <th>Grupa</th>
+                                    <th>Kod kreskowy</th>
+                                    <th>Stan WMS</th>
+                                    <th>Stan Subiekt</th>
+                                    <th>Różnica</th>
+                                    <th>Status</th>
+                                    <th>Jednostka</th>
+                                    <th>Menu</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in page_obj %}
+                                <tr id="product-row-{{ product.id }}">
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            <code>{{ product.subiekt_id }}</code>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div>{{ product.name }}</div>
+                                        {% if product.description %}
+                                            <small class="text-muted">{{ product.description|truncatechars:50 }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if product.groups.all %}
+                                            {% for group in product.groups.all %}
+                                                <span class="badge me-1" style="background-color: #6c757d; color: white;">
+                                                    {{ group.name }}
+                                                </span>
+                                            {% endfor %}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <code>{{ product.barcode }}</code>
+                                    </td>
+                                    <td>
+                                        <span class="fw-bold">{{ product.total_stock|floatformat:2 }}</span>
+                                    </td>
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            <span class="fw-bold">{{ product.subiekt_stock|floatformat:2 }}</span>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            {% if product.stock_difference > 0 %}
+                                                <span class="text-success fw-bold">+{{ product.stock_difference|floatformat:2 }}</span>
+                                            {% elif product.stock_difference < 0 %}
+                                                <span class="text-danger fw-bold">{{ product.stock_difference|floatformat:2 }}</span>
+                                            {% else %}
+                                                <span class="text-success">✓</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if product.subiekt_id %}
+                                            {% if product.needs_sync %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-exclamation-triangle me-1"></i>Wymaga sync
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check me-1"></i>Zsynchronizowany
+                                                </span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-times me-1"></i>Nie zsync
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ product.unit }}</td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                    type="button" 
+                                                    data-bs-toggle="dropdown" 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-cogs"></i>
+                                            </button>
+                                            <ul class="dropdown-menu" style="z-index: 9999;">
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       onclick="copyToClipboard('{{ product.barcode }}'); return false;">
+                                                        <i class="fas fa-barcode me-2"></i>Kopiuj kod kreskowy
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_list' %}?product={{ product.code }}">
+                                                        <i class="fas fa-warehouse me-2"></i>Pokaż stany magazynowe
+                                                    </a>
+                                                </li>
+                                                {% if product.subiekt_id %}
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       hx-post="{% url 'wms:htmx_sync_product' product.id %}"
+                                                       hx-target="#product-row-{{ product.id }}"
+                                                       hx-swap="outerHTML">
+                                                        <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       onclick="showProductDetails('{{ product.id }}'); return false;">
+                                                        <i class="fas fa-info-circle me-2"></i>Szczegóły produktu
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginacja -->
+                    {% if page_obj.has_other_pages %}
+                        <nav aria-label="Nawigacja stron">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if sync_filter %}&sync={{ sync_filter }}{% endif %}{% if group_filter %}&group={{ group_filter }}{% endif %}{% if subiekt_filter %}&subiekt={{ subiekt_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if sync_filter %}&sync={{ sync_filter }}{% endif %}{% if group_filter %}&group={{ group_filter }}{% endif %}{% if subiekt_filter %}&subiekt={{ subiekt_filter }}{% endif %}">
+                                            <i class="fas fa-angle-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if sync_filter %}&sync={{ sync_filter }}{% endif %}{% if group_filter %}&group={{ group_filter }}{% endif %}{% if subiekt_filter %}&subiekt={{ subiekt_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if sync_filter %}&sync={{ sync_filter }}{% endif %}{% if group_filter %}&group={{ group_filter }}{% endif %}{% if subiekt_filter %}&subiekt={{ subiekt_filter }}{% endif %}">
+                                            <i class="fas fa-angle-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if sync_filter %}&sync={{ sync_filter }}{% endif %}{% if group_filter %}&group={{ group_filter }}{% endif %}{% if subiekt_filter %}&subiekt={{ subiekt_filter }}{% endif %}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-box fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Brak produktów</h5>
+                        <p class="text-muted">
+                            {% if search_query %}
+                                Nie znaleziono produktów spełniających kryteria wyszukiwania.
+                            {% else %}
+                                Brak produktów w systemie.
+                            {% endif %}
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal szczegółów produktu -->
+<div class="modal fade" id="productDetailsModal" tabindex="-1" aria-labelledby="productDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productDetailsModalLabel">
+                    <i class="fas fa-box me-2"></i>Szczegóły produktu
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Podstawowe informacje</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Nazwa:</strong></td>
+                                <td id="productName"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Kod:</strong></td>
+                                <td id="productCode"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Kod kreskowy:</strong></td>
+                                <td id="productBarcode"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Jednostka:</strong></td>
+                                <td id="productUnit"></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Synchronizacja z Subiektem</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>ID Subiekt:</strong></td>
+                                <td id="productSubiektId"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Stan Subiekt:</strong></td>
+                                <td id="productSubiektStock"></td>
+                            </tr>
+
+                            <tr>
+                                <td><strong>Ostatnia sync:</strong></td>
+                                <td id="productLastSync"></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Podsumowanie stanów WMS</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Łączny stan WMS:</strong></td>
+                                <td id="productTotalStock"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Różnica (WMS - Subiekt):</strong></td>
+                                <td id="productDifference"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Liczba lokalizacji:</strong></td>
+                                <td id="productLocationsCount"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status synchronizacji:</strong></td>
+                                <td id="productSyncStatus"></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Statystyki</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Największy stan:</strong></td>
+                                <td id="productMaxStock"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Najmniejszy stan:</strong></td>
+                                <td id="productMinStock"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Średni stan:</strong></td>
+                                <td id="productAvgStock"></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Zarezerwowane:</strong></td>
+                                <td id="productReservedStock"></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-12">
+                        <h6 class="fw-bold">Szczegółowe stany w lokalizacjach</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped" id="productLocationsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Lokalizacja</th>
+                                        <th>Nazwa</th>
+                                        <th>Stan</th>
+                                        <th>Zarezerwowane</th>
+                                        <th>Dostępne</th>
+                                        <th>Ostatnia aktualizacja</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="productLocationsBody">
+                                    <!-- Dane będą wstawiane przez JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zamknij</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        // Pokaż powiadomienie
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-success alert-dismissible fade show position-fixed';
+        notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999;';
+        notification.innerHTML = `
+            <i class="fas fa-check me-2"></i>Skopiowano kod kreskowy: ${text}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(notification);
+        
+        // Usuń powiadomienie po 3 sekundach
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    });
+}
+
+
+
+function showProductDetails(productId) {
+    // Pobierz dane produktu przez AJAX
+    fetch(`/api/product-details/${productId}/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Pokaż modal z szczegółami
+                const modal = new bootstrap.Modal(document.getElementById('productDetailsModal'));
+                
+                // Podstawowe informacje
+                document.getElementById('productName').textContent = data.product.name;
+                document.getElementById('productCode').textContent = data.product.code;
+                document.getElementById('productBarcode').textContent = data.product.barcode;
+                document.getElementById('productUnit').textContent = data.product.unit;
+                
+                // Synchronizacja z Subiektem
+                document.getElementById('productSubiektId').textContent = data.product.subiekt_id || '-';
+                document.getElementById('productSubiektStock').textContent = data.product.subiekt_stock.toFixed(2);
+
+                document.getElementById('productLastSync').textContent = data.product.last_sync_date || 'Nigdy';
+                
+                // Podsumowanie stanów WMS
+                document.getElementById('productTotalStock').textContent = data.product.total_stock.toFixed(2);
+                document.getElementById('productDifference').textContent = data.product.stock_difference.toFixed(2);
+                document.getElementById('productLocationsCount').textContent = data.product.locations_count;
+                
+                // Status synchronizacji
+                const syncStatus = document.getElementById('productSyncStatus');
+                if (data.product.subiekt_id) {
+                    if (data.product.needs_sync) {
+                        syncStatus.innerHTML = '<span class="badge bg-warning"><i class="fas fa-exclamation-triangle me-1"></i>Wymaga synchronizacji</span>';
+                    } else {
+                        syncStatus.innerHTML = '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Zsynchronizowany</span>';
+                    }
+                } else {
+                    syncStatus.innerHTML = '<span class="badge bg-secondary"><i class="fas fa-times me-1"></i>Nie zsynchronizowany</span>';
+                }
+                
+                // Statystyki
+                document.getElementById('productMaxStock').textContent = data.product.max_stock ? data.product.max_stock.toFixed(2) : '-';
+                document.getElementById('productMinStock').textContent = data.product.min_stock ? data.product.min_stock.toFixed(2) : '-';
+                document.getElementById('productAvgStock').textContent = data.product.avg_stock ? data.product.avg_stock.toFixed(2) : '-';
+                document.getElementById('productReservedStock').textContent = data.product.reserved_stock.toFixed(2);
+                
+                // Szczegółowe stany w lokalizacjach
+                const locationsBody = document.getElementById('productLocationsBody');
+                locationsBody.innerHTML = '';
+                
+                if (data.product.locations && data.product.locations.length > 0) {
+                    data.product.locations.forEach(location => {
+                        const row = document.createElement('tr');
+                        const available = location.quantity - location.reserved_quantity;
+                        row.innerHTML = `
+                            <td><code>${location.code}</code></td>
+                            <td>${location.name}</td>
+                            <td><strong>${location.quantity.toFixed(2)}</strong></td>
+                            <td>${location.reserved_quantity.toFixed(2)}</td>
+                            <td>${available.toFixed(2)}</td>
+                            <td>${location.updated_at}</td>
+                        `;
+                        locationsBody.appendChild(row);
+                    });
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = '<td colspan="6" class="text-center text-muted">Brak stanów w lokalizacjach</td>';
+                    locationsBody.appendChild(row);
+                }
+                
+                modal.show();
+            } else {
+                alert('Błąd podczas pobierania szczegółów produktu');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Błąd podczas pobierania szczegółów produktu');
+        });
+}
+</script>
+{% endblock %} 

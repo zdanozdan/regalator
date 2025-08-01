@@ -1,0 +1,42 @@
+# Django and core dependencies
+Django>=4.2.0,<5.0.0
+django-crispy-forms>=2.0
+crispy-bootstrap5>=0.7
+
+# Database and ODBC
+pyodbc>=4.0.39
+django-mssql-backend>=2.8.1
+
+# Image processing
+Pillow>=10.0.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-django>=4.5.0
+coverage>=7.3.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+isort>=5.12.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Production
+gunicorn>=21.0.0
+whitenoise>=6.5.0
+
+# Optional: PostgreSQL support
+# psycopg2-binary>=2.9.0
+
+# Optional: Redis for caching
+# redis>=4.5.0
+# django-redis>=5.3.0
+
+# Optional: Celery for background tasks
+# celery>=5.3.0
+# django-celery-beat>=2.5.0
+
+# Optional: Monitoring
+# sentry-sdk>=1.30.0 
