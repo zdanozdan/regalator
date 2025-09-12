@@ -1,0 +1,171 @@
+<div class="row">
+    <div class="col-md-6">
+        <h6 class="fw-bold">Podstawowe informacje</h6>
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Nazwa:</strong></td>
+                <td>{{ product.name }}</td>
+            </tr>
+            <tr>
+                <td><strong>Kod:</strong></td>
+                <td>{{ product.code }}</td>
+            </tr>
+            <tr>
+                <td><strong>Jednostka:</strong></td>
+                <td>{{ product.unit }}</td>
+            </tr>
+            {% if product.description %}
+            <tr>
+                <td><strong>Opis:</strong></td>
+                <td>{{ product.description }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+    <div class="col-md-6">
+        <h6 class="fw-bold">Synchronizacja z Subiektem</h6>
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Subiekt ID:</strong></td>
+                <td>{{ product.subiekt_id|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Stan w Subiekcie:</strong></td>
+                <td>{{ product.subiekt_stock|floatformat:2|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Stan zarezerwowany:</strong></td>
+                <td>{{ product.subiekt_stock_reserved|floatformat:2|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Ostatnia synchronizacja:</strong></td>
+                <td>{{ product.last_sync_date|date:"d.m.Y H:i"|default:"Nigdy" }}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<hr>
+
+<div class="row">
+    <div class="col-md-6">
+        <h6 class="fw-bold">Podsumowanie stanów WMS</h6>
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Łączny stan:</strong></td>
+                <td>{{ total_stock|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <td><strong>Różnica z Subiektem:</strong></td>
+                <td>
+                    {% if stock_difference > 0 %}
+                        <span class="text-success">+{{ stock_difference|floatformat:2 }}</span>
+                    {% elif stock_difference < 0 %}
+                        <span class="text-danger">{{ stock_difference|floatformat:2 }}</span>
+                    {% else %}
+                        <span class="text-muted">0.00</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Lokalizacje:</strong></td>
+                <td>{{ locations_count }}</td>
+            </tr>
+        </table>
+    </div>
+    <div class="col-md-6">
+        <h6 class="fw-bold">Statystyki</h6>
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Największy stan:</strong></td>
+                <td>{{ max_stock|floatformat:2|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Najmniejszy stan:</strong></td>
+                <td>{{ min_stock|floatformat:2|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Średni stan:</strong></td>
+                <td>{{ avg_stock|floatformat:2|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td><strong>Zarezerwowane:</strong></td>
+                <td>{{ total_reserved|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<hr>
+
+<div class="row">
+    <div class="col-md-6">
+        <h6 class="fw-bold">Status synchronizacji</h6>
+        {% if product.subiekt_id %}
+            {% if product.needs_sync %}
+                <span class="badge bg-warning">
+                    <i class="fas fa-exclamation-triangle me-1"></i>Wymaga synchronizacji
+                </span>
+            {% else %}
+                <span class="badge bg-success">
+                    <i class="fas fa-check me-1"></i>Zsynchronizowany
+                </span>
+            {% endif %}
+        {% else %}
+            <span class="badge bg-secondary">
+                <i class="fas fa-times me-1"></i>Nie zsynchronizowany
+            </span>
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <h6 class="fw-bold">Grupy produktów</h6>
+        {% if product.groups.all %}
+            <ul class="list-unstyled">
+                {% for group in product.groups.all %}
+                <li>
+                    <span class="badge" style="background-color: {{ group.color }};">
+                        {{ group.name }}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">Brak przypisanych grup</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if stocks %}
+<hr>
+<div class="row">
+    <div class="col-12">
+        <h6 class="fw-bold">Stany w lokalizacjach</h6>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>Lokalizacja</th>
+                        <th>Nazwa</th>
+                        <th>Stan</th>
+                        <th>Zarezerwowane</th>
+                        <th>Dostępne</th>
+                        <th>Ostatnia aktualizacja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in stocks %}
+                    <tr>
+                        <td><code>{{ stock.location.code }}</code></td>
+                        <td>{{ stock.location.name }}</td>
+                        <td><strong>{{ stock.quantity|floatformat:2 }}</strong></td>
+                        <td>{{ stock.reserved_quantity|floatformat:2 }}</td>
+                        <td>{{ stock.available_quantity|floatformat:2 }}</td>
+                        <td>{{ stock.updated_at|date:"d.m.Y H:i" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %} 

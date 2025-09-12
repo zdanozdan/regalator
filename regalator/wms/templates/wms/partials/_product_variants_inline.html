@@ -1,0 +1,106 @@
+
+{% if size_color_variants %}
+<tr class="product-variants-row" id="product-variants-{{ product.id }}" hx-swap="outerHTML" hx-get="{% url 'wms:htmx_product_variants' product.id %}" hx-trigger="product-variants-updated from:body">
+    <td colspan="11" class="p-0">
+        <div class="card m-2">
+            <div class="card-header bg-light py-2">
+                <h6 class="mb-0">
+                    <i class="fas fa-tags me-2"></i>Kolory i rozmiary
+                    <button class="btn btn-sm btn-outline-secondary float-end" 
+                            onclick="this.closest('.product-variants-row').innerHTML = ''">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                <div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>kolor</th>
+                                    <th>rozmiar</th>
+                                    <th>Stan</th>
+                                    <th class="text-end">Akcja</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for variant in size_color_variants %}
+                                <tr>
+                                    <td>{{ variant.variants.color|default:'-' }}</td>
+                                    <td>{{ variant.variants.size|default:'-' }}</td>
+                                    <td>{{ variant.total_stock|default:'-' }}</td>
+                                    <td class="text-end">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                <i class="fas fa-cogs"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end" style="z-index: 9999;">
+                                                <li>
+                                                    <a class="dropdown-item" href="#"
+                                                       hx-get="{% url 'wms:htmx_edit_size_color_modal' product.id variant.id %}"
+                                                       hx-swap="none"
+                                                       hx-trigger="click">
+                                                        <i class="fas fa-edit me-2"></i>Edycja
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#"
+                                                       hx-post="{% url 'wms:htmx_delete_variant' variant.id %}"
+                                                       hx-confirm="Czy na pewno chcesz usunąć wariant '{{ variant.variants.size|default:'-' }} - {{ variant.variants.color|default:'-' }}'?"
+                                                       hx-target="#product-variants-{{ product.id }}"
+                                                       hx-swap="outerHTML">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="mt-3 text-end">
+                    <a class="btn btn-sm btn-primary"
+                       hx-get="{% url 'wms:htmx_add_size_color_modal' product.id %}"
+                       hx-swap="none"
+                       hx-trigger="click">
+                        <i class="fas fa-plus me-1"></i>Dodaj rozmiar i kolor
+                    </a>
+                </div>
+            </div>
+        </div>
+    </td>
+</tr>
+{% else %}
+<tr class="product-variants-row" id="product-variants-{{ product.id }}" hx-swap="outerHTML" hx-get="{% url 'wms:htmx_product_variants' product.id %}" hx-trigger="product-variants-updated from:body">
+    <td colspan="11" class="p-0">
+        <div class="card m-2">
+            <div class="card-header bg-light py-2">
+                <h6 class="mb-0">
+                    <i class="fas fa-tags me-2"></i>Kolory i rozmiary
+                    <button class="btn btn-sm btn-outline-secondary float-end" 
+                            onclick="this.closest('.product-variants-row').innerHTML = ''">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </h6>
+            </div>
+            <div class="card-body text-center py-3">
+                <i class="fas fa-tags fa-2x text-muted mb-2"></i>
+                <p class="text-muted mb-0">Brak wariantów dla tego produktu</p>
+                <small class="text-muted">Kliknij "Dodaj rozmiar i kolor" w menu produktu, aby utworzyć warianty</small>
+                <div class="mt-3">
+                    <a class="btn btn-sm btn-primary"
+                       hx-get="{% url 'wms:htmx_add_size_color_modal' product.id %}"
+                       hx-swap="none"
+                       hx-trigger="click">
+                        <i class="fas fa-plus me-1"></i>Dodaj rozmiar i kolor
+                    </a>
+                </div>
+            </div>
+        </div>
+    </td>
+</tr>
+{% endif %}

@@ -1,0 +1,171 @@
+{% load widget_tweaks %}
+
+{% if error %}
+<div class="alert alert-danger" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+{% endif %}
+
+<form class="product-size-color-form" hx-post="{{ action }}" hx-swap="outerHTML">
+    {% csrf_token %}
+    
+    <div class="mb-3">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Produkt:</strong> {{ product.name }} ({{ product.code }})
+        </div>
+    </div>
+    
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label for="{{ form.size.id_for_label }}" class="form-label">{{ form.size.label }}</label>
+            {% render_field form.size %}
+            {% if form.size.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.size.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="col-md-6">
+            <label for="{{ form.color.id_for_label }}" class="form-label">{{ form.color.label }}</label>
+            {% render_field form.color %}
+            {% if form.color.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.color.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header py-2 d-flex align-items-center justify-content-between">
+                    <h6 class="mb-0"><i class="fas fa-warehouse me-2"></i>{% if mode == 'product' %}Stany magazynowe produktu{% else %}Stany magazynowe wariantu{% endif %}</h6>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="addStockRow()">
+                        <i class="fas fa-plus me-1"></i>Dodaj wiersz
+                    </button>
+                </div>
+                <div class="card-body">
+                    {{ stock_formset.management_form }}
+
+                    <div id="stock-formset-rows" class="row g-3">
+                        {% for stock_form in stock_formset.forms %}
+                        <div class="col-12" data-form-row>
+                            {{ stock_form.id }}
+                            {% if stock_form.non_field_errors and not stock_form.DELETE.value %}
+                            <div class="alert alert-danger py-1 mb-2">
+                                {% for error in stock_form.non_field_errors %}
+                                <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-7">
+                                    {% if forloop.first %}
+                                    <label class="form-label" for="{{ stock_form.location.id_for_label }}">{{ stock_form.location.label }}</label>
+                                    {% endif %}
+                                    {% render_field stock_form.location %}
+                                    {% if stock_form.location.errors and not stock_form.DELETE.value %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in stock_form.location.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-3">
+                                    {% if forloop.first %}
+                                    <label class="form-label" for="{{ stock_form.quantity.id_for_label }}">{{ stock_form.quantity.label }}</label>
+                                    {% endif %}
+                                    {% render_field stock_form.quantity %}
+                                    {% if stock_form.quantity.errors and not stock_form.DELETE.value %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in stock_form.quantity.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    {% if stock_formset.can_delete %}
+                                        <input type="checkbox" class="d-none" name="{{ stock_form.prefix }}-DELETE" id="{{ stock_form.prefix }}-DELETE" {% if stock_form.DELETE.value %}checked{% endif %}>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="markDelete(this)">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <template id="stock-empty-form">
+                        <div class="col-12" data-form-row>
+                            {{ stock_formset.empty_form.id }}
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-7">
+                                    {% render_field stock_formset.empty_form.location %}
+                                </div>
+                                <div class="col-md-3">
+                                    {% render_field stock_formset.empty_form.quantity %}
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    {% if stock_formset.can_delete %}
+                                        <input type="checkbox" class="d-none" name="{{ stock_formset.empty_form.prefix }}-DELETE" id="{{ stock_formset.empty_form.prefix }}-DELETE">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="markDelete(this)">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+        
+        {% if form.non_field_errors %}
+        <div class="col-12">
+            <div class="alert alert-danger">
+                {% for error in form.non_field_errors %}
+                    {{ error }}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="col-12">
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    {% if mode == 'product' or variant %}
+                    <i class="fas fa-save me-1"></i>Zapisz zmiany
+                    {% else %}
+                    <i class="fas fa-plus me-1"></i>Dodaj wariant
+                    {% endif %}
+                </button>
+                <button type="button" class="btn btn-secondary" 
+                        data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Anuluj
+                </button>
+                {% if form.instance.id %}
+                <div class="ms-auto d-flex gap-2">
+                    <a hx-get="{% url 'wms:htmx_edit_product_codes' form.instance.id %}" hx-swap="none" class="btn btn-primary">
+                        <i class="fas fa-barcode me-1"></i>Kody kreskowe
+                    </a>
+                    <a href="{% url 'wms:stock_list' %}?product_id={{ form.instance.id }}" class="btn btn-primary">
+                        <i class="fas fa-warehouse me-1"></i>Stany magazynowe
+                    </a>
+                </div>
+                {% else %}
+                <div class="ms-auto">
+                    <button type="button" class="btn btn-secondary disabled" disabled title="Zapisz produkt, aby dodać kod">
+                        <i class="fas fa-barcode me-1"></i>Kody kreskowe
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</form>

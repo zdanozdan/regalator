@@ -1,0 +1,107 @@
+{% load widget_tweaks %}
+
+<div class="location-photos-container">    
+    <!-- Photo Preview -->
+    <div class="row mb-4">
+        <div class="col-12">
+            {% if photo %}
+                <div class="row g-3">
+                    <div class="col-md-4 col-lg-3">
+                        <div class="card h-100">
+                            <div class="position-relative">
+                                <img src="{{ photo.image.url }}" 
+                                     class="card-img-top" 
+                                     alt="{{ photo.title|default:location.name }}"
+                                     style="height: 200px; object-fit: cover;">
+                                
+                                {% if photo.is_primary %}
+                                    <div class="position-absolute top-0 start-0 m-2">
+                                        <span class="badge bg-primary">
+                                            <i class="fas fa-star me-1"></i>Główne
+                                        </span>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="card-body">
+                                {% if photo.description %}
+                                    <p class="card-text small text-muted">{{ photo.description|truncatechars:100 }}</p>
+                                {% endif %}
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar me-1"></i>{{ photo.created_at|date:"d.m.Y H:i" }}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Edit Form Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-edit me-2"></i>Edytuj zdjęcie
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <form hx-post="{% url 'wms:htmx_location_photo_update' location.id %}" 
+                          hx-target="closest .location-photos-container"
+                          hx-vals='{"photo_id": "{{ photo.id }}"}'
+                          hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <input type="hidden" name="photo_id" value="{{ photo.id }}">
+
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="{{ upload_form.description.id_for_label }}" class="form-label">{{ upload_form.description.label }}</label>
+                                {% render_field upload_form.description class="form-control" placeholder="Wprowadź opis zdjęcia" %}
+                                {% if upload_form.description.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in upload_form.description.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    {% render_field upload_form.is_primary class="form-check-input" type="checkbox" role="switch" %}
+                                    <label class="form-check-label" for="{{ upload_form.is_primary.id_for_label }}">
+                                        {{ upload_form.is_primary.label }}
+                                    </label>
+                                    {% if upload_form.is_primary.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in upload_form.is_primary.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Zapisz
+                                </button>
+                                <button type="button" class="btn btn-secondary ms-2" 
+                                        hx-get="{% url 'wms:htmx_location_photos' location.id %}"
+                                        hx-target="closest .location-photos-container">
+                                    <i class="fas fa-times me-1"></i>Anuluj
+                                </button>
+                                <button type="button" class="btn btn-outline-primary ms-2" 
+                                        hx-get="{% url 'wms:htmx_location_photos' location.id %}"
+                                        hx-target="closest .location-photos-container">
+                                    <i class="fas fa-images me-1"></i>Powrót do galerii
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

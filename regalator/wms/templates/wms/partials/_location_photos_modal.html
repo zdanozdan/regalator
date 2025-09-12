@@ -1,0 +1,202 @@
+{% load static %}
+
+<div class="location-photos-container">    
+    <!-- Photo Gallery -->
+    <div class="row mb-4">
+        <div class="col-12">
+            {% if photos %}
+                <div class="row g-3">
+                    {% for photo in photos %}
+                        <div class="col-md-4 col-lg-3">
+                            <div class="card h-100">
+                                <div class="position-relative">
+                                    <img src="{{ photo.image.url }}" 
+                                         class="card-img-top" 
+                                         alt="{{ photo.title|default:location.name }}"
+                                         style="height: 200px; object-fit: cover;">
+                                    
+                                    {% if photo.is_primary %}
+                                        <div class="position-absolute top-0 start-0 m-2">
+                                            <span class="badge bg-primary">
+                                                <i class="fas fa-star me-1"></i>Główne
+                                            </span>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    <div class="position-absolute top-0 end-0 m-2">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-dark dropdown-toggle photo-dropdown-btn" 
+                                                    type="button" 
+                                                    data-bs-toggle="dropdown" 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-ellipsis-v"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                {% if not photo.is_primary %}
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       hx-post="{% url 'wms:htmx_location_photo_set_primary' location.id %}"
+                                                       hx-vals='{"photo_id": "{{ photo.id }}"}'
+                                                       hx-target="closest .location-photos-container"
+                                                       hx-confirm="Ustawić jako zdjęcie główne?">
+                                                        <i class="fas fa-star me-2"></i>Ustaw jako główne
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       hx-target="closest .location-photos-container"
+                                                       hx-vals='{"photo_id": "{{ photo.id }}"}'
+                                                       hx-get="{% url 'wms:htmx_location_photo_update' location.id %}"
+                                                        <i class="fas fa-edit me-2"></i>Edytuj
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#" 
+                                                       hx-post="{% url 'wms:htmx_location_photo_delete' location.id %}"
+                                                       hx-vals='{"photo_id": "{{ photo.id }}"}'
+                                                       hx-target="closest .location-photos-container"
+                                                       hx-confirm="Czy na pewno chcesz usunąć to zdjęcie?">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    {% if photo.description %}
+                                        <p class="card-text small text-muted">{{ photo.description|truncatechars:100 }}</p>
+                                    {% endif %}
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar me-1"></i>{{ photo.created_at|date:"d.m.Y H:i" }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-images fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">Brak zdjęć</h5>
+                    <p class="text-muted">Ta lokalizacja nie ma jeszcze żadnych zdjęć.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-upload me-2"></i>Dodaj nowe zdjęcie
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <form hx-post="{% url 'wms:htmx_location_photo_upload' location.id %}" 
+                          hx-encoding="multipart/form-data"
+                          hx-target="closest .location-photos-container"
+                          hx-swap="outerHTML">
+                        {% csrf_token %}
+                        
+                        {% if upload_form.non_field_errors %}
+                            <div class="alert alert-danger" role="alert">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                {% for error in upload_form.non_field_errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        
+                        {% if upload_form.errors %}
+                            <div class="alert alert-danger" role="alert">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Błędy w formularzu:</strong>
+                                <ul class="mb-0 mt-2">
+                                    {% for field_name, errors in upload_form.errors.items %}
+                                        {% if field_name != '__all__' %}
+                                            {% for error in errors %}
+                                                <li><strong>{{ field_name|title }}:</strong> {{ error }}</li>
+                                            {% endfor %}
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                        
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ upload_form.image.id_for_label }}" class="form-label">{{ upload_form.image.label }}</label>
+                                {{ upload_form.image }}
+                                {% if upload_form.image.help_text %}
+                                    <div class="form-text">{{ upload_form.image.help_text }}</div>
+                                {% endif %}
+                                {% if upload_form.image.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in upload_form.image.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12">
+                                <label for="{{ upload_form.description.id_for_label }}" class="form-label">{{ upload_form.description.label }}</label>
+                                {{ upload_form.description }}
+                                {% if upload_form.description.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in upload_form.description.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    {{ upload_form.is_primary }}
+                                    <label class="form-check-label" for="{{ upload_form.is_primary.id_for_label }}">
+                                        {{ upload_form.is_primary.label }}
+                                    </label>
+                                    {% if upload_form.is_primary.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in upload_form.is_primary.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-upload me-1"></i>Prześlijzdjęcie
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" 
+                        hx-get="{% url 'wms:htmx_location_edit' location.id %}"
+                        hx-target="closest .location-photos-container"
+                        hx-swap="innerHTML">
+                    <i class="fas fa-edit me-2"></i>Edytuj lokalizację
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Zamknij
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

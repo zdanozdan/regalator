@@ -1,0 +1,400 @@
+{% extends 'wms/base.html' %}
+{% load partials %}
+{% load widget_tweaks %}
+
+{% block title %}Edytuj kody - {{ product.name }} - Regalator WMS{% endblock %}
+
+{% block extra_css %}
+<style>
+    #scanner-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    
+    #scanner-video {
+        width: 100%;
+        height: auto;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+    }
+    
+    .scanner-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 123, 255, 0.1);
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        pointer-events: none;
+    }
+    
+    .scanner-overlay::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 200px;
+        height: 100px;
+        border: 2px solid #fff;
+        border-radius: 8px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    }
+    
+    .code-item {
+        transition: all 0.3s ease;
+    }
+    
+    .code-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+
+    
+    .scanner-controls {
+        margin: 20px 0;
+        text-align: center;
+    }
+    
+    .scanner-status {
+        padding: 10px;
+        margin: 10px 0;
+        text-align: center;
+    }
+    
+    /* Dropdown styling */
+    .dropdown-menu {
+        min-width: 200px;
+    }
+    
+    .dropdown-item {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .dropdown-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .dropdown-item.text-danger:hover {
+        background-color: #f8d7da;
+        color: #721c24 !important;
+    }
+    
+    .btn-loading {
+        opacity: 0.7;
+        pointer-events: none;
+    }
+    
+    .btn-loading::after {
+        content: '';
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s ease-in-out infinite;
+        margin-left: 0.5em;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-qrcode me-2"></i>Edytuj kody produktu
+            </h1>
+            <a href="{% url 'wms:product_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót do listy
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Informacje o produkcie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-box me-2"></i>{{ product.name }}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Kod produktu:</strong> {{ product.code }}</p>
+                        <p><strong>Opis:</strong> {{ product.description|default:"Brak opisu" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Grupy:</strong> 
+                            {% if product.groups.all %}
+                                {% for group in product.groups.all %}
+                                    <span class="badge me-1" style="background-color: {{ group.color }};">{{ group.name }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">Brak grup</span>
+                            {% endif %}
+                        </p>
+                        <p><strong>Jednostka:</strong> {{ product.unit }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Skaner kodów -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-camera me-2"></i>Skaner kodów
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="scanner-controls">
+                    <button id="start-scanner" class="btn btn-primary me-2">
+                        <i class="fas fa-play me-2"></i>Uruchom skaner
+                    </button>
+                    <button id="stop-scanner" class="btn btn-danger me-2" style="display: none;">
+                        <i class="fas fa-stop me-2"></i>Zatrzymaj skaner
+                    </button>
+                </div>
+                
+                <div id="scanner-status" class="scanner-status alert alert-danger" style="display: none;">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <span id="status-text">Skaner zatrzymany</span>
+                </div>
+
+              
+                <div id="scanned-div" hx-trigger="code-scanned-inline from:body" hx-vals='{"code": "", "product_id": "{{ product.id }}"}' hx-swap="innerHTML" hx-post="{% url 'wms:htmx_add_code_inline' product.id %}">
+                    {% partialdef inline_scanned_div %}
+                    <div class="alert {% if success %}alert-success{% else %}alert-danger{% endif %}">
+                        <i class="fas fa-check me-2"></i>
+                        <span id="status-text">{{ message }}</span>
+                    </div>
+                    {% endpartialdef %}
+                </div>
+                
+                <div id="scanner-container" style="display: none;">
+                    <video id="scanner-video"></video>
+                    <div class="scanner-overlay"></div>
+                </div>
+                
+                <div id="scan-result" class="alert alert-success" style="display: none;">
+                    <i class="fas fa-check me-2"></i>
+                    <span id="result-text"></span>
+                    <button type="button" class="btn-close float-end" onclick="hideScanResult()"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista kodów -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Kody produktu
+                </h5>
+                <button class="btn btn-primary btn-sm"
+                        hx-get="{% url 'wms:htmx_add_code_modal' product.id %}"
+                        hx-swap="none">
+                    <i class="fas fa-plus me-2"></i>Dodaj kod ręcznie
+                </button>
+            </div>
+            <div class="card-body" id="product-codes-container" hx-trigger="product-codes-list from:body" hx-swap="innerHTML" hx-get="{% url 'wms:htmx_product_codes_list' product.id %}">
+                {% include 'wms/partials/_product_codes_list.html' %}
+            </div>
+        </div>
+    </div>
+</div>
+{% partialdef modal_add_barcode %}
+<form hx-post="{% url 'wms:htmx_add_code_modal' product.id %}" hx-swap="innerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="add">
+    <div class="modal-body">
+        <div class="mb-3">  
+            <label for="{{ form.code.id_for_label }}" class="form-label">{{ form.code.label }}</label>
+            {% render_field form.code class="form-control" placeholder="Wprowadź kod kreskowy lub QR" %}
+            {% if form.code.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.code.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            <label for="{{ form.code_type.id_for_label }}" class="form-label">{{ form.code_type.label }}</label>
+            {% render_field form.code_type class="form-control" %}
+            {% if form.code_type.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.code_type.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            <label for="{{ form.description.id_for_label }}" class="form-label">{{ form.description.label }}</label>
+            {% render_field form.description class="form-control" placeholder="Krótki opis kodu" %}
+            {% if form.description.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.description.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            <div class="form-check">
+                {% render_field form.is_primary class="form-check-input" %}
+                <label class="form-check-label" for="{{ form.is_primary.id_for_label }}">
+                    {{ form.is_primary.label }}
+                </label>
+            </div>
+            {% if form.is_primary.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.is_primary.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zamknij</button>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Dodaj kod
+        </button>
+    </div>
+</form>
+{% endpartialdef %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Barcode scanner functionality
+    let scannerActive = false;
+    let scanBuffer = '';
+    let scanTimeout = null;
+    
+    // DOM elements
+    let startScannerBtn, stopScannerBtn, scannerStatus, statusText, scanResult, resultText;
+    
+    // Start scanner
+    function startScanner() {
+        scannerActive = true;
+        scanBuffer = '';
+        
+        // Update UI
+        startScannerBtn.style.display = 'none';
+        stopScannerBtn.style.display = 'inline-block';
+        scannerStatus.style.display = 'block';
+        scannerStatus.className = 'scanner-status alert alert-success';
+        statusText.innerHTML = '<i class="fas fa-barcode me-2"></i>Skaner aktywny - zeskanuj kod kreskowy';
+    }
+    
+    // Stop scanner
+    function stopScanner() {
+        scannerActive = false;
+        scanBuffer = '';
+        
+        // Clear any pending timeout
+        if (scanTimeout) {
+            clearTimeout(scanTimeout);
+            scanTimeout = null;
+        }
+        
+        // Update UI
+        startScannerBtn.style.display = 'inline-block';
+        stopScannerBtn.style.display = 'none';
+        scannerStatus.style.display = 'block';
+        scannerStatus.className = 'scanner-status alert alert-danger';
+        statusText.innerHTML = '<i class="fas fa-stop me-2"></i>Skaner zatrzymany';
+    }
+    
+    // Handle keyboard input for barcode scanning
+    function handleKeyPress(event) {
+        // Handle Enter key (end of scan)
+        if (event.key === 'Enter') {
+            if (scanBuffer.length > 0) {
+                processScannedCode(scanBuffer);
+                scanBuffer = '';
+            }
+            return;
+        }
+        
+        // Handle backspace
+        if (event.key === 'Backspace') {
+            scanBuffer = scanBuffer.slice(0, -1);
+            return;
+        }
+        
+        // Add character to buffer (only printable characters)
+        if (event.key.length === 1 && event.key.charCodeAt(0) >= 32) {
+            scanBuffer += event.key;
+            
+            // Clear buffer after a delay (barcode scanners send data quickly)
+            if (scanTimeout) {
+                clearTimeout(scanTimeout);
+            }
+            scanTimeout = setTimeout(() => {
+                if (scanBuffer.length > 0) {
+                    processScannedCode(scanBuffer);
+                    scanBuffer = '';
+                }
+            }, 200); // 100ms delay to capture complete barcode
+        }
+    }
+    
+    // Process the scanned barcode
+    function processScannedCode(code) {
+        const scannedDiv = document.getElementById('scanned-div');
+
+        console.log('process');
+        
+        const currentVals = JSON.parse(scannedDiv.getAttribute('hx-vals') || '{}');
+        currentVals.code = code;
+        currentVals.scanner_active = scannerActive;
+        scannedDiv.setAttribute('hx-vals', JSON.stringify(currentVals));
+        htmx.trigger(scannedDiv, 'code-scanned-inline');
+    }
+    
+    // Initialize scanner when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get DOM elements
+        startScannerBtn = document.getElementById('start-scanner');
+        stopScannerBtn = document.getElementById('stop-scanner');
+        scannerStatus = document.getElementById('scanner-status');
+        statusText = document.getElementById('status-text');
+        scanResult = document.getElementById('scan-result');
+        resultText = document.getElementById('result-text');
+        
+        // Add event listeners
+        startScannerBtn.addEventListener('click', startScanner);
+        stopScannerBtn.addEventListener('click', stopScanner);
+        document.addEventListener('keydown', handleKeyPress);
+        
+        // Initialize scanner status
+        scannerStatus.style.display = 'block';
+    });
+</script>
+{% endblock %}

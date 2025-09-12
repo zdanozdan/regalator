@@ -1,0 +1,231 @@
+{% load widget_tweaks %}
+
+<form class="product-codes-form" hx-post="{% if editing_code %}{% url 'wms:htmx_edit_product_codes' product.id editing_code.id %}{% else %}{% url 'wms:htmx_edit_product_codes' product.id %}{% endif %}" hx-swap="none">
+    {% csrf_token %}
+
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}" role="alert">
+        <i class="fas fa-exclamation-triangle me-2"></i>{{ message }}
+    </div>
+    {% endfor %}
+    
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger" role="alert">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Błąd formularza:</strong>
+        <ul class="mb-0 mt-2">
+            {% for error in form.non_field_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    
+    {% if form.errors %}
+    <div class="alert alert-warning" role="alert">
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <strong>Błędy pól formularza:</strong>
+        <ul class="mb-0 mt-2">
+            {% for field, errors in form.errors.items %}
+                {% if field != '__all__' %}
+                    <li>
+                        <strong>
+                            {% if field == 'code' %}{{ form.code.label }}
+                            {% elif field == 'code_type' %}{{ form.code_type.label }}
+                            {% elif field == 'description' %}{{ form.description.label }}
+                            {% elif field == 'is_primary' %}{{ form.is_primary.label }}
+                            {% else %}{{ field|title }}
+                            {% endif %}:
+                        </strong>
+                        {% for error in errors %}
+                            {{ error }}{% if not forloop.last %}, {% endif %}
+                        {% endfor %}
+                    </li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label for="{{ form.code.id_for_label }}" class="form-label">
+                {{ form.code.label }} <span class="text-danger">*</span>
+            </label>
+            {% render_field form.code %}
+            {% if form.code.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.code.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="col-md-6">
+            <label for="{{ form.code_type.id_for_label }}" class="form-label">
+                {{ form.code_type.label }} <span class="text-danger">*</span>
+            </label>
+            {% render_field form.code_type %}
+            {% if form.code_type.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.code_type.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="col-md-8">
+            <label for="{{ form.description.id_for_label }}" class="form-label">
+                {{ form.description.label }}
+            </label>
+            {% render_field form.description %}
+            {% if form.description.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.description.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="col-md-4">
+            <div class="form-check mt-4">
+                {% render_field form.is_primary %}
+                <label class="form-check-label" for="{{ form.is_primary.id_for_label }}">
+                    {{ form.is_primary.label }}
+                </label>
+            </div>
+            {% if form.is_primary.errors %}
+                <div class="invalid-feedback d-block">
+                    {% for error in form.is_primary.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header py-2 d-flex align-items-center justify-content-between">
+                    <h6 class="mb-0"><i class="fas fa-barcode me-2"></i>Istniejące kody</h6>
+                    <span class="badge bg-primary">{{ product_codes|length }} kodów</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if product_codes %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Kod</th>
+                                        <th>Typ</th>
+                                        <th>Opis</th>
+                                        <th>Status</th>
+                                        <th class="text-end">Akcje</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="product-codes-tbody">
+                                    {% for code in product_codes %}
+                                        <tr class="code-item" id="code-row-{{ code.id }}">
+                                            <td>
+                                                <code class="fs-6">{{ code.code }}</code>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary">{{ code.get_code_type_display }}</span>
+                                            </td>
+                                            <td>{{ code.description|default:"-" }}</td>
+                                            <td>
+                                                {% if code.is_primary %}
+                                                    <span class="text-success">
+                                                        <i class="fas fa-star me-1"></i>Główny
+                                                    </span>
+                                                {% else %}
+                                                    <span class="text-muted">Dodatkowy</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                            type="button" 
+                                                            data-bs-toggle="dropdown" 
+                                                            data-bs-popper-config='{"strategy":"fixed"}' 
+                                                            aria-expanded="false">
+                                                        <i class="fas fa-cogs"></i>
+                                                    </button>
+                                                    <ul class="dropdown-menu dropdown-menu-end">
+                                                        <li>
+                                                            <button class="dropdown-item" 
+                                                                    hx-get="{% url 'wms:htmx_edit_product_codes' product.id code.id %}"
+                                                                    hx-swap="none", hx-trigger="click">
+                                                                <i class="fas fa-edit me-2"></i>Edytuj
+                                                            </button>
+                                                        </li>
+                                                        <li>
+                                                            <hr class="dropdown-divider">
+                                                        </li>
+                                                        <li>
+                                                            <button class="dropdown-item text-danger" 
+                                                                    hx-delete="{% url 'wms:htmx_delete_code' product.id code.id %}"
+                                                                    hx-swap="none"
+                                                                    hx-confirm="Czy na pewno chcesz usunąć kod: {{ code.code }}?"
+                                                                    title="Usuń kod">
+                                                                <i class="fas fa-trash me-2"></i>Usuń
+                                                            </button>
+                                                        </li>
+                                                    </ul>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4">
+                                                <i class="fas fa-barcode fa-3x text-muted mb-3"></i>
+                                                <h5 class="text-muted">Brak kodów</h5>
+                                                <p class="text-muted">Ten produkt nie ma jeszcze żadnych kodów kreskowych ani QR.</p>
+                                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCodeModal">
+                                                    <i class="fas fa-plus me-2"></i>Dodaj pierwszy kod
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-barcode fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">Brak kodów</h5>
+                            <p class="text-muted">Ten produkt nie ma jeszcze żadnych kodów kreskowych ani QR.</p>
+                            <button class="btn btn-primary"
+                                    hx-get="{% url 'wms:htmx_add_code_modal' product.id %}"
+                                    hx-swap="none">
+                                <i class="fas fa-plus me-2"></i>Dodaj pierwszy kod
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    {% if editing_code %}
+                        <i class="fas fa-save me-1"></i>Zapisz zmiany
+                    {% else %}
+                        <i class="fas fa-plus me-1"></i>Dodaj kod
+                    {% endif %}
+                </button>
+                <button type="button" class="btn btn-secondary" 
+                        data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Anuluj
+                </button>
+                <div class="ms-auto">
+                    <button type="button" class="btn btn-outline-primary"
+                            hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
+                            hx-swap="none"
+                        <i class="fas fa-box me-1"></i>Przejdź do produktu
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
