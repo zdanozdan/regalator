@@ -88,13 +88,14 @@
                                 <th>Opis</th>
                                 <th>Główny</th>
                                 <th>Data utworzenia</th>
+                                <th>Akcje</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for barcode in page_obj %}
                                 <tr>
                                     <td>
-                                        <code class="text-primary">{{ barcode.code|truncatechars:20 }}</code>
+                                        <a href="#" class="barcode-link" hx-get="{% url 'wms:htmx_edit_product_codes' barcode.product.id barcode.id %}" hx-swap="none" hx-trigger="click"><code class="text-muted">{{ barcode.code|truncatechars:20 }}</code></a>
                                     </td>
                                     <td>
                                         <span class="badge bg-secondary">{{ barcode.get_code_type_display }}</span>
@@ -123,10 +124,32 @@
                                     <td>
                                         <small class="text-muted">{{ barcode.created_at|date:"d.m.Y H:i" }}</small>
                                     </td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                    type="button" 
+                                                    data-bs-toggle="dropdown" 
+                                                    data-bs-popper-config='{"strategy":"fixed"}' 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-cogs"></i>
+                                            </button>
+                                            <ul class="dropdown-menu" style="z-index: 9999;">
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#" 
+                                                       hx-delete="{% url 'wms:htmx_delete_code' barcode.product.id barcode.id %}"
+                                                       hx-confirm="Czy na pewno chcesz usunąć kod '{{ barcode.code }}'?"
+                                                       hx-target="closest tr"
+                                                       hx-swap="outerHTML">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">
+                                    <td colspan="7" class="text-center text-muted py-4">
                                         <i class="fas fa-barcode fa-2x mb-2"></i><br>
                                         Brak kodów produktów spełniających kryteria wyszukiwania
                                     </td>
