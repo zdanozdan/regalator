@@ -1,0 +1,195 @@
+{% extends 'wms/base.html' %}
+{% load partials %}
+
+{% block title %}Kody produktów - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-barcode me-2"></i>Kody produktów
+            </h1>
+        </div>
+    </div>
+</div>
+
+<!-- Filtry i wyszukiwanie -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3" id="search-form">
+                    <div class="col-md-6">
+                        <label for="search" class="form-label">Wyszukaj</label>
+                        <input type="text" class="form-control barcode-field" id="search" name="search" 
+                               value="{{ search_query }}" placeholder="Kod, nazwa produktu lub opis">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="type" class="form-label">Typ kodu</label>
+                        <select class="form-select" id="type" name="type">
+                            <option value="">Wszystkie</option>
+                            {% for type_code, type_name in code_types %}
+                                <option value="{{ type_code }}" {% if code_type_filter == type_code %}selected{% endif %}>
+                                    {{ type_name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Przyciski wyszukiwania -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-center">
+            <button type="submit" form="search-form" class="btn btn-primary btn-sm me-2">
+                <i class="fas fa-search me-1"></i>Szukaj
+            </button>
+            <a href="{% url 'wms:barcodes_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-times me-1"></i>Wyczyść
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Podsumowanie -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            {% if page_obj %}
+                Znaleziono <strong>{{ page_obj.paginator.count }}</strong> kodów produktów
+                {% if search_query or code_type_filter %}
+                    spełniających kryteria wyszukiwania
+                {% endif %}
+            {% else %}
+                Brak kodów produktów
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Tabela kodów -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="barcodes-table">
+                        <thead>
+                            <tr>
+                                <th>Kod</th>
+                                <th>Typ kodu</th>
+                                <th>Produkt</th>
+                                <th>Opis</th>
+                                <th>Główny</th>
+                                <th>Data utworzenia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for barcode in page_obj %}
+                                <tr>
+                                    <td>
+                                        <code class="text-primary">{{ barcode.code|truncatechars:20 }}</code>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ barcode.get_code_type_display }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'wms:product_list' %}?search={{ barcode.product.code }}" 
+                                           class="barcode-link">
+                                            {{ barcode.product.name }}
+                                            <small class="text-muted">({{ barcode.product.code }})</small>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        {% if barcode.description %}
+                                            {{ barcode.description }}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if barcode.is_primary %}
+                                            <i class="fas fa-star text-warning" title="Kod główny"></i>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ barcode.created_at|date:"d.m.Y H:i" }}</small>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">
+                                        <i class="fas fa-barcode fa-2x mb-2"></i><br>
+                                        Brak kodów produktów spełniających kryteria wyszukiwania
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Paginacja -->
+                {% if page_obj.has_other_pages %}
+                    <nav aria-label="Nawigacja stron">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if code_type_filter %}&type={{ code_type_filter }}{% endif %}">
+                                        <i class="fas fa-angle-double-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if code_type_filter %}&type={{ code_type_filter }}{% endif %}">
+                                        <i class="fas fa-angle-left"></i>
+                                    </a>
+                                </li>
+                            {% endif %}
+                            
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Strona {{ page_obj.number }} z {{ page_obj.paginator.num_pages }}
+                                </span>
+                            </li>
+                            
+                            {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if code_type_filter %}&type={{ code_type_filter }}{% endif %}">
+                                        <i class="fas fa-angle-right"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if code_type_filter %}&type={{ code_type_filter }}{% endif %}">
+                                        <i class="fas fa-angle-double-right"></i>
+                                    </a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .barcode-link {
+        color: inherit;
+        text-decoration: none;
+    }
+    
+    .barcode-link:hover {
+        text-decoration: underline;
+        color: inherit;
+    }
+</style>
+{% endblock %}

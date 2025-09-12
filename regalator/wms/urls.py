@@ -47,6 +47,7 @@ urlpatterns = [
     path('products/<int:product_id>/api/add-scanned-code/', views.api_add_scanned_code, name='api_add_scanned_code'),
     path('product-groups/', views.product_group_list, name='product_group_list'),
     path('product-groups/<int:group_id>/', views.product_group_detail, name='product_group_detail'),
+    path('barcodes/', views.barcodes_list, name='barcodes_list'),
     path('locations/', views.location_list, name='location_list'),
     path('htmx/location/create/', views.htmx_location_edit, name='htmx_location_create'),
     path('htmx/location/<int:location_id>/edit/', views.htmx_location_edit, name='htmx_location_edit'),

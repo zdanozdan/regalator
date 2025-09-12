@@ -1,42 +1,26 @@
-# Django and core dependencies
-Django>=4.2.0,<5.0.0
-django-crispy-forms>=2.0
-crispy-bootstrap5>=0.7
-
-# Database and ODBC
-pyodbc>=4.0.39
-django-mssql-backend>=2.8.1
-
-# Image processing
-Pillow>=10.0.0
-
-# Development and testing
-pytest>=7.4.0
-pytest-django>=4.5.0
-coverage>=7.3.0
-
-# Code quality
-black>=23.0.0
-flake8>=6.0.0
-isort>=5.12.0
-
-# Environment variables
-python-dotenv>=1.0.0
-
-# Production
-gunicorn>=21.0.0
-whitenoise>=6.5.0
-
-# Optional: PostgreSQL support
-# psycopg2-binary>=2.9.0
-
-# Optional: Redis for caching
-# redis>=4.5.0
-# django-redis>=5.3.0
-
-# Optional: Celery for background tasks
-# celery>=5.3.0
-# django-celery-beat>=2.5.0
-
-# Optional: Monitoring
-# sentry-sdk>=1.30.0 
+annotated-types==0.7.0
+appdirs==1.4.4
+asgiref==3.9.1
+distlib==0.3.2
+Django==4.2.23
+django-template-partials==24.4
+django-widget-tweaks==1.5.0
+filelock==3.0.12
+greenlet==3.2.3
+phonenumbers==8.12.33
+pydantic==2.11.7
+pydantic_core==2.33.2
+PyQt3D==5.15.5
+PyQt5==5.15.7
+PyQt5-sip==12.11.0
+PyQtChart==5.15.6
+PyQtDataVisualization==5.15.5
+PyQtNetworkAuth==5.15.5
+PyQtPurchasing==5.15.5
+PyQtWebEngine==5.15.6
+SQLAlchemy==2.0.42
+sqlmodel==0.0.24
+sqlparse==0.5.3
+typing-inspection==0.4.1
+typing_extensions==4.14.1
+virtualenv==20.4.7

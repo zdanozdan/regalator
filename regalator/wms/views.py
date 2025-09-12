@@ -615,6 +615,42 @@ def location_list(request):
     
     return render(request, 'wms/location_list.html', context)
 
+
+@login_required
+def barcodes_list(request):
+    """Lista kodów produktów"""
+    search_query = request.GET.get('search', '')
+    code_type_filter = request.GET.get('type', '')
+    
+    barcodes = ProductCode.objects.select_related('product').filter(is_active=True)
+    
+    if search_query:
+        barcodes = barcodes.filter(
+            Q(code__icontains=search_query) |
+            Q(product__name__icontains=search_query) |
+            Q(product__code__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+    
+    if code_type_filter:
+        barcodes = barcodes.filter(code_type=code_type_filter)
+    
+    barcodes = barcodes.order_by('product__name', 'code')
+    
+    # Paginacja
+    paginator = Paginator(barcodes, 50)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+        'code_type_filter': code_type_filter,
+        'code_types': ProductCode.CODE_TYPES,
+    }
+    return render(request, 'wms/barcodes_list.html', context)
+
+
 @login_required
 def stock_list(request):
     """Lista stanów magazynowych"""

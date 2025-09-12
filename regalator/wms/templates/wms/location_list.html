@@ -28,7 +28,7 @@
                 <form method="get" class="row g-3" id="search-form">
                     <div class="col-md-6">
                         <label for="search" class="form-label">Wyszukaj</label>
-                        <input type="text" class="form-control" id="search" name="search" 
+                        <input type="text" class="form-control barcode-field" id="search" name="search" 
                                value="{{ search_query }}" placeholder="Kod lub nazwa lokalizacji">
                     </div>
                     <div class="col-md-6">
@@ -290,20 +290,3 @@
     }
 </style>
 {% endblock %}
-
-{% block extra_js %}
-<script>    
-    // Populate search input when a barcode is scanned
-    document.addEventListener('barcode:scanned', function(e) {
-        try {
-            var code = e && e.detail ? e.detail.code : '';
-            if (!code) return;
-            var searchInput = document.getElementById('search');
-            if (!searchInput) return;
-            searchInput.value = code;
-        } catch (err) {
-            // no-op
-        }
-    });
-</script>
-{% endblock %} 

@@ -45,7 +45,7 @@
         <div class="col-md-6">
             <label for="{{ form.barcode.id_for_label }}" class="form-label">{{ form.barcode.label }}</label>
             <div class="barcode-field">
-                {% render_field form.barcode class="form-control" %}
+                {% render_field form.barcode class="form-control barcode-field" %}
             </div>
             {% if form.barcode.errors %}
                 <div class="invalid-feedback d-block">
