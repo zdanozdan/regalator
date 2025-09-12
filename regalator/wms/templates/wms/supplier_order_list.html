@@ -111,17 +111,36 @@
                                     <td>{{ order.total_items }}</td>
                                     <td>{{ order.received_items }}</td>
                                     <td>
-                                        <div class="btn-group" role="group">
-                                            <a href="{% url 'wms:supplier_order_detail' order.id %}" 
-                                               class="btn btn-sm btn-outline-primary" title="Szczegóły">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            {% if order.status in 'pending,confirmed,in_transit' %}
-                                                <a href="{% url 'wms:create_receiving_order' order.id %}" 
-                                                   class="btn btn-sm btn-outline-success" title="Utwórz RegIn">
-                                                    <i class="fas fa-clipboard-check"></i>
-                                                </a>
-                                            {% endif %}
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                                <i class="fas fa-cog"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li>
+                                                    <a class="dropdown-item" href="{% url 'wms:supplier_order_detail' order.id %}">
+                                                        <i class="fas fa-eye me-2"></i>Szczegóły
+                                                    </a>
+                                                </li>
+                                                {% if order.status in 'pending,confirmed,in_transit' %}
+                                                    <li>
+                                                        <a class="dropdown-item" href="{% url 'wms:create_receiving_order' order.id %}">
+                                                            <i class="fas fa-clipboard-check me-2"></i>Utwórz RegIn
+                                                        </a>
+                                                    </li>
+                                                {% endif %}
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item text-muted" href="#">
+                                                        <i class="fas fa-edit me-2"></i>Edytuj
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </a>
+                                                </li>
+                                            </ul>
                                         </div>
                                     </td>
                                 </tr>

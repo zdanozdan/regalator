@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import JSONField
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinValueValidator
@@ -7,11 +8,26 @@ import uuid
 import os
 
 
+
 def user_avatar_path(instance, filename):
     """Generuje ścieżkę dla avatarów użytkowników"""
     ext = filename.split('.')[-1]
     filename = f'avatar_{instance.user.id}.{ext}'
     return f'avatars/{filename}'
+
+
+def location_image_path(instance, filename):
+    """Generuje ścieżkę dla zdjęć lokalizacji"""
+    ext = filename.split('.')[-1]
+    filename = f'location_{instance.location.code}_{instance.id}.{ext}'
+    return f'locations/{filename}'
+
+
+def product_image_path(instance, filename):
+    """Generuje ścieżkę dla zdjęć produktów"""
+    ext = filename.split('.')[-1]
+    filename = f'product_{instance.product.code}_{instance.id}.{ext}'
+    return f'products/{filename}'
 
 
 class UserProfile(models.Model):
@@ -70,13 +86,52 @@ class ProductGroup(models.Model):
         return self.products.count()
 
 
+class ProductCode(models.Model):
+    """Kody produktów (barcodes, QR codes)"""
+    CODE_TYPES = [
+        ('barcode', 'Kod kreskowy'),
+        ('qr', 'Kod QR'),
+        ('ean13', 'EAN-13'),
+        ('ean8', 'EAN-8'),
+        ('code128', 'Code 128'),
+        ('code39', 'Code 39'),
+        ('upc', 'UPC'),
+        ('other', 'Inny'),
+    ]
+    
+    product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='codes', verbose_name="Produkt")
+    code = models.CharField(max_length=200, unique=True, verbose_name="Kod")
+    code_type = models.CharField(max_length=20, choices=CODE_TYPES, default='barcode', verbose_name="Typ kodu")
+    is_primary = models.BooleanField(default=False, verbose_name="Kod główny")
+    description = models.CharField(max_length=200, blank=True, verbose_name="Opis")
+    is_active = models.BooleanField(default=True, verbose_name="Aktywny")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
+    
+    class Meta:
+        verbose_name = "Kod produktu"
+        verbose_name_plural = "Kody produktów"
+        ordering = ['-is_primary', 'code_type', 'code']
+        unique_together = ['product', 'code']
+    
+    def __str__(self):
+        return f"{self.get_code_type_display()}: {self.code}"
+    
+    def save(self, *args, **kwargs):
+        # Ensure only one primary code per product
+        if self.is_primary:
+            ProductCode.objects.filter(product=self.product, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+        super().save(*args, **kwargs)
+
+
 class Product(models.Model):
     """Produkt w magazynie"""
     code = models.CharField(max_length=50, unique=True, verbose_name="Kod produktu")
     name = models.CharField(max_length=200, verbose_name="Nazwa produktu")
     description = models.TextField(blank=True, verbose_name="Opis")
-    barcode = models.CharField(max_length=100, unique=True, verbose_name="Kod kreskowy")
     unit = models.CharField(max_length=20, default="szt", verbose_name="Jednostka")
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, verbose_name="Produkt nadrzędny")
+    variants = JSONField(default={'size': '', 'color': ''}, verbose_name="Warianty produktu")
     
     # Grupa produktów (opcjonalna)
     groups = models.ManyToManyField(ProductGroup, blank=True,related_name='products', verbose_name="Grupy produktów")
@@ -99,6 +154,36 @@ class Product(models.Model):
         return f"{self.code} - {self.name}"
     
     @property
+    def primary_barcode(self):
+        """Główny kod kreskowy produktu"""
+        primary_code = self.codes.filter(is_primary=True, code_type='barcode').first()
+        if primary_code:
+            return primary_code.code
+        # Fallback to first barcode if no primary
+        first_barcode = self.codes.filter(code_type='barcode').first()
+        return first_barcode.code if first_barcode else None
+    
+    @property
+    def primary_qr(self):
+        """Główny kod QR produktu"""
+        primary_code = self.codes.filter(is_primary=True, code_type='qr').first()
+        if primary_code:
+            return primary_code.code
+        # Fallback to first QR if no primary
+        first_qr = self.codes.filter(code_type='qr').first()
+        return first_qr.code if first_qr else None
+    
+    @property
+    def all_barcodes(self):
+        """Wszystkie kody kreskowe produktu"""
+        return self.codes.filter(code_type='barcode', is_active=True)
+    
+    @property
+    def all_qr_codes(self):
+        """Wszystkie kody QR produktu"""
+        return self.codes.filter(code_type='qr', is_active=True)
+    
+    @property
     def total_stock(self):
         """Łączny stan magazynowy we wszystkich lokalizacjach"""
         return Stock.objects.filter(product=self).aggregate(
@@ -114,6 +199,24 @@ class Product(models.Model):
     def needs_sync(self):
         """Czy produkt wymaga synchronizacji"""
         return abs(self.stock_difference) > 0.01  # Tolerancja 0.01
+    
+    @classmethod
+    def find_by_code(cls, code):
+        """Znajduje produkt po kodzie (barcode, QR, etc.)"""
+        try:
+            return cls.objects.get(codes__code=code, codes__is_active=True)
+        except cls.DoesNotExist:
+            return None
+    
+    @classmethod
+    def find_by_any_code(cls, code):
+        """Znajduje produkt po dowolnym kodzie (barcode, QR, etc.)"""
+        return cls.find_by_code(code)
+    
+    @property
+    def primary_photo(self):
+        """Returns the primary photo for this product"""
+        return self.images.filter(is_primary=True).first()
 
 
 class Location(models.Model):
@@ -139,6 +242,66 @@ class Location(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
+    
+    @property
+    def primary_photo(self):
+        """Returns the primary photo for this location"""
+        return self.images.filter(is_primary=True).first()
+
+
+class LocationImage(models.Model):
+    """Zdjęcia lokalizacji w magazynie"""
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='images', verbose_name="Lokalizacja")
+    image = models.ImageField(upload_to=location_image_path, verbose_name="Zdjęcie")
+    title = models.CharField(max_length=200, blank=True, verbose_name="Tytuł")
+    description = models.TextField(blank=True, verbose_name="Opis")
+    is_primary = models.BooleanField(default=False, verbose_name="Zdjęcie główne")
+    order = models.PositiveIntegerField(default=0, verbose_name="Kolejność")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
+    
+    class Meta:
+        verbose_name = "Zdjęcie lokalizacji"
+        verbose_name_plural = "Zdjęcia lokalizacji"
+        ordering = ['location', 'is_primary', 'order', 'created_at']
+    
+    def __str__(self):
+        if self.title:
+            return f"{self.location.code} - {self.title}"
+        return f"{self.location.code} - Zdjęcie {self.id}"
+    
+    def save(self, *args, **kwargs):
+        # Jeśli to zdjęcie jest oznaczone jako główne, odznacz inne zdjęcia tej lokalizacji
+        if self.is_primary:
+            LocationImage.objects.filter(location=self.location, is_primary=True).exclude(id=self.id).update(is_primary=False)
+        super().save(*args, **kwargs)
+
+
+class ProductImage(models.Model):
+    """Zdjęcia produktów"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images', verbose_name="Produkt")
+    image = models.ImageField(upload_to=product_image_path, verbose_name="Zdjęcie")
+    description = models.TextField(blank=True, verbose_name="Opis")
+    is_primary = models.BooleanField(default=False, verbose_name="Zdjęcie główne")
+    order = models.PositiveIntegerField(default=0, verbose_name="Kolejność")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
+    
+    class Meta:
+        verbose_name = "Zdjęcie produktu"
+        verbose_name_plural = "Zdjęcia produktów"
+        ordering = ['product', 'is_primary', 'order', 'created_at']
+    
+    def __str__(self):
+        if self.title:
+            return f"{self.product.code} - {self.title}"
+        return f"{self.product.code} - Zdjęcie {self.id}"
+    
+    def save(self, *args, **kwargs):
+        # Jeśli to zdjęcie jest oznaczone jako główne, odznacz inne zdjęcia tego produktu
+        if self.is_primary:
+            ProductImage.objects.filter(product=self.product, is_primary=True).exclude(id=self.id).update(is_primary=False)
+        super().save(*args, **kwargs)
 
 
 class Stock(models.Model):
@@ -192,7 +355,6 @@ class OrderItem(models.Model):
     order = models.ForeignKey(CustomerOrder, on_delete=models.CASCADE, related_name='items', verbose_name="Zamówienie")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Produkt")
     quantity = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Ilość zamówiona")
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Cena jednostkowa")
     total_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Cena całkowita")
     completed_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Ilość zrealizowana")
 
@@ -351,7 +513,6 @@ class SupplierOrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity_ordered = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     quantity_received = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0'))])
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     notes = models.CharField(max_length=200, blank=True)
     
     class Meta:
@@ -359,10 +520,6 @@ class SupplierOrderItem(models.Model):
     
     def __str__(self):
         return f"{self.product.name} - {self.quantity_ordered} szt."
-    
-    @property
-    def total_value(self):
-        return self.quantity_ordered * self.unit_price
 
 
 class ReceivingOrder(models.Model):
@@ -464,7 +621,6 @@ class DocumentItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     location = models.ForeignKey(Location, on_delete=models.CASCADE)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     
     class Meta:
         unique_together = ['document', 'product', 'location']

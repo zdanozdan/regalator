@@ -3,8 +3,15 @@ from .models import (
     Product, Location, Stock, CustomerOrder, OrderItem,
     PickingOrder, PickingItem, PickingHistory,
     SupplierOrder, SupplierOrderItem, ReceivingOrder, 
-    ReceivingItem, ReceivingHistory, WarehouseDocument, DocumentItem, UserProfile, ProductGroup
+    ReceivingItem, ReceivingHistory, WarehouseDocument, DocumentItem, UserProfile, ProductGroup, ProductCode
 )
+
+
+class ProductCodeInline(admin.TabularInline):
+    model = ProductCode
+    extra = 1
+    fields = ['code', 'code_type', 'is_primary', 'is_active', 'description']
+    ordering = ['-is_primary', 'code_type', 'code']
 
 
 @admin.register(UserProfile)
@@ -19,22 +26,51 @@ class UserProfileAdmin(admin.ModelAdmin):
     display_name.short_description = 'Nazwa wyświetlana'
 
 
+@admin.register(ProductCode)
+class ProductCodeAdmin(admin.ModelAdmin):
+    list_display = ['product', 'code', 'code_type', 'is_primary', 'is_active', 'description']
+    list_filter = ['code_type', 'is_primary', 'is_active', 'created_at']
+    search_fields = ['code', 'product__name', 'product__code', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['product__name', 'code_type', 'code']
+    autocomplete_fields = ['product']
+    
+    fieldsets = (
+        ('Podstawowe informacje', {
+            'fields': ('product', 'code', 'code_type', 'description')
+        }),
+        ('Ustawienia', {
+            'fields': ('is_primary', 'is_active')
+        }),
+        ('Informacje systemowe', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['subiekt_id', 'code', 'name', 'display_groups', 'barcode', 'total_stock', 'subiekt_stock', 'stock_difference', 'needs_sync', 'unit']
+    list_display = ['subiekt_id', 'code', 'name', 'display_groups', 'primary_barcode_display', 'total_stock', 'subiekt_stock', 'stock_difference', 'needs_sync', 'unit']
     list_filter = ['unit', 'groups', 'last_sync_date']
-    search_fields = ['code', 'name', 'barcode', 'subiekt_id']
+    search_fields = ['code', 'name', 'codes__code', 'subiekt_id']
     readonly_fields = ['created_at', 'updated_at', 'total_stock', 'stock_difference', 'needs_sync']
     filter_horizontal = ['groups']
+    inlines = [ProductCodeInline]
     
     def display_groups(self, obj):
         """Wyświetla grupy produktu"""
         return ', '.join([group.name for group in obj.groups.all()])
     display_groups.short_description = 'Grupy'
     
+    def primary_barcode_display(self, obj):
+        """Wyświetla główny kod kreskowy"""
+        return obj.primary_barcode or '-'
+    primary_barcode_display.short_description = 'Główny kod kreskowy'
+    
     fieldsets = (
         ('Podstawowe informacje', {
-            'fields': ('code', 'name', 'description', 'barcode', 'unit', 'groups')
+            'fields': ('code', 'name', 'description', 'unit', 'groups')
         }),
         ('Synchronizacja z Subiektem', {
             'fields': ('subiekt_id', 'subiekt_stock', 'subiekt_stock_reserved', 'last_sync_date')
@@ -44,7 +80,6 @@ class ProductAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
@@ -73,7 +108,7 @@ class CustomerOrderAdmin(admin.ModelAdmin):
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ['order', 'product', 'quantity', 'unit_price', 'total_price', 'completed_quantity']
+    list_display = ['order', 'product', 'quantity', 'total_price', 'completed_quantity']
     list_filter = ['order__status', 'product__unit']
     search_fields = ['order__order_number', 'product__name', 'product__code']
     ordering = ['order__created_at']
@@ -128,10 +163,9 @@ class SupplierOrderAdmin(admin.ModelAdmin):
 
 @admin.register(SupplierOrderItem)
 class SupplierOrderItemAdmin(admin.ModelAdmin):
-    list_display = ['supplier_order', 'product', 'quantity_ordered', 'quantity_received', 'unit_price', 'total_value']
+    list_display = ['supplier_order', 'product', 'quantity_ordered', 'quantity_received']
     list_filter = ['supplier_order__status', 'product']
-    search_fields = ['supplier_order__order_number', 'product__name', 'product__barcode']
-    readonly_fields = ['total_value']
+    search_fields = ['supplier_order__order_number', 'product__name', 'product__codes__code']
 
 
 @admin.register(ReceivingOrder)
@@ -159,7 +193,7 @@ class ReceivingOrderAdmin(admin.ModelAdmin):
 class ReceivingItemAdmin(admin.ModelAdmin):
     list_display = ['receiving_order', 'product', 'quantity_ordered', 'quantity_received', 'location', 'sequence']
     list_filter = ['receiving_order__status', 'product', 'location']
-    search_fields = ['receiving_order__order_number', 'product__name', 'product__barcode']
+    search_fields = ['receiving_order__order_number', 'product__name', 'product__codes__code']
     ordering = ['receiving_order', 'sequence']
 
 
@@ -167,7 +201,7 @@ class ReceivingItemAdmin(admin.ModelAdmin):
 class ReceivingHistoryAdmin(admin.ModelAdmin):
     list_display = ['receiving_order', 'product', 'location', 'quantity_received', 'scanned_by', 'scanned_at']
     list_filter = ['scanned_at', 'product', 'location', 'scanned_by']
-    search_fields = ['receiving_order__order_number', 'product__name', 'product__barcode']
+    search_fields = ['receiving_order__order_number', 'product__name', 'product__codes__code']
     date_hierarchy = 'scanned_at'
     readonly_fields = ['scanned_at']
 
@@ -195,9 +229,9 @@ class WarehouseDocumentAdmin(admin.ModelAdmin):
 
 @admin.register(DocumentItem)
 class DocumentItemAdmin(admin.ModelAdmin):
-    list_display = ['document', 'product', 'location', 'quantity', 'unit_price']
+    list_display = ['document', 'product', 'location', 'quantity']
     list_filter = ['document__document_type', 'document__status', 'product', 'location']
-    search_fields = ['document__document_number', 'product__name', 'product__barcode']
+    search_fields = ['document__document_number', 'product__name', 'product__codes__code']
     ordering = ['document', 'product']
 
 

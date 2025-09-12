@@ -152,6 +152,8 @@ class DokumentManager(models.Manager):
                 d.dok_OdbiorcaId,
                 d.dok_OdbiorcaAdreshId,
                 d.dok_DataWyst,
+                d.dok_DataMag,
+                d.dok_PlatTermin,
                 a.adr_Nazwa,
                 a.adr_NazwaPelna,
                 a.adr_Ulica,
@@ -187,17 +189,19 @@ class DokumentManager(models.Manager):
                     dok_OdbiorcaAdreshId=row[13]
                 )
                 
-                # Add document date as attribute
+                # Add document dates as attributes
                 document.dok_DataWyst = row[14]
+                document.dok_DataMag = row[15]
+                document.dok_PlatTermin = row[16]
                 
                 # Add address information as attributes
-                document.adr_Nazwa = row[15]
-                document.adr_NazwaPelna = row[16]
-                document.adr_Ulica = row[17]
-                document.adr_Miejscowosc = row[18]
-                document.adr_Kod = row[19]
-                document.adr_Poczta = row[20]
-                document.adr_Adres = row[21]
+                document.adr_Nazwa = row[17]
+                document.adr_NazwaPelna = row[18]
+                document.adr_Ulica = row[19]
+                document.adr_Miejscowosc = row[20]
+                document.adr_Kod = row[21]
+                document.adr_Poczta = row[22]
+                document.adr_Adres = row[23]
                 
                 documents.append(document)
             

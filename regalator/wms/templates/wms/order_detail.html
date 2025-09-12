@@ -126,7 +126,6 @@
                                     <th>Kod</th>
                                     <th>Ilość zamówiona</th>
                                     <th>Ilość zrealizowana</th>
-                                    <th>Cena jednostkowa</th>
                                     <th>Wartość</th>
                                     <th>Status</th>
                                 </tr>
@@ -149,7 +148,7 @@
                                             <span class="text-muted">0 {{ item.product.unit }}</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ item.unit_price|floatformat:2 }} zł</td>
+
                                     <td>{{ item.total_price|floatformat:2 }} zł</td>
                                     <td>
                                         {% if item.completed_quantity == item.quantity %}

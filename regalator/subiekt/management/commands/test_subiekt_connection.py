@@ -342,6 +342,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"       Magazyn: {doc.dok_MagId}")
                     if hasattr(doc, 'dok_DataWyst') and doc.dok_DataWyst:
                         self.stdout.write(f"       Data wystawienia: {doc.dok_DataWyst}")
+                    if hasattr(doc, 'dok_PlatTermin') and doc.dok_PlatTermin:
+                        self.stdout.write(f"       Data realizacji: {doc.dok_PlatTermin}")
                     if hasattr(doc, 'adr_Nazwa') and doc.adr_Nazwa:
                         self.stdout.write(f"       Nazwa: {doc.adr_Nazwa}")
                     if hasattr(doc, 'adr_Ulica') and doc.adr_Ulica:
@@ -378,6 +380,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"       Magazyn: {doc.dok_MagId}")
                     if hasattr(doc, 'dok_DataWyst') and doc.dok_DataWyst:
                         self.stdout.write(f"       Data wystawienia: {doc.dok_DataWyst}")
+                    if hasattr(doc, 'dok_PlatTermin') and doc.dok_PlatTermin:
+                        self.stdout.write(f"       Data realizacji: {doc.dok_PlatTermin}")
                     if hasattr(doc, 'adr_Nazwa') and doc.adr_Nazwa:
                         self.stdout.write(f"       Nazwa: {doc.adr_Nazwa}")
                     if hasattr(doc, 'adr_Ulica') and doc.adr_Ulica:
@@ -413,6 +417,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"       Magazyn: {doc.dok_MagId}")
                     if hasattr(doc, 'dok_DataWyst') and doc.dok_DataWyst:
                         self.stdout.write(f"       Data wystawienia: {doc.dok_DataWyst}")
+                    if hasattr(doc, 'dok_PlatTermin') and doc.dok_PlatTermin:
+                        self.stdout.write(f"       Data realizacji: {doc.dok_PlatTermin}")
                     
                     # Pobierz pozycje dla tego dokumentu
                     positions = dok_Dokument.dokument_objects.get_zk_pozycje(doc.dok_Id)
@@ -454,6 +460,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"       Magazyn: {doc.dok_MagId}")
                     if hasattr(doc, 'dok_DataWyst') and doc.dok_DataWyst:
                         self.stdout.write(f"       Data wystawienia: {doc.dok_DataWyst}")
+                    if hasattr(doc, 'dok_PlatTermin') and doc.dok_PlatTermin:
+                        self.stdout.write(f"       Data realizacji: {doc.dok_PlatTermin}")
                     
                     # Pobierz pozycje dla tego dokumentu
                     positions = dok_Dokument.dokument_objects.get_zd_pozycje(doc.dok_Id)

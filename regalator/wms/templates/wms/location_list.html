@@ -1,4 +1,5 @@
 {% extends 'wms/base.html' %}
+{% load partials %}
 
 {% block title %}Lokalizacje - Regalator WMS{% endblock %}
 
@@ -9,6 +10,12 @@
             <h1>
                 <i class="fas fa-map-marker-alt me-2"></i>Lokalizacje
             </h1>
+            <button class="btn btn-primary" 
+                    hx-get="{% url 'wms:htmx_location_create' %}"
+                    hx-target="body"
+                    hx-swap="none">
+                <i class="fas fa-plus me-1"></i>Nowa lokalizacja
+            </button>
         </div>
     </div>
 </div>
@@ -54,13 +61,18 @@
         </div>
     </div>
 </div>
-            </div>
-        </div>
+
+<!-- Spinner for loading state -->
+<div id="location-list-spinner" class="htmx-indicator text-center">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Ładowanie...</span>
     </div>
+    <div class="mt-2 text-muted">Odświeżanie listy lokalizacji...</div>
 </div>
 
+{% partialdef location-table inline %}
 <!-- Lista lokalizacji -->
-<div class="row">
+<div class="row" hx-trigger="location-list-updated from:body" hx-get="{% url 'wms:location_list' %}" hx-swap="innerHTML" hx-indicator="#location-list-spinner">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -77,6 +89,7 @@
                         <table class="table table-hover">
                             <thead>
                                 <tr>
+                                    <th style="width: 80px;">Zdjęcie</th>
                                     <th>Kod</th>
                                     <th>Nazwa</th>
                                     <th>Typ</th>
@@ -88,7 +101,30 @@
                             </thead>
                             <tbody>
                                 {% for location in page_obj %}
-                                <tr>
+                                <tr id="location-row-{{ location.id }}">
+                                    <td class="text-center">
+                                        {% if location.primary_photo %}
+                                            <img src="{{ location.primary_photo.image.url }}" 
+                                                 alt="Zdjęcie lokalizacji {{ location.name }}"
+                                                 class="img-thumbnail"
+                                                 style="width: 60px; height: 60px; object-fit: cover; cursor: pointer;"
+                                                 title="{{ location.primary_photo.title|default:location.name }}"
+                                                 hx-get="{% url 'wms:htmx_location_photos_inline' location.id %}"
+                                                 hx-target="#location-photos-{{ location.id }}"
+                                                 hx-swap="outerHTML"
+                                                 hx-trigger="click">
+                                        {% else %}
+                                            <div class="bg-light border rounded d-flex align-items-center justify-content-center"
+                                                 style="width: 60px; height: 60px; cursor: pointer;"
+                                                 hx-get="{% url 'wms:htmx_location_photos_inline' location.id %}"
+                                                 hx-target="#location-photos-{{ location.id }}"
+                                                 hx-swap="outerHTML"
+                                                 hx-trigger="click"
+                                                 title="Kliknij aby zobaczyć zdjęcia">
+                                                <i class="fas fa-image text-muted"></i>
+                                            </div>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <code>{{ location.code }}</code>
                                     </td>
@@ -135,15 +171,38 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <div class="btn-group" role="group">
-                                            <button type="button" class="btn btn-sm btn-outline-info" 
-                                                    onclick="copyToClipboard('{{ location.barcode }}')" 
-                                                    title="Kopiuj kod kreskowy">
-                                                <i class="fas fa-barcode"></i>
+                                        <!-- Bootstrap 5 Dropdown Menu -->
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                    type="button" 
+                                                    data-bs-toggle="dropdown" 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-ellipsis-v"></i>
                                             </button>
+                                            <ul class="dropdown-menu">
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       hx-get="{% url 'wms:htmx_location_edit' location.id %}"
+                                                       hx-target="closest tr"
+                                                       hx-swap="none">
+                                                        <i class="fas fa-edit me-2"></i>Edytuj
+                                                    </a>
+                                                </li>                                               
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#" 
+                                                       hx-delete="{% url 'wms:htmx_location_delete' location.id %}"
+                                                       hx-confirm="Czy na pewno chcesz usunąć lokalizację '{{ location.name }}'?"
+                                                       hx-target="closest tr"
+                                                       hx-swap="outerHTML">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </a>
+                                                </li>
+                                            </ul>
                                         </div>
                                     </td>
                                 </tr>
+                                <!-- Placeholder row for photos -->
+                                <tr id="location-photos-{{ location.id }}"></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -210,29 +269,41 @@
         </div>
     </div>
 </div>
+{% endpartialdef %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .location-photos-row td {
+        border: none !important;
+        padding: 0 !important;
+    }
+    
+    .location-photos-row .card {
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .location-photos-row .img-thumbnail:hover {
+        transform: scale(1.05);
+        transition: transform 0.2s ease;
+    }
+</style>
 {% endblock %}
 
 {% block extra_js %}
-<script>
-    function copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(function() {
-            // Pokaż powiadomienie
-            const toast = document.createElement('div');
-            toast.className = 'alert alert-success alert-dismissible fade show position-fixed';
-            toast.style.top = '20px';
-            toast.style.right = '20px';
-            toast.style.zIndex = '9999';
-            toast.innerHTML = `
-                <i class="fas fa-check me-2"></i>Skopiowano kod kreskowy: ${text}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.body.appendChild(toast);
-            
-            // Usuń powiadomienie po 3 sekundach
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        });
-    }
+<script>    
+    // Populate search input when a barcode is scanned
+    document.addEventListener('barcode:scanned', function(e) {
+        try {
+            var code = e && e.detail ? e.detail.code : '';
+            if (!code) return;
+            var searchInput = document.getElementById('search');
+            if (!searchInput) return;
+            searchInput.value = code;
+        } catch (err) {
+            // no-op
+        }
+    });
 </script>
 {% endblock %} 

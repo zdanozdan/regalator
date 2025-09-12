@@ -43,19 +43,45 @@ urlpatterns = [
     
     # Katalogi
     path('products/', views.product_list, name='product_list'),
+    #path('products/<int:product_id>/edit-codes/', views.edit_product_codes, name='edit_product_codes'),
+    path('products/<int:product_id>/api/add-scanned-code/', views.api_add_scanned_code, name='api_add_scanned_code'),
     path('product-groups/', views.product_group_list, name='product_group_list'),
     path('product-groups/<int:group_id>/', views.product_group_detail, name='product_group_detail'),
     path('locations/', views.location_list, name='location_list'),
+    path('htmx/location/create/', views.htmx_location_edit, name='htmx_location_create'),
+    path('htmx/location/<int:location_id>/edit/', views.htmx_location_edit, name='htmx_location_edit'),
+    path('htmx/location/<int:location_id>/delete/', views.htmx_location_delete, name='htmx_location_delete'),
+    path('htmx/location/<int:location_id>/photos/', views.htmx_location_photos, name='htmx_location_photos'),
+    path('htmx/location/<int:location_id>/photos-inline/', views.htmx_location_photos_inline, name='htmx_location_photos_inline'),
+    path('htmx/location/<int:location_id>/photo/upload/', views.htmx_location_photo_upload, name='htmx_location_photo_upload'),
+    path('htmx/location/<int:location_id>/photo/update/', views.htmx_location_photo_update, name='htmx_location_photo_update'),
+    path('htmx/location/<int:location_id>/photo/set-primary/', views.htmx_location_photo_set_primary, name='htmx_location_photo_set_primary'),
+    path('htmx/location/<int:location_id>/photo/delete/', views.htmx_location_photo_delete, name='htmx_location_photo_delete'),
     path('stock/', views.stock_list, name='stock_list'),
     
+
     # Autentykacja
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     
-    # API
+        # API
     path('api/scan-barcode/', views.api_scan_barcode, name='api_scan_barcode'),
-    path('api/product-details/<int:product_id>/', views.api_product_details, name='api_product_details'),
     path('htmx/sync-product/<int:product_id>/', views.htmx_sync_product, name='htmx_sync_product'),
+    path('htmx/product-details/<int:product_id>/', views.htmx_product_details, name='htmx_product_details'),
+    path('htmx/delete-code/<int:product_id>/<int:code_id>/', views.htmx_delete_code, name='htmx_delete_code'),
+    path('htmx/set-main-code/<int:product_id>/<int:code_id>/', views.htmx_set_main_code, name='htmx_set_main_code'),
+    path('htmx/product/<int:product_id>/add-code-modal/', views.htmx_add_code_modal, name='htmx_add_code_modal'),
+    path('htmx/product/<int:product_id>/codes-list/', views.htmx_product_codes_list, name='htmx_product_codes_list'),
+    path('htmx/product/<int:product_id>/add-code-inline/', views.htmx_add_code_inline, name='htmx_add_code_inline'),
+    path('htmx/product/<int:product_id>/images-inline/', views.htmx_product_images_inline, name='htmx_product_images_inline'),
+    path('htmx/product/<int:product_id>/variants/', views.htmx_product_variants, name='htmx_product_variants'),
+    path('htmx/product/<int:product_id>/add-size-color/', views.htmx_add_size_color_modal, name='htmx_add_size_color_modal'),
+    path('htmx/product/<int:product_id>/edit-size-color/<int:variant_id>/', views.htmx_add_size_color_modal, name='htmx_edit_size_color_modal'),
+    path('htmx/product/<int:product_id>/edit-product-modal/', views.htmx_edit_product_modal, name='htmx_edit_product_modal'),
+    path('htmx/variant/<int:variant_id>/delete/', views.htmx_delete_variant, name='htmx_delete_variant'),
+    path('htmx/product/<int:product_id>/edit-codes/', views.htmx_edit_product_codes, name='htmx_edit_product_codes'),
+    path('htmx/product/<int:product_id>/edit-codes/<int:code_id>/', views.htmx_edit_product_codes, name='htmx_edit_product_codes'),
+
     
     # Profile
     path('profile/edit/', views.profile_edit, name='profile_edit'),

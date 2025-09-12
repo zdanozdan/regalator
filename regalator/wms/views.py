@@ -1,18 +1,24 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from decimal import Decimal
 from .models import *
-from .forms import UserProfileForm
+from .forms import UserProfileForm, ProductCodeForm, LocationEditForm, LocationImageForm, ProductColorSizeForm, ProductStockInlineFormSet, ProductForm
 from assets.models import Asset
 import json
+import logging
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.db import IntegrityError
+
+logger = logging.getLogger(__name__)
 
 
 def login_view(request):
@@ -320,12 +326,13 @@ def scan_product(request, picking_id):
         return redirect('wms:scan_location', picking_id=picking_id)
 
     if request.method == 'POST':
-        barcode = request.POST.get('barcode', '').strip()
+        scanned_code = request.POST.get('barcode', '').strip()
         
-        if barcode:
-            try:
-                product = Product.objects.get(barcode=barcode)
-                
+        if scanned_code:
+            # Znajdź produkt po dowolnym kodzie (barcode, QR, etc.)
+            product = Product.find_by_code(scanned_code)
+            
+            if product:
                 # Znajdź pozycję kompletacji dla tego produktu w tej lokalizacji
                 picking_item = PickingItem.objects.filter(
                     picking_order=picking_order,
@@ -348,9 +355,8 @@ def scan_product(request, picking_id):
                         messages.error(request, f'Niewystarczający stan magazynowy. Dostępne: {stock.quantity if stock else 0}')
                 else:
                     messages.error(request, f'Produkt {product.name} nie jest w tej lokalizacji lub już został skompletowany.')
-                    
-            except Product.DoesNotExist:
-                messages.error(request, f'Produkt o kodzie {barcode} nie istnieje.')
+            else:
+                messages.error(request, f'Produkt o kodzie {scanned_code} nie istnieje.')
         else:
             messages.error(request, 'Proszę wprowadzić kod produktu.')
     
@@ -481,8 +487,7 @@ def complete_picking(request, picking_id):
                         document=warehouse_doc,
                         product=picking_item.product,
                         location=picking_item.location,
-                        quantity=picking_item.quantity_picked,
-                        unit_price=picking_item.order_item.unit_price
+                        quantity=picking_item.quantity_picked
                     )
             
             messages.success(request, f'Zakończono kompletację. Utworzono dokument WZ {warehouse_doc.document_number}')
@@ -502,14 +507,14 @@ def product_list(request):
     group_filter = request.GET.get('group', '')
     subiekt_filter = request.GET.get('subiekt', '')
     
-    products = Product.objects.all()
+    products = Product.objects.prefetch_related('images').filter(parent__isnull=True)
     
     if search_query:
         products = products.filter(
             Q(code__icontains=search_query) |
             Q(name__icontains=search_query) |
-            Q(barcode__icontains=search_query)
-        )
+            Q(codes__code__icontains=search_query)
+        ).distinct()
     
     # Filtrowanie po grupie
     if group_filter:
@@ -577,13 +582,14 @@ def location_list(request):
     """Lista lokalizacji"""
     search_query = request.GET.get('search', '')
     location_type = request.GET.get('type', '')
-    
-    locations = Location.objects.filter(is_active=True)
+
+    locations = Location.objects.prefetch_related('images')
     
     if search_query:
         locations = locations.filter(
             Q(code__icontains=search_query) |
-            Q(name__icontains=search_query)
+            Q(name__icontains=search_query) |
+            Q(barcode__icontains=search_query)
         )
     
     if location_type:
@@ -602,8 +608,12 @@ def location_list(request):
         'location_type': location_type,
         'location_types': Location.LOCATION_TYPES,
     }
-    return render(request, 'wms/location_list.html', context)
 
+    # Check if request comes from HTMX
+    if request.headers.get('HX-Request'):
+        return render(request, 'wms/location_list.html#location-table', context)
+    
+    return render(request, 'wms/location_list.html', context)
 
 @login_required
 def stock_list(request):
@@ -611,6 +621,14 @@ def stock_list(request):
     search_query = request.GET.get('search', '')
     location_filter = request.GET.get('location', '')
     product_filter = request.GET.get('product', '')
+    product_id = request.GET.get('product_id', '')
+
+    try:
+        product = Product.objects.get(id=product_id)
+    except Product.DoesNotExist:
+        product = None
+    except ValueError:
+        product = None
     
     stocks = Stock.objects.select_related('product', 'location').filter(quantity__gt=0)
     
@@ -618,14 +636,18 @@ def stock_list(request):
         stocks = stocks.filter(
             Q(product__code__icontains=search_query) |
             Q(product__name__icontains=search_query) |
-            Q(location__code__icontains=search_query)
-        )
+            Q(location__code__icontains=search_query) |
+            Q(product__codes__code__icontains=search_query)
+        ).distinct()
     
     if location_filter:
         stocks = stocks.filter(location__code=location_filter)
     
     if product_filter:
         stocks = stocks.filter(product__code=product_filter)
+
+    if product_id:
+        stocks = stocks.filter(product__id=product_id)
     
     stocks = stocks.order_by('location__code', 'product__name')
     
@@ -639,6 +661,7 @@ def stock_list(request):
         'search_query': search_query,
         'location_filter': location_filter,
         'product_filter': product_filter,
+        'product': product,
     }
     return render(request, 'wms/stock_list.html', context)
 
@@ -646,15 +669,15 @@ def stock_list(request):
 # API endpoints dla skanowania
 @login_required
 def api_scan_barcode(request):
-    """API do skanowania kodów kreskowych"""
+    """API do skanowania kodów kreskowych i QR"""
     if request.method == 'POST':
         data = json.loads(request.body)
-        barcode = data.get('barcode', '').strip()
+        scanned_code = data.get('barcode', '').strip()
         scan_type = data.get('scan_type', 'product')
         
         try:
             if scan_type == 'location':
-                location = Location.objects.get(barcode=barcode)
+                location = Location.objects.get(barcode=scanned_code)
                 return JsonResponse({
                     'success': True,
                     'type': 'location',
@@ -666,21 +689,29 @@ def api_scan_barcode(request):
                     }
                 })
             else:
-                product = Product.objects.get(barcode=barcode)
-                return JsonResponse({
-                    'success': True,
-                    'type': 'product',
-                    'data': {
-                        'id': product.id,
-                        'code': product.code,
-                        'name': product.name,
-                        'barcode': product.barcode,
-                    }
-                })
-        except (Location.DoesNotExist, Product.DoesNotExist):
+                # Znajdź produkt po dowolnym kodzie (barcode, QR, etc.)
+                product = Product.find_by_code(scanned_code)
+                if product:
+                    return JsonResponse({
+                        'success': True,
+                        'type': 'product',
+                        'data': {
+                            'id': product.id,
+                            'code': product.code,
+                            'name': product.name,
+                            'primary_barcode': product.primary_barcode,
+                            'primary_qr': product.primary_qr,
+                        }
+                    })
+                else:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Nie znaleziono produktu o podanym kodzie.'
+                    })
+        except Location.DoesNotExist:
             return JsonResponse({
                 'success': False,
-                'error': 'Nie znaleziono obiektu o podanym kodzie kreskowym.'
+                'error': 'Nie znaleziono lokalizacji o podanym kodzie kreskowym.'
             })
     
     return JsonResponse({'success': False, 'error': 'Nieprawidłowe żądanie.'})
@@ -693,6 +724,8 @@ def htmx_sync_product(request, product_id):
     if request.method == 'POST':
         try:
             product = get_object_or_404(Product, id=product_id)
+
+            raise Exception('test')
             
             # Import subiekt models
             from subiekt.models import tw_Towar
@@ -708,12 +741,31 @@ def htmx_sync_product(request, product_id):
             product.code = subiekt_product.tw_Symbol
             product.name = subiekt_product.tw_Nazwa
             product.description = subiekt_product.tw_Opis or ''
-            product.barcode = subiekt_product.tw_Id
             
             # Aktualizuj stany magazynowe z Subiektu
             product.subiekt_stock = Decimal(str(getattr(subiekt_product, 'st_Stan', 0)))
             product.subiekt_stock_reserved = Decimal(str(getattr(subiekt_product, 'st_StanRez', 0)))
             product.last_sync_date = timezone.now()
+            
+            # Obsługa kodów kreskowych z Subiektu
+            from wms.models import ProductCode
+            subiekt_barcode = str(subiekt_product.tw_Id)
+            if subiekt_barcode:
+                # Sprawdź czy kod już istnieje dla tego produktu
+                existing_code = ProductCode.objects.filter(
+                    product=product,
+                    code=subiekt_barcode
+                ).first()
+                
+                if not existing_code:
+                    # Utwórz nowy kod kreskowy
+                    ProductCode.objects.create(
+                        product=product,
+                        code=subiekt_barcode,
+                        code_type='barcode',
+                        is_primary=True,  # Kod z Subiektu jako główny
+                        description='Kod z Subiektu (tw_Id)'
+                    )
             
             # Obsługa grupy produktów
             subiekt_group = getattr(subiekt_product, 'grt_Nazwa', '')
@@ -734,57 +786,46 @@ def htmx_sync_product(request, product_id):
             product.save()
             
             # Create response
-            response = render(request, 'wms/partials/sync_success.html', {
+            response = render(request, 'wms/product_list.html#product-row', {
                 'product': product,
                 'subiekt_stock': product.subiekt_stock,
                 'subiekt_stock_reserved': product.subiekt_stock_reserved
             })
             
             # Add success toast trigger
-            import json
             response['HX-Trigger'] = json.dumps({
                 'toastMessage': {'value': f'Produkt {product.name} został zsynchronizowany', 'type': 'success'}
             })
             
             return response
             
-        except Exception as e:
-            # Create response
-            response = render(request, 'wms/partials/sync_error.html', {
-                'error': str(e)
-            })
-            
-            # Add error toast trigger
-            import json
+        except Exception as e:            # Add error toast trigger
+            response = HttpResponse(status=500)
             response['HX-Trigger'] = json.dumps({
-                'toastMessage': {'value': f'Błąd synchronizacji: {str(e)}', 'type': 'error'}
+                'toastMessage': {'value': f'Błąd synchronizacji: {str(e)}', 'type': 'danger'}
             })
             
             return response
     
-    # Create response for invalid method
-    response = render(request, 'wms/partials/sync_error.html', {
-        'error': 'Metoda nie dozwolona'
-    })
-    
     # Add error toast trigger
-    import json
     response['HX-Trigger'] = json.dumps({
-        'toastMessage': {'value': 'Metoda nie dozwolona', 'type': 'error'}
+        'toastMessage': {'value': 'Metoda nie dozwolona', 'type': 'danger'}
     })
     
     return response
 
-
 @login_required
-def api_product_details(request, product_id):
-    """API do pobierania szczegółów produktu"""
+def htmx_product_details(request, product_id):
+    """HTMX view do pobierania szczegółów produktu"""
     if request.method == 'GET':
         try:
             product = get_object_or_404(Product, id=product_id)
             
             # Pobierz stany magazynowe w lokalizacjach
             stocks = Stock.objects.filter(product=product).select_related('location')
+            
+            # Pobierz kody produktu (barcodes, QR codes)
+            product_codes = product.codes.filter(is_active=True).order_by('-is_primary', 'code_type', 'code')
             
             # Oblicz statystyki
             total_reserved = sum(stock.reserved_quantity for stock in stocks)
@@ -794,50 +835,75 @@ def api_product_details(request, product_id):
             min_stock = min(quantities) if quantities else None
             avg_stock = sum(quantities) / len(quantities) if quantities else None
             
-            # Przygotuj dane lokalizacji
-            locations_data = []
-            for stock in stocks:
-                if stock.quantity > 0 or stock.reserved_quantity > 0:
-                    locations_data.append({
-                        'code': stock.location.code,
-                        'name': stock.location.name,
-                        'quantity': float(stock.quantity),
-                        'reserved_quantity': float(stock.reserved_quantity),
-                        'updated_at': stock.updated_at.strftime('%d.%m.%Y %H:%M') if stock.updated_at else '-'
-                    })
+            # Oblicz statystyki dla HTML
+            total_stock = sum(stock.quantity for stock in stocks)
+            locations_count = stocks.values('location').distinct().count()
             
-            return JsonResponse({
-                'success': True,
-                'product': {
-                    'id': product.id,
-                    'name': product.name,
-                    'code': product.code,
-                    'barcode': product.barcode,
-                    'unit': product.unit,
-                    'description': product.description,
-                    'total_stock': float(product.total_stock),
-                    'subiekt_stock': float(product.subiekt_stock),
-                    'stock_difference': float(product.stock_difference),
-                    'subiekt_id': product.subiekt_id,
-
-                    'last_sync_date': product.last_sync_date.strftime('%d.%m.%Y %H:%M') if product.last_sync_date else None,
-                    'needs_sync': product.needs_sync,
-                    'locations_count': len(locations_data),
-                    'reserved_stock': float(total_reserved),
-                    'max_stock': float(max_stock) if max_stock else None,
-                    'min_stock': float(min_stock) if min_stock else None,
-                    'avg_stock': float(avg_stock) if avg_stock else None,
-                    'locations': locations_data,
+            # Oblicz różnicę z Subiektem
+            stock_difference = 0
+            if product.subiekt_stock is not None:
+                stock_difference = total_stock - product.subiekt_stock
+            
+            # Calculate available stock for each stock item
+            for stock in stocks:
+                stock.available_quantity = stock.quantity - stock.reserved_quantity
+            
+            context = {
+                'product': product,
+                'stocks': stocks,
+                'product_codes': product_codes,
+                'total_stock': total_stock,
+                'locations_count': locations_count,
+                'stock_difference': stock_difference,
+                'total_reserved': total_reserved,
+                'max_stock': max_stock,
+                'min_stock': min_stock,
+                'avg_stock': avg_stock,
+            }
+            
+            # Create response
+            response = render(request, 'wms/partials/product_details_modal.html', context)
+            
+            # Add modal trigger
+            response['HX-Trigger'] = json.dumps({
+                'modalMessage': {
+                    'title': f'Szczegóły produktu: {product.name}',
+                    'body': response.content.decode('utf-8')
                 }
             })
             
+            return response
+            
         except Exception as e:
-            return JsonResponse({
-                'success': False,
+            # Create error response
+            response = render(request, 'wms/partials/error_modal.html', {
                 'error': str(e)
-            }, status=500)
+            })
+            
+            # Add modal trigger
+            response['HX-Trigger'] = json.dumps({
+                'modalMessage': {
+                    'title': 'Błąd',
+                    'body': f'Wystąpił błąd podczas ładowania szczegółów produktu: {str(e)}'
+                }
+            })
+            
+            return response
     
-    return JsonResponse({'success': False, 'error': 'Metoda nie dozwolona'}, status=405)
+    # Create response for invalid method
+    response = render(request, 'wms/partials/error_modal.html', {
+        'error': 'Metoda nie dozwolona'
+    })
+    
+    # Add modal trigger
+    response['HX-Trigger'] = json.dumps({
+        'modalMessage': {
+            'title': 'Błąd',
+            'body': 'Metoda nie dozwolona'
+        }
+    })
+    
+    return response
 
 
 @login_required
@@ -1023,12 +1089,13 @@ def scan_receiving_product(request, receiving_id):
         return redirect('wms:scan_receiving_location', receiving_id=receiving_id)
 
     if request.method == 'POST':
-        product_barcode = request.POST.get('product_barcode', '').strip()
+        scanned_code = request.POST.get('product_barcode', '').strip()
         
-        if product_barcode:
-            try:
-                product = Product.objects.get(barcode=product_barcode)
-                
+        if scanned_code:
+            # Znajdź produkt po dowolnym kodzie (barcode, QR, etc.)
+            product = Product.find_by_code(scanned_code)
+            
+            if product:
                 # Sprawdź czy produkt jest w tym RegIn
                 receiving_item = ReceivingItem.objects.filter(
                     receiving_order=receiving_order,
@@ -1040,9 +1107,8 @@ def scan_receiving_product(request, receiving_id):
                     return redirect('wms:enter_receiving_quantity', receiving_id=receiving_id, item_id=receiving_item.id)
                 else:
                     messages.error(request, f'Produkt {product.name} nie jest w tym rejestrze przyjęć.')
-                    
-            except Product.DoesNotExist:
-                messages.error(request, f'Produkt o kodzie {product_barcode} nie istnieje.')
+            else:
+                messages.error(request, f'Produkt o kodzie {scanned_code} nie istnieje.')
         else:
             messages.error(request, 'Proszę wprowadzić kod produktu.')
     
@@ -1158,8 +1224,7 @@ def create_warehouse_document(receiving_order):
             document=document,
             product=receiving_item.product,
             location=receiving_item.location,
-            quantity=receiving_item.quantity_received,
-            unit_price=receiving_item.supplier_order_item.unit_price
+            quantity=receiving_item.quantity_received
         )
     
     # Zaktualizuj status ZD
@@ -1259,6 +1324,1203 @@ def product_group_detail(request, group_id):
         'products': products,
     }
     return render(request, 'wms/product_group_detail.html', context)
+
+
+@login_required
+def htmx_edit_product_codes(request, product_id, code_id=None):
+    """Edycja kodów produktu z możliwością skanowania"""
+    product = get_object_or_404(Product, id=product_id)    
+    # Get existing codes
+    product_codes = product.codes.all().order_by('-is_primary', 'code_type', 'code')
+    
+    # If code_id is provided, we're editing an existing code
+    editing_code = None
+    if code_id:
+        editing_code = get_object_or_404(ProductCode, id=code_id, product=product)
+
+    context = {
+        'product': product,
+        'product_codes': product_codes,
+        'code_types': ProductCode.CODE_TYPES,
+        'form': ProductCodeForm(product=product, instance=editing_code),
+        'editing_code': editing_code,
+    }
+    
+    # Handle POST request for form submission
+    if request.method == 'POST':
+        form = ProductCodeForm(request.POST, product=product, instance=editing_code)
+        context['form'] = form
+        context['editing_code'] = editing_code
+        
+        if form.is_valid():
+            code = form.save(commit=False)
+            code.product = product
+            code.save()
+                    
+            # If this is set as primary, unset other primary codes
+            if code.is_primary:
+                product.codes.exclude(id=code.id).update(is_primary=False)
+                    
+            context['editing_code'] = None
+            context['form'] = ProductCodeForm(product=product)
+                    
+            response = HttpResponse(status=200)
+            response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+            response['HX-Trigger'] = json.dumps({
+                'modalMessage': {
+                    'title': f'Kody produktu - {product.name}',
+                    'body': response.content.decode('utf-8')
+                },
+                'toastMessage': {
+                    'value': 'Kod zapisany pomyślnie!',
+                    'type': 'success'
+                }
+            })
+            return response                
+
+    response = HttpResponse(status=200)
+    response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+
+    response['HX-Trigger'] = json.dumps({
+        'modalMessage': {
+            'title': f'Kody produktu - {product.name}',
+            'body': response.content.decode('utf-8')
+        },
+    })
+
+    return response
+
+@login_required
+def api_add_scanned_code(request, product_id):
+    """API endpoint for adding scanned codes"""
+    if request.method == 'POST':
+        try:
+            product = get_object_or_404(Product, id=product_id)
+            data = json.loads(request.body)
+            scanned_code = data.get('code', '').strip()
+            code_type = data.get('type', 'barcode')
+            
+            if not scanned_code:
+                return JsonResponse({'success': False, 'error': 'Brak kodu do dodania'})
+            
+            # Check if code already exists
+            if ProductCode.objects.filter(code=scanned_code).exists():
+                return JsonResponse({'success': False, 'error': f'Kod {scanned_code} już istnieje w systemie'})
+            
+            # Create new code
+            ProductCode.objects.create(
+                product=product,
+                code=scanned_code,
+                code_type=code_type,
+                description=f'Dodano przez skanowanie ({code_type})',
+                is_primary=False
+            )
+            
+            response = JsonResponse({
+                'success': True, 
+                'message': f'Dodano kod {scanned_code}',
+                'code': scanned_code,
+                'type': code_type
+            })
+            
+            # Add HTMX trigger for product codes list refresh
+            response['HX-Trigger'] = json.dumps({
+                "product-codes-list": {
+                    "value": "product-codes-list"
+                }
+            })
+            
+            return response
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Nieprawidłowe żądanie'})
+
+
+@login_required
+def htmx_add_code_modal(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+
+    # Create form instance
+    form = ProductCodeForm(product=product)
+    
+    context = {
+        'product': product,
+        'code_types': ProductCode.CODE_TYPES,
+        'form': form
+    }
+
+    response = HttpResponse(status=200)
+
+    if request.method == 'POST':
+        # Handle form submission
+        action = request.POST.get('action')
+        code_id = request.POST.get('code_id')
+        
+        if action == 'add':
+            # Use form for validation
+            form = ProductCodeForm(request.POST, product=product)
+            if form.is_valid():
+                # If this is primary, unset other primary codes
+                if form.cleaned_data['is_primary']:
+                    ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
+                
+                # Create new code
+                form.instance.product = product
+                form.save()
+                
+                toast_message = {
+                    "toastMessage": {
+                        "value": f"Dodano kod: {form.cleaned_data['code']}",
+                        "type": "success"
+                    },
+                    "product-codes-list": {
+                        "value": "product-codes-list"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+
+            else:
+                # Form validation failed
+                context['form'] = form
+                response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+                return response
+
+        elif action == 'toggle_primary' and code_id:
+            try:
+                # Unset all primary codes
+                ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
+                # Set this one as primary
+                code = ProductCode.objects.get(id=code_id, product=product)
+                code.is_primary = True
+                code.save()
+                toast_message = {
+                    "toastMessage": {
+                        "value": f"Ustawiono {code.code} jako kod główny",
+                        "type": "success"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+            except ProductCode.DoesNotExist:
+                toast_message = {
+                    "toastMessage": {
+                        "value": "Nie znaleziono kodu.",
+                        "type": "danger"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+
+        #return HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+        return response
+
+    # Create response
+    response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+            
+    # Add modal trigger
+    response['HX-Trigger'] = json.dumps({
+        'modalMessage': {
+            'title': f'Dodaj kod ręcznie',
+            'body': response.content.decode('utf-8')
+        }
+    })
+
+    return response
+
+@login_required
+def htmx_set_main_code(request, product_id, code_id):
+    if request.method == 'POST':
+        try:
+            product = get_object_or_404(Product, id=product_id)
+            code = get_object_or_404(ProductCode, id=code_id, product=product)
+            
+            # Unset all primary codes first
+            ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
+            
+            # Set this one as primary
+            code.is_primary = True
+            code.save()
+            
+            # Create response
+            response = HttpResponse(status=200)
+            
+            # Add toast message header
+            toast_message = {
+                "toastMessage": {
+                    "value": f"Ustawiono {code.code} jako kod główny",
+                    "type": "success"
+                },
+                "product-codes-list": {
+                    "value": "product-codes-list"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+            
+        except ProductCode.DoesNotExist:
+            toast_message = {
+                "toastMessage": {
+                    "value": "Nie znaleziono kodu.",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        except Exception as e:
+            toast_message = {
+                "toastMessage": {
+                    "value": f"Błąd podczas ustawiania kodu głównego: {str(e)}",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+
+    # For non-POST requests
+    response = HttpResponse(status=405) # Method not allowed
+    toast_message = {
+        "toastMessage": {
+            "value": "Nieprawidłowe żądanie",
+            "type": "danger"
+        }
+    }
+    response['HX-Trigger'] = json.dumps(toast_message)
+    return response
+
+@login_required
+def htmx_delete_code(request, product_id, code_id):
+    if request.method == 'DELETE':
+        try:
+            product = get_object_or_404(Product, id=product_id)
+            code = get_object_or_404(ProductCode, id=code_id, product=product)
+            code_value = code.code
+            code.delete()           
+            
+            # Create response
+            response = HttpResponse(status=200)
+            
+            # Add toast message header
+            toast_message = {
+                "toastMessage": {
+                    "value": f"Usunięto kod: {code_value}",
+                    "type": "success"
+                },
+                "product-codes-list": {
+                    "value": "product-codes-list"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            
+            return response
+        except ProductCode.DoesNotExist:
+            # Handle error with toast
+            response = HttpResponse(status=404)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Nie znaleziono kodu do usunięcia",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        except Exception as e:
+            # Handle other errors with toast
+            response = HttpResponse(status=500)
+            toast_message = {
+                "toastMessage": {
+                    "value": f"Błąd podczas usuwania kodu: {str(e)}",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+
+    # For non-DELETE requests
+    response = HttpResponse(status=405) # Method not allowed
+    toast_message = {
+        "toastMessage": {
+            "value": "Nieprawidłowe żądanie",
+            "type": "danger"
+        }
+    }
+    response['HX-Trigger'] = json.dumps(toast_message)
+    return response
+
+
+@login_required
+def htmx_product_codes_list(request, product_id):
+    """HTMX endpoint for refreshing product codes list"""
+    product = get_object_or_404(Product, id=product_id)
+    product_codes = product.codes.all().order_by('-is_primary', 'code_type', 'code')
+
+    context = {
+        'product': product,
+        'product_codes': product_codes,
+    }
+    
+    return render(request, 'wms/partials/_product_codes_list.html', context)
+
+@login_required
+def htmx_add_code_inline(request, product_id):
+    """HTMX endpoint for adding scanned codes inline from barcode scanner"""
+    context = {}
+
+    response = HttpResponse(status=200)
+
+    if request.method == 'POST':
+        try:
+            product = get_object_or_404(Product, id=product_id)
+            scanned_code = request.POST.get('code', '').strip()
+            scanner_active = request.POST.get('scanner_active', 'false')
+
+            if scanner_active == 'false':
+                toast_message = {
+                    "toastMessage": {
+                        "value": "Skaner został zatrzymany. Uruchom skaner aby dodać kody.",
+                        "type": "danger"
+                    }
+                }
+                context['success'] = False
+                context['message'] = 'Skaner został zatrzymany. Uruchom skaner aby dodać kody.'
+                response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+                response['HX-Trigger'] = json.dumps(toast_message)
+                return response
+            
+            if not scanned_code:
+                context['success'] = False
+                context['message'] = 'Brak kodu do dodania'
+                return render(request, 'wms/partials/_product_codes_modal.html', context)
+
+            new_code = ProductCode.objects.create(
+                product=product,
+                code=scanned_code,
+                code_type='barcode',
+                description=f'Zeskanowano: {timezone.now().strftime("%Y-%m-%d %H:%M:%S")} przez {request.user.username}',
+                is_primary=False  # Don't make scanned codes primary by default
+            )
+            
+            # Return success response
+            context['success'] = True
+            context['message'] = f'Dodano zeskanowany kod: {scanned_code}'
+            context['code_id'] = new_code.id
+            context['code'] = new_code.code
+            reload_codes = {
+                "product-codes-list": {
+                    "value": "product-codes-list"
+                }
+            }
+            response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
+            response['HX-Trigger'] = json.dumps(reload_codes)
+            return response
+            
+        except IntegrityError as e:
+            code = ProductCode.objects.get(code=scanned_code)
+            context['success'] = False
+            if code.product == product:
+                context['message'] = f'Kod {scanned_code} już istnieje dla tego produktu'
+            else:
+                context['message'] = f'Kod {scanned_code} już jest używany dla produktu {code.product.name}'
+
+            return render(request, 'wms/partials/_product_codes_modal.html', context)
+        except Exception as e:
+            context['success'] = False
+            context['message'] = f'Błąd podczas dodawania kodu: {str(e)}'
+            return render(request, 'wms/partials/_product_codes_modal.html', context)
+    
+    context['success'] = False
+    context['message'] = 'Nieprawidłowe żądanie'
+    return render(request, 'wms/partials/_product_codes_modal.html', context)
+
+
+@login_required
+def htmx_location_edit(request, location_id=None):
+    """HTMX endpoint for creating/editing location - returns edit form"""
+    location = None
+    if location_id:
+        location = get_object_or_404(Location, id=location_id)
+    
+    if request.method == 'GET':
+        form = LocationEditForm(instance=location, location=location)
+        
+        context = {
+            'form': form,
+            'location': location,
+        }
+
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_location_edit_form.html', context)
+
+        response['HX-Trigger'] = json.dumps({
+            'modalMessage': {
+                'title': 'Nowa lokalizacja' if not location else 'Edycja lokalizacji',
+                'body': response.content.decode('utf-8')
+            }
+        })
+
+        return response
+    
+    # Handle POST for form submission
+    if request.method == 'POST':
+        form = LocationEditForm(request.POST, instance=location, location=location)
+
+        context = {
+                'form': form,
+                'location': location,
+            }
+        
+        if form.is_valid():
+            try:
+                form.save()
+                
+                # Return success response with updated row
+                response = HttpResponse(status=200)
+                toast_message = {
+                    "toastMessage": {
+                        "value": "Lokalizacja została utworzona" if not location else "Lokalizacja została zaktualizowana",
+                        "type": "success"
+                    },
+                    'modalHide': {
+                        'value': 'modalHide'
+                    },
+                    "location-list-updated": {
+                        "value": "location-list-updated"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+                return response
+                
+            except Exception as e:
+                context = {
+                    'form': form,
+                    'location': location,
+                    'error': f'Błąd podczas zapisu formularza: {str(e)}'
+                }
+           
+        return render(request, 'wms/partials/_location_edit_form.html', context)
+    
+    return HttpResponse(status=405)  # Method not allowed
+
+
+@login_required
+def htmx_location_delete(request, location_id):
+    """HTMX endpoint for deleting location"""
+    if request.method != 'DELETE':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        
+        # Check if location has any stock
+        if Stock.objects.filter(location=location).exists():
+            response = HttpResponse(status=400)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Nie można usunąć lokalizacji z produktami w magazynie",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        
+        # Check if location has child locations
+        if Location.objects.filter(parent=location).exists():
+            response = HttpResponse(status=400)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Nie można usunąć lokalizacji z podlokalizacjami",
+                    "type": "danger"
+                },
+                "location-list-updated": {
+                    "value": "location-list-updated"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        
+        location_name = location.name
+        location.delete()
+        
+        response = HttpResponse(status=200)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Lokalizacja {location_name} została usunięta",
+                "type": "success"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas usuwania lokalizacji: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photos(request, location_id):
+    """HTMX endpoint for viewing location photos - returns photos modal"""
+    if request.method != 'GET':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        photos = location.images.all().order_by('created_at')
+        
+        # Create form for uploading new photos
+        upload_form = LocationImageForm(location=location, is_edit=False)
+        
+        context = {
+            'location': location,
+            'photos': photos,
+            'upload_form': upload_form,
+        }
+
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_location_photos_modal.html', context)
+
+        
+        response['HX-Trigger'] = json.dumps({
+            'modalMessage': {
+                'title': f'Zdjęcia lokalizacji: {location.name}',
+                'body': response.content.decode('utf-8')
+            }
+        })
+
+        return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas ładowania zdjęć: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photo_upload(request, location_id):
+    """HTMX endpoint for uploading location photos"""
+    if request.method != 'POST':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        
+        # Use the new form for validation and processing
+        form = LocationImageForm(request.POST, request.FILES, location=location, is_edit=False)
+        
+        if form.is_valid():
+            # Save the photo using the form's save method
+            photo = form.save()
+            
+            # Refresh photos list
+            photos = location.images.all().order_by('created_at')
+            upload_form = LocationImageForm(location=location, is_edit=False)
+            
+            context = {
+                'location': location,
+                'photos': photos,
+                'upload_form': upload_form,
+            }
+            
+            response = HttpResponse(status=200)
+            response.content = render(request, 'wms/partials/_location_photos_modal.html', context)
+            
+            toast_message = {
+                "toastMessage": {
+                    "value": "Zdjęcie zostało dodane",
+                    "type": "success"
+                },
+                "location-list-updated": {
+                    "value": "location-list-updated"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        else:
+            # Form validation failed
+            photos = location.images.all().order_by('created_at')
+            context = {
+                'location': location,
+                'photos': photos,
+                'upload_form': form,  # Pass the form with errors
+            }
+            
+            response = HttpResponse(status=400)
+            response.content = render(request, 'wms/partials/_location_photos_modal.html', context)
+            
+            # Get first error message
+            first_error = next(iter(form.errors.values()))[0] if form.errors else "Błąd walidacji formularza"
+            toast_message = {
+                "toastMessage": {
+                    "value": first_error,
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas dodawania zdjęcia: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photo_update(request, location_id):
+    """HTMX endpoint for updating location photo details"""
+
+    response = HttpResponse(status=200)
+
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        photo_id = request.GET.get('photo_id') or request.POST.get('photo_id')
+        if not photo_id:
+            response = HttpResponse(status=400)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Brak ID zdjęcia",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        
+        photo = get_object_or_404(LocationImage, id=photo_id, location=location)
+
+        if request.method == 'GET':
+            form = LocationImageForm(location=location, instance=photo, is_edit=True)
+            context = {
+                'location': location,
+                'photo': photo,
+                'upload_form': form,
+            }
+            response = HttpResponse(status=200)
+            response.content = render(request, 'wms/partials/_location_photo_edit_modal.html', context)
+            return response
+        
+        if request.method == 'POST':
+        # Use the new form for validation and processing
+            form = LocationImageForm(request.POST, location=location, instance=photo, is_edit=True)
+        
+            if form.is_valid():
+            # Save the photo using the form's save method
+                form.save()
+                context = {
+                    'location': location,
+                    'photo': photo,
+                    'upload_form': form,
+                }
+            
+                response.content = render(request, 'wms/partials/_location_photo_edit_modal.html', context)
+            
+                toast_message = {
+                    "toastMessage": {
+                        "value": "Zdjęcie zostało zaktualizowane",
+                        "type": "success"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+                return response
+            else:
+                context = {
+                    'location': location,
+                    'photo': photo,
+                    'upload_form': form,
+                }
+
+                toast_message = {
+                    "toastMessage": {
+                        "value": "Błąd podczas aktualizacji zdjęcia",
+                        "type": "danger"
+                    }
+                }
+                response['HX-Trigger'] = json.dumps(toast_message)
+                response.content = render(request, 'wms/partials/_location_photo_edit_modal.html', context)
+                return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas aktualizacji zdjęcia: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photo_set_primary(request, location_id):
+    """HTMX endpoint for setting location photo as primary"""
+    if request.method != 'POST':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        photo_id = request.POST.get('photo_id')
+        if not photo_id:
+            response = HttpResponse(status=400)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Brak ID zdjęcia",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        photo = get_object_or_404(LocationImage, id=photo_id, location=location)
+        
+        photo.is_primary = True
+        photo.save()
+        
+        # Refresh photos list
+        photos = location.images.all().order_by('created_at')
+        upload_form = LocationImageForm(location=location, is_edit=False)
+        context = {
+            'location': location,
+            'photos': photos,
+            'upload_form': upload_form,
+        }
+        
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_location_photos_modal.html', context)
+        
+        toast_message = {
+            "toastMessage": {
+                "value": "Zdjęcie zostało ustawione jako główne",
+                "type": "success"
+            },
+            "location-list-updated": {
+                "value": "location-list-updated"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas ustawiania zdjęcia głównego: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photo_delete(request, location_id):
+    """HTMX endpoint for deleting location photo"""
+    print(request.method)
+
+    if request.method != 'POST':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        photo_id = request.POST.get('photo_id')
+        if not photo_id:
+            response = HttpResponse(status=400)
+            toast_message = {
+                "toastMessage": {
+                    "value": "Brak ID zdjęcia",
+                    "type": "danger"
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        photo = get_object_or_404(LocationImage, id=photo_id, location=location)
+        
+        photo.delete()
+        
+        # Refresh photos list
+        photos = location.images.all().order_by('created_at')
+        upload_form = LocationImageForm(location=location, is_edit=False)
+        context = {
+            'location': location,
+            'photos': photos,
+            'upload_form': upload_form,
+        }
+        
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_location_photos_modal.html', context)
+        
+        toast_message = {
+            "toastMessage": {
+                "value": "Zdjęcie zostało usunięte",
+                "type": "success"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas usuwania zdjęcia: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_location_photos_inline(request, location_id):
+    """HTMX endpoint for displaying location photos inline in the next row"""
+    if request.method != 'GET':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        location = get_object_or_404(Location, id=location_id)
+        photos = location.images.all().order_by('created_at')
+        
+        context = {
+            'location': location,
+            'photos': photos,
+        }
+        
+        # Return HTML content directly for inline display
+        return render(request, 'wms/partials/_location_photos_inline.html', context)
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas ładowania zdjęć: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_product_images_inline(request, product_id):
+    """HTMX endpoint for displaying product images inline in the next row"""
+    if request.method != 'GET':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        product = get_object_or_404(Product, id=product_id)
+        images = product.images.all().order_by('created_at')
+        
+        context = {
+            'product': product,
+            'images': images,
+        }
+        
+        # Return HTML content directly for inline display
+        return render(request, 'wms/partials/_product_images_inline.html', context)
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas ładowania zdjęć: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_product_variants(request, product_id):
+    """HTMX endpoint for displaying product variants inline in the next row"""
+    if request.method != 'GET':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        product = get_object_or_404(Product, id=product_id)
+
+        variants = Product.objects.filter(
+            parent=product
+        )
+
+        context = {
+            'product': product,
+            'size_color_variants': variants,
+        }
+
+        # Return HTML content directly for inline display
+        return render(request, 'wms/partials/_product_variants_inline.html', context)
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        toast_message = {
+            "toastMessage": {
+                "value": f"Błąd podczas ładowania wariantów: {str(e)}",
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+
+@login_required
+def htmx_delete_variant(request, variant_id):
+    """HTMX view for deleting product variants"""
+    if request.method != 'POST':
+        return HttpResponse(status=405)  # Method not allowed
+    
+    try:
+        # Current implementation stores size/color variants as child Product rows
+        variant = get_object_or_404(Product, id=variant_id)
+        if not variant.parent:
+            response = HttpResponse(status=500)
+            toast_message = {
+                'toastMessage': {
+                    'value': f'Błąd podczas usuwania wariantu: Brak produktu nadrzędnego',
+                    'type': 'danger'
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+
+        # Capture data before deletion
+        parent_id = variant.parent.id
+        variants_json = variant.variants or {}
+        size_value = variants_json.get('size', '-')
+        color_value = variants_json.get('color', '-')
+
+        # Delete the variant
+        variant.delete()
+
+        product = get_object_or_404(Product, id=parent_id)
+        # Child Product variants for size/color
+        size_color_variants = Product.objects.filter(parent=product).order_by('name')
+        
+        context = {
+            'product': product,
+            'size_color_variants': size_color_variants,
+        }
+        
+        # Return the updated variants HTML with success toast
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_product_variants_inline.html', context)
+        toast_message = {
+            'toastMessage': {
+                'value': f'Usunięto wariant: {size_value} - {color_value}',
+                'type': 'success'
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error deleting variant: {e}")
+        toast_message = {
+            'toastMessage': {
+                'value': f'Błąd podczas usuwania wariantu: {str(e)}',
+                'type': 'danger'
+            }
+        }
+        
+        response = HttpResponse(status=500)
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
+
+@login_required
+def htmx_edit_product_modal(request, product_id):
+    """HTMX view for editing product modal"""
+    product = get_object_or_404(Product, id=product_id)
+    context = {
+        'product': product,
+        'action': reverse('wms:htmx_edit_product_modal', kwargs={'product_id': product.id}),
+        'mode': 'product',
+        'form': ProductForm(instance=product),
+        'stock_formset': ProductStockInlineFormSet(instance=product, prefix='stock')
+    }
+    response = HttpResponse(status=200)
+
+    if request.method == 'POST':
+        form = ProductForm(request.POST, instance=product)
+        stock_formset = ProductStockInlineFormSet(request.POST, instance=product, prefix='stock')
+        context['form'] = form
+        context['stock_formset'] = stock_formset
+
+        if form.is_valid() and stock_formset.is_valid():
+            form.save()
+            stock_formset.save()
+            # Rebuild fresh, unbound form and formset to avoid rendering deleted rows/errors
+            context['form'] = ProductForm(instance=product)
+            context['stock_formset'] = ProductStockInlineFormSet(instance=product, prefix='stock')
+            response.content = render(request, 'wms/partials/_product_edit_modal_form.html', context)
+            toast_message = {
+                'toastMessage': {
+                    'value': 'Produkt został zaktualizowany',
+                    'type': 'success'
+                },
+                'modalMessage': {
+                    'title': f"Edytuj produkt - {product.name}",
+                    'body': response.content.decode('utf-8')
+                }
+            }
+            response['HX-Trigger'] = json.dumps(toast_message)
+            return response
+        else:
+            response.content = render(request, 'wms/partials/_product_edit_modal_form.html', context)
+            response['HX-Trigger'] = json.dumps({
+                'modalMessage': {
+                    'title': f"Edytuj produkt - {product.name}",
+                    'body': response.content.decode('utf-8')
+                },
+                'toastMessage': {
+                    'value': 'Wystąpił błąd podczas zapisywania formularza',
+                    'type': 'danger'
+                }
+            })
+            return response
+
+    response.content = render(request, 'wms/partials/_product_edit_modal_form.html', context)
+    response['HX-Trigger'] = json.dumps({
+        'modalMessage': {
+            'title': f"Edytuj produkt - {product.name}",
+            'body': response.content.decode('utf-8')
+        }
+    })
+    return response
+
+@login_required
+def htmx_add_size_color_modal(request, product_id, variant_id=None):
+    """HTMX view for adding/editing size and color variant modal"""
+    product = get_object_or_404(Product, id=product_id)
+    variant = None
+    if variant_id:
+        variant = get_object_or_404(Product, id=variant_id)
+        # Ensure the variant belongs to this product
+        if not variant.parent or variant.parent.id != product.id:
+            return HttpResponse(status=404)
+
+    if request.method == 'GET':
+        initial = None
+        if variant:
+            variants_json = variant.variants or {}
+            initial = {
+                'size': variants_json.get('size', ''),
+                'color': variants_json.get('color', ''),
+            }
+        form = ProductColorSizeForm(parent=product, instance=variant, initial=initial)
+        stock_formset = ProductStockInlineFormSet(instance=variant if variant else Product(), prefix='stock')
+
+        context = {
+            'form': form,
+            'stock_formset': stock_formset,
+            'product': product,
+            'variant': variant,
+            'action': reverse('wms:htmx_edit_size_color_modal', kwargs={'product_id': product.id, 'variant_id': variant.id}) if variant else reverse('wms:htmx_add_size_color_modal', kwargs={'product_id': product.id})
+        }
+
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_product_size_color_form.html', context)
+        
+        response['HX-Trigger'] = json.dumps({
+            'modalMessage': {
+                'title': (f"Edytuj rozmiar i kolor - {product.name}" if variant else f"Dodaj rozmiar i kolor - {product.name}"),
+                'body': response.content.decode('utf-8')
+            }
+        })
+        
+        return response
+    
+    # Handle POST for form submission
+    if request.method == 'POST':
+        form = ProductColorSizeForm(request.POST, parent=product, instance=variant)
+        stock_formset = ProductStockInlineFormSet(request.POST, instance=variant if variant else Product(), prefix='stock')
+
+        if form.is_valid() and stock_formset.is_valid():
+            try:
+                variant_obj = form.save()
+                # Use the already validated formset and assign the saved variant as instance
+                stock_formset.instance = variant_obj
+                stock_formset.save()
+
+                size_value = (variant_obj.variants or {}).get('size', '')
+                color_value = (variant_obj.variants or {}).get('color', '')
+                toast_message = {
+                    'toastMessage': {
+                        'value': (f"Zaktualizowano wariant: {size_value} - {color_value}" if variant else f"Dodano wariant: {size_value} - {color_value}"),
+                        'type': 'success'
+                    },
+                    'product-variants-updated': {
+                        'value': 'product-variants-updated'
+                    }
+                }
+
+                context = {
+                    'form': form,
+                    'stock_formset': ProductStockInlineFormSet(instance=variant_obj, prefix='stock'),
+                    'product': product,
+                    'variant': variant_obj,
+                    'action': reverse('wms:htmx_edit_size_color_modal', kwargs={'product_id': product.id, 'variant_id': variant_obj.id}) if variant_obj else reverse('wms:htmx_add_size_color_modal', kwargs={'product_id': product.id})
+                }
+
+                response = HttpResponse(status=200)
+                response.content = render(request, 'wms/partials/_product_size_color_form.html', context)
+                response['HX-Trigger'] = json.dumps(toast_message)
+                return response
+
+            except Exception as e:
+                toast_message = {
+                    'toastMessage': {
+                        'value': f'Błąd podczas zapisywania: {str(e)}',
+                        'type': 'danger'
+                    }
+                }
+                response = HttpResponse(status=500)
+                response['HX-Trigger'] = json.dumps(toast_message)
+                return response
+
+        # Form or formset has errors, return with errors
+        context = {
+            'form': form,
+            'stock_formset': stock_formset,
+            'product': product,
+            'variant': variant,
+            'action': reverse('wms:htmx_edit_size_color_modal', kwargs={'product_id': product.id, 'variant_id': variant.id}) if variant else reverse('wms:htmx_add_size_color_modal', kwargs={'product_id': product.id})
+        }
+
+        response = HttpResponse(status=200)
+        response.content = render(request, 'wms/partials/_product_size_color_form.html', context)
+
+        response['HX-Trigger'] = json.dumps({
+            'modalMessage': {
+                'title': (f"Edytuj rozmiar i kolor - {product.name}" if variant else f"Dodaj rozmiar i kolor - {product.name}"),
+                'body': response.content.decode('utf-8')
+            },
+            'toastMessage': {
+                'value': 'Wystąpił błąd podczas zapisywania formularza',
+                'type': 'danger'
+            }
+        })
+
+        return response
+
+
+
+
+
 
 
 

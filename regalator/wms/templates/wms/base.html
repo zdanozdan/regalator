@@ -1,3 +1,6 @@
+{% load i18n %}
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -6,6 +9,7 @@
     <title>{% block title %}Regalator WMS{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'wms/css/wms.css' %}">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
         .navbar-brand {
@@ -34,6 +38,8 @@
             background-color: #e7f3ff;
         }
     </style>
+    {% block extra_js %}{% endblock %}
+    {% block extra_css %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
 
@@ -82,6 +88,7 @@
                             <li><a class="dropdown-item" href="{% url 'wms:stock_list' %}">
                                 <i class="fas fa-warehouse me-2"></i>Stany magazynowe
                             </a></li>
+
                         </ul>
                     </li>
                 </ul>
@@ -130,7 +137,7 @@
         <!-- Komunikaty -->
         {% if messages %}
             {% for message in messages %}
-                {% if 'error' in message.tags %}
+                {% if 'error' in message.tags or 'danger' in message.tags %}
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -159,9 +166,29 @@
     </main>
 
     <!-- Toast Container -->
+    {% block toast_box %}
     <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
         <!-- Toasts will be dynamically added here -->
     </div>
+    {% endblock toast_box %}
+
+     <!-- Modal Container -->
+     {% block modal_box %}
+     <!-- Dynamic Modal -->
+     <div class="modal fade" id="dynamicModal" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true">
+         <div class="modal-dialog modal-dialog-scrollable modal-lg">
+             <div class="modal-content">
+                 <div class="modal-header">
+                     <h5 class="modal-title" id="modalTitle">{% trans "Informacja" %}</h5>
+                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                 </div>
+                <div class="modal-body" id="modalBody">
+                     {% trans "Brak wiadomości do wyświetlenia" %}
+                 </div>                 
+             </div>
+         </div>
+     </div>
+     {% endblock modal_box %}
 
     <!-- Stopka -->
     <footer class="bg-light mt-5 py-3">
@@ -171,7 +198,56 @@
             </small>
         </div>
     </footer>
-    <script>       
+    <script>
+        htmx.on('modalHide', function (event) {
+            // Find all visible modals
+            const visibleModals = document.querySelectorAll('.modal.show');
+            
+            if (visibleModals.length > 0) {
+                // Hide the first visible modal (usually the topmost one)
+                const activeModal = visibleModals[0];
+                const bsModal = bootstrap.Modal.getInstance(activeModal) || new bootstrap.Modal(activeModal);
+                bsModal.hide();
+            } else {
+                // Fallback: try to find and hide any modal with 'show' class
+                const modals = document.querySelectorAll('.modal');
+                modals.forEach(modal => {
+                    if (modal.classList.contains('show')) {
+                        const bsModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+                        bsModal.hide();
+                    }
+                });
+            }
+        });
+        htmx.on('modalMessage', function (event) {
+            // Get modal elements                                                                                                                                                   
+            const modal = document.getElementById('dynamicModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+
+            // Set modal content                                                                                                                                                    
+            if (event.detail.title) {
+                modalTitle.textContent = event.detail.title;
+	        } else {
+                modalTitle.textContent = '{% trans "Informacja" %}';
+            }
+
+            if (event.detail.body) {
+                modalBody.innerHTML = event.detail.body;
+            } else {
+                modalBody.innerHTML = '{% trans "Brak wiadomości do wyświetlenia" %}';
+            }
+
+            // Re-process HTMX attributes on the new content
+            htmx.process(modalBody);
+
+            // Show the modal if there are no other visible modals                      
+            const visibleModals = document.querySelectorAll('.modal.show');
+            if (!visibleModals.length) {
+                const bsModal = new bootstrap.Modal(modal);
+                bsModal.show();
+            }
+        });    
         // Toast message handler
         htmx.on('toastMessage', function (event) {
             const toastContainer = document.getElementById('toast-container');
@@ -212,9 +288,10 @@
             });
         });
     </script>
-
     <!-- Skrypty JavaScript -->
+    <script src="{% static 'wms/js/barcode.js' %}"></script>
+    <script src="{% static 'wms/js/stock.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    {% block extra_js %}{% endblock %}
+    {% block js_bottom %}{% endblock %}
 </body>
 </html> 

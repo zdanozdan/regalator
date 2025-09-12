@@ -142,10 +142,9 @@
                                 <tr>
                                     <th>Produkt</th>
                                     <th>Kod kreskowy</th>
+                                    <th>Subiekt ID</th>
                                     <th>Ilość zamówiona</th>
                                     <th>Ilość przyjęta</th>
-                                    <th>Cena jednostkowa</th>
-                                    <th>Wartość</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -154,11 +153,41 @@
                                 <tr>
                                     <td>
                                         <strong>{{ item.product.name }}</strong>
-                                        {% if item.notes %}
-                                            <br><small class="text-muted">{{ item.notes }}</small>
+                                        {% if item.product.subiekt_id %}
+                                            <br><small class="text-muted">
+                                                Subiekt ID: 
+                                                <a href="#" 
+                                                   hx-get="{% url 'wms:htmx_product_details' item.product.id %}"
+                                                   hx-trigger="click"
+                                                   class="text-muted"
+                                                   hx-swap="none"
+                                                   style="cursor: pointer; text-decoration: none;"
+                                                   onmouseover="this.style.textDecoration='underline'"
+                                                   onmouseout="this.style.textDecoration='none'"
+                                                   title="Kliknij aby zobaczyć szczegóły produktu">
+                                                    <i class="fas fa-info-circle me-1"></i>{{ item.product.subiekt_id }}
+                                                </a>
+                                            </small>
                                         {% endif %}
                                     </td>
                                     <td>{{ item.product.barcode }}</td>
+                                    <td>
+                                        {% if item.product.subiekt_id %}
+                                            <a href="#" 
+                                               hx-get="{% url 'wms:htmx_product_details' item.product.id %}"
+                                               hx-trigger="click"
+                                               hx-swap="none"
+                                               class="text-muted"
+                                               style="cursor: pointer; text-decoration: none;"
+                                               onmouseover="this.style.textDecoration='underline'"
+                                               onmouseout="this.style.textDecoration='none'"
+                                               title="Kliknij aby zobaczyć szczegóły produktu">
+                                                <i class="fas fa-info-circle me-1"></i>{{ item.product.subiekt_id }}
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                     <td>{{ item.quantity_ordered }}</td>
                                     <td>
                                         {% if item.quantity_received > 0 %}
@@ -167,8 +196,6 @@
                                             <span class="text-muted">0</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ item.unit_price|floatformat:2 }} zł</td>
-                                    <td>{{ item.total_value|floatformat:2 }} zł</td>
                                     <td>
                                         {% if item.quantity_received == 0 %}
                                             <span class="badge bg-warning">
