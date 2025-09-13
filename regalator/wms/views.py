@@ -2297,6 +2297,7 @@ def htmx_product_variants(request, product_id):
         context = {
             'product': product,
             'size_color_variants': variants,
+            'variants': variants,
         }
 
         # Return HTML content directly for inline display

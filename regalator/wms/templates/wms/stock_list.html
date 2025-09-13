@@ -110,7 +110,9 @@
                                     <td>{{ stock.updated_at|date:"d.m.Y H:i" }}</td>     
                                     <td>
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                                                    data-bs-popper-config='{"strategy":"fixed"}'
+                                                    data-bs-toggle="dropdown" aria-expanded="false">
                                                 <i class="fas fa-cogs"></i>
                                             </button>
                                             <ul class="dropdown-menu" style="z-index: 9999;">

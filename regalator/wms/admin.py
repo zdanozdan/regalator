@@ -70,7 +70,7 @@ class ProductAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Podstawowe informacje', {
-            'fields': ('code', 'name', 'description', 'unit', 'groups')
+            'fields': ('code', 'name', 'description', 'unit', 'groups','variants')
         }),
         ('Synchronizacja z Subiektem', {
             'fields': ('subiekt_id', 'subiekt_stock', 'subiekt_stock_reserved', 'last_sync_date')

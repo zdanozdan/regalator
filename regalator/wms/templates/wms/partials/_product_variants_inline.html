@@ -1,4 +1,3 @@
-
 {% if size_color_variants %}
 <tr class="product-variants-row" id="product-variants-{{ product.id }}" hx-swap="outerHTML" hx-get="{% url 'wms:htmx_product_variants' product.id %}" hx-trigger="product-variants-updated from:body">
     <td colspan="11" class="p-0">
@@ -32,7 +31,11 @@
                                     <td>{{ variant.total_stock|default:'-' }}</td>
                                     <td class="text-end">
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                            type="button" 
+                                            data-bs-popper-config='{"strategy":"fixed"}' 
+                                            data-bs-toggle="dropdown" 
+                                            aria-expanded="false">
                                                 <i class="fas fa-cogs"></i>
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end" style="z-index: 9999;">
