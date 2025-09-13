@@ -10,8 +10,8 @@ from .models import (
 class ProductCodeInline(admin.TabularInline):
     model = ProductCode
     extra = 1
-    fields = ['code', 'code_type', 'is_primary', 'is_active', 'description']
-    ordering = ['-is_primary', 'code_type', 'code']
+    fields = ['code', 'code_type', 'is_active', 'description']
+    ordering = ['code_type', 'code']
 
 
 @admin.register(UserProfile)
@@ -28,8 +28,8 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ProductCode)
 class ProductCodeAdmin(admin.ModelAdmin):
-    list_display = ['product', 'code', 'code_type', 'is_primary', 'is_active', 'description']
-    list_filter = ['code_type', 'is_primary', 'is_active', 'created_at']
+    list_display = ['product', 'code', 'code_type', 'is_active', 'description']
+    list_filter = ['code_type', 'is_active', 'created_at']
     search_fields = ['code', 'product__name', 'product__code', 'description']
     readonly_fields = ['created_at', 'updated_at']
     ordering = ['product__name', 'code_type', 'code']
@@ -40,7 +40,7 @@ class ProductCodeAdmin(admin.ModelAdmin):
             'fields': ('product', 'code', 'code_type', 'description')
         }),
         ('Ustawienia', {
-            'fields': ('is_primary', 'is_active')
+            'fields': ('is_active',)
         }),
         ('Informacje systemowe', {
             'fields': ('created_at', 'updated_at'),
@@ -51,7 +51,7 @@ class ProductCodeAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['subiekt_id', 'code', 'name', 'display_groups', 'primary_barcode_display', 'total_stock', 'subiekt_stock', 'stock_difference', 'needs_sync', 'unit']
+    list_display = ['subiekt_id', 'code', 'name', 'display_groups', 'total_stock', 'subiekt_stock', 'stock_difference', 'needs_sync', 'unit']
     list_filter = ['unit', 'groups', 'last_sync_date']
     search_fields = ['code', 'name', 'codes__code', 'subiekt_id']
     readonly_fields = ['created_at', 'updated_at', 'total_stock', 'stock_difference', 'needs_sync']
@@ -64,10 +64,6 @@ class ProductAdmin(admin.ModelAdmin):
         return ', '.join([group.name for group in obj.groups.all()])
     display_groups.short_description = 'Grupy'
     
-    def primary_barcode_display(self, obj):
-        """Wyświetla główny kod kreskowy"""
-        return obj.primary_barcode or '-'
-    primary_barcode_display.short_description = 'Główny kod kreskowy'
     
     def update_variants_to_size_and_color(self, request, queryset):
         """Admin action to update variants JSON field to include SizeAndColor type for products without parents"""
@@ -117,18 +113,18 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'location_type', 'barcode', 'is_active']
+    list_display = ['name', 'location_type', 'barcode', 'is_active']
     list_filter = ['location_type', 'is_active', 'created_at']
-    search_fields = ['code', 'name', 'barcode', 'description']
-    ordering = ['code']
+    search_fields = ['name', 'barcode', 'description']
+    ordering = ['barcode']
 
 
 @admin.register(Stock)
 class StockAdmin(admin.ModelAdmin):
     list_display = ['product', 'location', 'quantity', 'reserved_quantity', 'updated_at']
     list_filter = ['location', 'updated_at']
-    search_fields = ['product__name', 'product__code', 'location__name', 'location__code']
-    ordering = ['location__code', 'product__name']
+    search_fields = ['product__name', 'product__code', 'location__name', 'location__barcode']
+    ordering = ['location__barcode', 'product__name']
 
 
 @admin.register(CustomerOrder)

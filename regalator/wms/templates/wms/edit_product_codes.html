@@ -263,21 +263,6 @@
                 </div>
             {% endif %}
         </div>
-        <div class="mb-3">
-            <div class="form-check">
-                {% render_field form.is_primary class="form-check-input" %}
-                <label class="form-check-label" for="{{ form.is_primary.id_for_label }}">
-                    {{ form.is_primary.label }}
-                </label>
-            </div>
-            {% if form.is_primary.errors %}
-                <div class="invalid-feedback d-block">
-                    {% for error in form.is_primary.errors %}
-                        {{ error }}
-                    {% endfor %}
-                </div>
-            {% endif %}
-        </div>
     </div>
     <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zamknij</button>

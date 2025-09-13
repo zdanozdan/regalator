@@ -33,7 +33,6 @@
                             {% if field == 'code' %}{{ form.code.label }}
                             {% elif field == 'code_type' %}{{ form.code_type.label }}
                             {% elif field == 'description' %}{{ form.description.label }}
-                            {% elif field == 'is_primary' %}{{ form.is_primary.label }}
                             {% else %}{{ field|title }}
                             {% endif %}:
                         </strong>
@@ -87,21 +86,6 @@
                 </div>
             {% endif %}
         </div>
-        <div class="col-md-4">
-            <div class="form-check mt-4">
-                {% render_field form.is_primary %}
-                <label class="form-check-label" for="{{ form.is_primary.id_for_label }}">
-                    {{ form.is_primary.label }}
-                </label>
-            </div>
-            {% if form.is_primary.errors %}
-                <div class="invalid-feedback d-block">
-                    {% for error in form.is_primary.errors %}
-                        {{ error }}
-                    {% endfor %}
-                </div>
-            {% endif %}
-        </div>
 
         <div class="col-12">
             <div class="card">
@@ -118,7 +102,6 @@
                                         <th>Kod</th>
                                         <th>Typ</th>
                                         <th>Opis</th>
-                                        <th>Status</th>
                                         <th class="text-end">Akcje</th>
                                     </tr>
                                 </thead>
@@ -132,15 +115,6 @@
                                                 <span class="badge bg-secondary">{{ code.get_code_type_display }}</span>
                                             </td>
                                             <td>{{ code.description|default:"-" }}</td>
-                                            <td>
-                                                {% if code.is_primary %}
-                                                    <span class="text-success">
-                                                        <i class="fas fa-star me-1"></i>Główny
-                                                    </span>
-                                                {% else %}
-                                                    <span class="text-muted">Dodatkowy</span>
-                                                {% endif %}
-                                            </td>
                                             <td class="text-end">
                                                 <div class="dropdown">
                                                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 

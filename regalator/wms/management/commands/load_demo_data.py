@@ -57,18 +57,18 @@ class Command(BaseCommand):
 
         # Lokalizacje
         locations_data = [
-            {'name': 'Regał A, Rząd 1, Półka 1', 'code': 'LOC001', 'barcode': 'LOC001'},
-            {'name': 'Regał A, Rząd 1, Półka 2', 'code': 'LOC002', 'barcode': 'LOC002'},
-            {'name': 'Regał A, Rząd 2, Półka 1', 'code': 'LOC003', 'barcode': 'LOC003'},
-            {'name': 'Regał B, Rząd 1, Półka 1', 'code': 'LOC004', 'barcode': 'LOC004'},
-            {'name': 'Regał B, Rząd 1, Półka 2', 'code': 'LOC005', 'barcode': 'LOC005'},
-            {'name': 'Regał C, Rząd 1, Półka 1', 'code': 'LOC006', 'barcode': 'LOC006'},
+            {'name': 'Regał A, Rząd 1, Półka 1', 'barcode': 'LOC001'},
+            {'name': 'Regał A, Rząd 1, Półka 2', 'barcode': 'LOC002'},
+            {'name': 'Regał A, Rząd 2, Półka 1', 'barcode': 'LOC003'},
+            {'name': 'Regał B, Rząd 1, Półka 1', 'barcode': 'LOC004'},
+            {'name': 'Regał B, Rząd 1, Półka 2', 'barcode': 'LOC005'},
+            {'name': 'Regał C, Rząd 1, Półka 1', 'barcode': 'LOC006'},
         ]
         
         locations = []
         for location_data in locations_data:
             location, created = Location.objects.get_or_create(
-                code=location_data['code'],
+                barcode=location_data['barcode'],
                 defaults=location_data
             )
             locations.append(location)

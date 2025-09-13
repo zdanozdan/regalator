@@ -86,7 +86,6 @@
                                 <th>Typ kodu</th>
                                 <th>Produkt</th>
                                 <th>Opis</th>
-                                <th>Główny</th>
                                 <th>Data utworzenia</th>
                                 <th>Akcje</th>
                             </tr>
@@ -110,13 +109,6 @@
                                     <td>
                                         {% if barcode.description %}
                                             {{ barcode.description }}
-                                        {% else %}
-                                            <span class="text-muted">-</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if barcode.is_primary %}
-                                            <i class="fas fa-star text-warning" title="Kod główny"></i>
                                         {% else %}
                                             <span class="text-muted">-</span>
                                         {% endif %}

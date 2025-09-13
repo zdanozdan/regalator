@@ -338,16 +338,10 @@ class Command(BaseCommand):
                     product=wms_product,
                     code=subiekt_barcode,
                     code_type='barcode',
-                    is_primary=True,  # Kod z Subiektu jako główny
                     description='Kod z Subiektu (tw_Id)'
                 )
                 self.stdout.write(f'  Dodano kod kreskowy: {subiekt_barcode}')
             else:
-                # Upewnij się, że kod jest oznaczony jako główny
-                if not existing_code.is_primary:
-                    existing_code.is_primary = True
-                    existing_code.save()
-                    self.stdout.write(f'  Ustawiono jako główny kod: {subiekt_barcode}')
         
         # Obsługa grupy produktów
         subiekt_group = getattr(subiekt_product, 'grt_Nazwa', '')
@@ -407,8 +401,7 @@ class Command(BaseCommand):
             if product_codes.exists():
                 self.stdout.write(f'  Kody kreskowe ({product_codes.count()}):')
                 for code in product_codes:
-                    primary_mark = ' (główny)' if code.is_primary else ''
-                    self.stdout.write(f'    - {code.code} ({code.get_code_type_display()}){primary_mark}')
+                    self.stdout.write(f'    - {code.code} ({code.get_code_type_display()})')
             else:
                 self.stdout.write('  Brak kodów kreskowych')
                 
@@ -547,10 +540,8 @@ class Command(BaseCommand):
                 
                 if existing_code:
                     # Update existing barcode if needed
-                    if not existing_code.is_primary:
-                        existing_code.is_primary = True
-                        existing_code.description = 'Kod z Subiektu (tw_Id)'
-                        existing_code.save()
+                    existing_code.description = 'Kod z Subiektu (tw_Id)'
+                    existing_code.save()
                         updated_count += 1
                         self.stdout.write(f'  Zaktualizowano kod: {product.code} - {subiekt_id}')
                 else:
@@ -559,7 +550,6 @@ class Command(BaseCommand):
                         product=product,
                         code=subiekt_id,
                         code_type='barcode',
-                        is_primary=True,
                         description='Kod z Subiektu (tw_Id)'
                     )
                     created_count += 1

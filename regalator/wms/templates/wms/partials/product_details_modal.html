@@ -155,7 +155,7 @@
                 <tbody>
                     {% for stock in stocks %}
                     <tr>
-                        <td><code>{{ stock.location.code }}</code></td>
+                        <td><code>{{ stock.location.barcode }}</code></td>
                         <td>{{ stock.location.name }}</td>
                         <td><strong>{{ stock.quantity|floatformat:2 }}</strong></td>
                         <td>{{ stock.reserved_quantity|floatformat:2 }}</td>

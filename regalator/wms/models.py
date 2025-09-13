@@ -19,7 +19,7 @@ def user_avatar_path(instance, filename):
 def location_image_path(instance, filename):
     """Generuje ścieżkę dla zdjęć lokalizacji"""
     ext = filename.split('.')[-1]
-    filename = f'location_{instance.location.code}_{instance.id}.{ext}'
+    filename = f'location_{instance.location.barcode}_{instance.id}.{ext}'
     return f'locations/{filename}'
 
 
@@ -102,7 +102,6 @@ class ProductCode(models.Model):
     product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='codes', verbose_name="Produkt")
     code = models.CharField(max_length=200, unique=True, verbose_name="Kod")
     code_type = models.CharField(max_length=20, choices=CODE_TYPES, default='barcode', verbose_name="Typ kodu")
-    is_primary = models.BooleanField(default=False, verbose_name="Kod główny")
     description = models.CharField(max_length=200, blank=True, verbose_name="Opis")
     is_active = models.BooleanField(default=True, verbose_name="Aktywny")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
@@ -111,17 +110,12 @@ class ProductCode(models.Model):
     class Meta:
         verbose_name = "Kod produktu"
         verbose_name_plural = "Kody produktów"
-        ordering = ['-is_primary', 'code_type', 'code']
+        ordering = ['code_type', 'code']
         unique_together = ['product', 'code']
     
     def __str__(self):
         return f"{self.get_code_type_display()}: {self.code}"
     
-    def save(self, *args, **kwargs):
-        # Ensure only one primary code per product
-        if self.is_primary:
-            ProductCode.objects.filter(product=self.product, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
-        super().save(*args, **kwargs)
 
 
 class Product(models.Model):
@@ -153,25 +147,6 @@ class Product(models.Model):
     def __str__(self):
         return f"{self.code} - {self.name}"
     
-    @property
-    def primary_barcode(self):
-        """Główny kod kreskowy produktu"""
-        primary_code = self.codes.filter(is_primary=True, code_type='barcode').first()
-        if primary_code:
-            return primary_code.code
-        # Fallback to first barcode if no primary
-        first_barcode = self.codes.filter(code_type='barcode').first()
-        return first_barcode.code if first_barcode else None
-    
-    @property
-    def primary_qr(self):
-        """Główny kod QR produktu"""
-        primary_code = self.codes.filter(is_primary=True, code_type='qr').first()
-        if primary_code:
-            return primary_code.code
-        # Fallback to first QR if no primary
-        first_qr = self.codes.filter(code_type='qr').first()
-        return first_qr.code if first_qr else None
     
     @property
     def all_barcodes(self):
@@ -227,7 +202,6 @@ class Location(models.Model):
         ('zone', 'Strefa'),
     ]
     
-    code = models.CharField(max_length=50, unique=True, verbose_name="Kod lokalizacji")
     name = models.CharField(max_length=200, verbose_name="Nazwa lokalizacji")
     location_type = models.CharField(max_length=20, choices=LOCATION_TYPES, default='shelf')
     barcode = models.CharField(max_length=100, unique=True, verbose_name="Kod kreskowy lokalizacji")
@@ -241,7 +215,7 @@ class Location(models.Model):
         verbose_name_plural = "Lokalizacje"
 
     def __str__(self):
-        return f"{self.code} - {self.name}"
+        return f"{self.barcode} - {self.name}"
     
     @property
     def primary_photo(self):
@@ -267,8 +241,8 @@ class LocationImage(models.Model):
     
     def __str__(self):
         if self.title:
-            return f"{self.location.code} - {self.title}"
-        return f"{self.location.code} - Zdjęcie {self.id}"
+            return f"{self.location.barcode} - {self.title}"
+        return f"{self.location.barcode} - Zdjęcie {self.id}"
     
     def save(self, *args, **kwargs):
         # Jeśli to zdjęcie jest oznaczone jako główne, odznacz inne zdjęcia tej lokalizacji

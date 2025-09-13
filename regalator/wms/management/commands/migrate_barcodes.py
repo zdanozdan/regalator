@@ -40,7 +40,6 @@ class Command(BaseCommand):
                                 product=product,
                                 code=product.barcode,
                                 code_type='barcode',
-                                is_primary=True,
                                 description='Migrowany z pola barcode'
                             )
                             self.stdout.write(f'Utworzono kod kreskowy dla produktu: {product.name}')
@@ -120,7 +119,6 @@ class Command(BaseCommand):
                                 product=wms_product,
                                 code=subiekt_barcode,
                                 code_type='barcode',
-                                is_primary=True,
                                 description='Kod z Subiektu (tw_Id)'
                             )
                             self.stdout.write(f'Dodano kod kreskowy dla produktu: {wms_product.name}')

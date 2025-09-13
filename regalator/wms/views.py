@@ -513,7 +513,8 @@ def product_list(request):
         products = products.filter(
             Q(code__icontains=search_query) |
             Q(name__icontains=search_query) |
-            Q(codes__code__icontains=search_query)
+            Q(codes__code__icontains=search_query) |
+            Q(variants__icontains=search_query)
         ).distinct()
     
     # Filtrowanie po grupie
@@ -664,7 +665,6 @@ def location_list(request):
     
     if search_query:
         locations = locations.filter(
-            Q(code__icontains=search_query) |
             Q(name__icontains=search_query) |
             Q(barcode__icontains=search_query)
         )
@@ -672,7 +672,7 @@ def location_list(request):
     if location_type:
         locations = locations.filter(location_type=location_type)
     
-    locations = locations.order_by('code')
+    locations = locations.order_by('barcode')
     
     # Paginacja
     paginator = Paginator(locations, 50)
@@ -749,12 +749,12 @@ def stock_list(request):
         stocks = stocks.filter(
             Q(product__code__icontains=search_query) |
             Q(product__name__icontains=search_query) |
-            Q(location__code__icontains=search_query) |
+            Q(location__barcode__icontains=search_query) |
             Q(product__codes__code__icontains=search_query)
         ).distinct()
     
     if location_filter:
-        stocks = stocks.filter(location__code=location_filter)
+        stocks = stocks.filter(location__barcode=location_filter)
     
     if product_filter:
         stocks = stocks.filter(product__code=product_filter)
@@ -762,7 +762,7 @@ def stock_list(request):
     if product_id:
         stocks = stocks.filter(product__id=product_id)
     
-    stocks = stocks.order_by('location__code', 'product__name')
+    stocks = stocks.order_by('location__barcode', 'product__name')
     
     # Paginacja
     paginator = Paginator(stocks, 100)
@@ -796,7 +796,7 @@ def api_scan_barcode(request):
                     'type': 'location',
                     'data': {
                         'id': location.id,
-                        'code': location.code,
+                        'code': location.barcode,
                         'name': location.name,
                         'barcode': location.barcode,
                     }
@@ -812,8 +812,6 @@ def api_scan_barcode(request):
                             'id': product.id,
                             'code': product.code,
                             'name': product.name,
-                            'primary_barcode': product.primary_barcode,
-                            'primary_qr': product.primary_qr,
                         }
                     })
                 else:
@@ -876,7 +874,6 @@ def htmx_sync_product(request, product_id):
                         product=product,
                         code=subiekt_barcode,
                         code_type='barcode',
-                        is_primary=True,  # Kod z Subiektu jako główny
                         description='Kod z Subiektu (tw_Id)'
                     )
             
@@ -938,7 +935,7 @@ def htmx_product_details(request, product_id):
             stocks = Stock.objects.filter(product=product).select_related('location')
             
             # Pobierz kody produktu (barcodes, QR codes)
-            product_codes = product.codes.filter(is_active=True).order_by('-is_primary', 'code_type', 'code')
+            product_codes = product.codes.filter(is_active=True).order_by('code_type', 'code')
             
             # Oblicz statystyki
             total_reserved = sum(stock.reserved_quantity for stock in stocks)
@@ -1444,7 +1441,7 @@ def htmx_edit_product_codes(request, product_id, code_id=None):
     """Edycja kodów produktu z możliwością skanowania"""
     product = get_object_or_404(Product, id=product_id)    
     # Get existing codes
-    product_codes = product.codes.all().order_by('-is_primary', 'code_type', 'code')
+    product_codes = product.codes.all().order_by('code_type', 'code')
     
     # If code_id is provided, we're editing an existing code
     editing_code = None
@@ -1470,9 +1467,6 @@ def htmx_edit_product_codes(request, product_id, code_id=None):
             code.product = product
             code.save()
                     
-            # If this is set as primary, unset other primary codes
-            if code.is_primary:
-                product.codes.exclude(id=code.id).update(is_primary=False)
                     
             context['editing_code'] = None
             context['form'] = ProductCodeForm(product=product)
@@ -1526,7 +1520,6 @@ def api_add_scanned_code(request, product_id):
                 code=scanned_code,
                 code_type=code_type,
                 description=f'Dodano przez skanowanie ({code_type})',
-                is_primary=False
             )
             
             response = JsonResponse({
@@ -1575,9 +1568,6 @@ def htmx_add_code_modal(request, product_id):
             # Use form for validation
             form = ProductCodeForm(request.POST, product=product)
             if form.is_valid():
-                # If this is primary, unset other primary codes
-                if form.cleaned_data['is_primary']:
-                    ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
                 
                 # Create new code
                 form.instance.product = product
@@ -1600,29 +1590,6 @@ def htmx_add_code_modal(request, product_id):
                 response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
                 return response
 
-        elif action == 'toggle_primary' and code_id:
-            try:
-                # Unset all primary codes
-                ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
-                # Set this one as primary
-                code = ProductCode.objects.get(id=code_id, product=product)
-                code.is_primary = True
-                code.save()
-                toast_message = {
-                    "toastMessage": {
-                        "value": f"Ustawiono {code.code} jako kod główny",
-                        "type": "success"
-                    }
-                }
-                response['HX-Trigger'] = json.dumps(toast_message)
-            except ProductCode.DoesNotExist:
-                toast_message = {
-                    "toastMessage": {
-                        "value": "Nie znaleziono kodu.",
-                        "type": "danger"
-                    }
-                }
-                response['HX-Trigger'] = json.dumps(toast_message)
 
         #return HttpResponse(status=200)
         response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
@@ -1643,59 +1610,12 @@ def htmx_add_code_modal(request, product_id):
 
 @login_required
 def htmx_set_main_code(request, product_id, code_id):
-    if request.method == 'POST':
-        try:
-            product = get_object_or_404(Product, id=product_id)
-            code = get_object_or_404(ProductCode, id=code_id, product=product)
-            
-            # Unset all primary codes first
-            ProductCode.objects.filter(product=product, is_primary=True).update(is_primary=False)
-            
-            # Set this one as primary
-            code.is_primary = True
-            code.save()
-            
-            # Create response
-            response = HttpResponse(status=200)
-            
-            # Add toast message header
-            toast_message = {
-                "toastMessage": {
-                    "value": f"Ustawiono {code.code} jako kod główny",
-                    "type": "success"
-                },
-                "product-codes-list": {
-                    "value": "product-codes-list"
-                }
-            }
-            response['HX-Trigger'] = json.dumps(toast_message)
-            return response
-            
-        except ProductCode.DoesNotExist:
-            toast_message = {
-                "toastMessage": {
-                    "value": "Nie znaleziono kodu.",
-                    "type": "danger"
-                }
-            }
-            response['HX-Trigger'] = json.dumps(toast_message)
-            return response
-        except Exception as e:
-            toast_message = {
-                "toastMessage": {
-                    "value": f"Błąd podczas ustawiania kodu głównego: {str(e)}",
-                    "type": "danger"
-                }
-            }
-            response['HX-Trigger'] = json.dumps(toast_message)
-            return response
-
-    # For non-POST requests
-    response = HttpResponse(status=405) # Method not allowed
+    # Primary code functionality has been removed
+    response = HttpResponse(status=200)
     toast_message = {
         "toastMessage": {
-            "value": "Nieprawidłowe żądanie",
-            "type": "danger"
+            "value": "Funkcja ustawiania kodu głównego została wyłączona",
+            "type": "info"
         }
     }
     response['HX-Trigger'] = json.dumps(toast_message)
@@ -1765,7 +1685,7 @@ def htmx_delete_code(request, product_id, code_id):
 def htmx_product_codes_list(request, product_id):
     """HTMX endpoint for refreshing product codes list"""
     product = get_object_or_404(Product, id=product_id)
-    product_codes = product.codes.all().order_by('-is_primary', 'code_type', 'code')
+    product_codes = product.codes.all().order_by('code_type', 'code')
 
     context = {
         'product': product,
@@ -1810,7 +1730,7 @@ def htmx_add_code_inline(request, product_id):
                 code=scanned_code,
                 code_type='barcode',
                 description=f'Zeskanowano: {timezone.now().strftime("%Y-%m-%d %H:%M:%S")} przez {request.user.username}',
-                is_primary=False  # Don't make scanned codes primary by default
+  # Don't make scanned codes primary by default
             )
             
             # Return success response

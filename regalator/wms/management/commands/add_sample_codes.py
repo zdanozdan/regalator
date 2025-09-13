@@ -52,7 +52,6 @@ class Command(BaseCommand):
                         code=barcode,
                         defaults={
                             'code_type': 'ean13',
-                            'is_primary': True,
                             'description': 'Przykładowy kod EAN-13'
                         }
                     )
@@ -64,7 +63,6 @@ class Command(BaseCommand):
                         code=qr_code,
                         defaults={
                             'code_type': 'qr',
-                            'is_primary': False,
                             'description': 'Przykładowy kod QR'
                         }
                     )
@@ -76,7 +74,6 @@ class Command(BaseCommand):
                         code=code128,
                         defaults={
                             'code_type': 'code128',
-                            'is_primary': False,
                             'description': 'Przykładowy kod Code 128'
                         }
                     )

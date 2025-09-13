@@ -10,7 +10,7 @@ class ProductCodeForm(forms.ModelForm):
     
     class Meta:
         model = ProductCode
-        fields = ['code', 'code_type', 'description', 'is_primary']
+        fields = ['code', 'code_type', 'description']
         widgets = {
             'code': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -24,9 +24,6 @@ class ProductCodeForm(forms.ModelForm):
             'description': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Krótki opis kodu'
-            }),
-            'is_primary': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
             }),
         }
     
@@ -126,13 +123,8 @@ class LocationEditForm(forms.ModelForm):
     
     class Meta:
         model = Location
-        fields = ['code', 'name', 'location_type', 'barcode', 'parent', 'description', 'is_active']
+        fields = ['name', 'location_type', 'barcode', 'parent', 'description', 'is_active']
         widgets = {
-            'code': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Wprowadź kod lokalizacji',
-                'required': True
-            }),
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Wprowadź nazwę lokalizacji',
@@ -169,18 +161,9 @@ class LocationEditForm(forms.ModelForm):
             # Exclude current location and its children from parent choices
             available_parents = Location.objects.filter(is_active=True).exclude(id=self.location.id)
             self.fields['parent'].choices = [('', 'Brak')] + [
-                (loc.id, f"{loc.code} - {loc.name}") for loc in available_parents
+                (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
             ]
     
-    def clean_code(self):
-        code = self.cleaned_data.get('code')
-        if code:
-            # Check if code already exists (excluding current instance)
-            if self.location and Location.objects.filter(
-                code=code
-            ).exclude(id=self.location.id).exists():
-                raise forms.ValidationError('Ten kod lokalizacji już istnieje.')
-        return code
     
     def clean_barcode(self):
         barcode = self.cleaned_data.get('barcode')
