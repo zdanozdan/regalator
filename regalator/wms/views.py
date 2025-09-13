@@ -507,7 +507,7 @@ def product_list(request):
     group_filter = request.GET.get('group', '')
     subiekt_filter = request.GET.get('subiekt', '')
     
-    products = Product.objects.prefetch_related('images').filter(parent__isnull=True)
+    products = Product.objects.prefetch_related('images', 'parent').all()
     
     if search_query:
         products = products.filter(
@@ -558,10 +558,85 @@ def product_list(request):
         # Jeśli to QuerySet, użyj order_by
         products = products.order_by('name')
     
+    # Remove duplicates: only show products without parents, or the first occurrence of each parent
+    seen_parent_ids = set()
+    unique_products = []
+    for product in products:
+        # Determine which product to display (parent or self)
+        display_product = product.parent if product.parent else product
+        
+        # Only add if we haven't seen this parent before
+        if display_product.id not in seen_parent_ids:
+            seen_parent_ids.add(display_product.id)
+            unique_products.append(product)
+    
+    products = unique_products
+    
     # Paginacja
     paginator = Paginator(products, 50)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
+    
+    # Create dictionary mapping product_id to list of variants (only for current page)
+    # Get all unique product IDs from current page
+    current_page_product_ids = set()
+    for product in page_obj:
+        display_product = product.parent if product.parent else product
+        current_page_product_ids.add(display_product.id)
+    
+    # Apply same filters to variants query as main product query
+    variants_query = Product.objects.filter(parent_id__in=current_page_product_ids)
+    
+    # Apply search filter to variants if present
+    if search_query:
+        variants_query = variants_query.filter(
+            Q(code__icontains=search_query) |
+            Q(name__icontains=search_query) |
+            Q(codes__code__icontains=search_query)
+        ).distinct()
+    
+    # Apply group filter to variants if present
+    if group_filter:
+        if group_filter == 'no_group':
+            variants_query = variants_query.filter(groups__isnull=True)
+        else:
+            variants_query = variants_query.filter(groups__id=group_filter)
+    
+    # Apply subiekt filter to variants if present
+    if subiekt_filter:
+        if subiekt_filter == 'has_subiekt':
+            variants_query = variants_query.filter(subiekt_id__isnull=False)
+        elif subiekt_filter == 'no_subiekt':
+            variants_query = variants_query.filter(subiekt_id__isnull=True)
+        else:
+            try:
+                subiekt_id_int = int(subiekt_filter)
+                variants_query = variants_query.filter(subiekt_id=subiekt_id_int)
+            except ValueError:
+                variants_query = variants_query.filter(subiekt_id__icontains=subiekt_filter)
+    
+    # Apply sync filter to variants if present
+    if sync_filter == 'needs_sync':
+        variants_query = variants_query.filter(subiekt_id__isnull=False)
+        # Note: needs_sync property filtering would need to be done in Python for variants too
+    elif sync_filter == 'synced':
+        variants_query = variants_query.filter(subiekt_id__isnull=False)
+    elif sync_filter == 'not_synced':
+        variants_query = variants_query.filter(subiekt_id__isnull=True)
+    
+    # Final query with ordering
+    variants_query = variants_query.select_related('parent').order_by('parent_id', 'name')
+    
+    # Build dictionary efficiently
+    product_variants_dict = {}
+    product_variant_ids_dict = {}
+    for variant in variants_query:
+        parent_id = variant.parent_id
+        if parent_id not in product_variants_dict:
+            product_variants_dict[parent_id] = []
+            product_variant_ids_dict[parent_id] = []
+        product_variants_dict[parent_id].append(variant)
+        product_variant_ids_dict[parent_id].append(variant.id)
     
     # Pobierz wszystkie grupy dla filtra
     groups = ProductGroup.objects.filter(is_active=True).order_by('name')
@@ -573,6 +648,8 @@ def product_list(request):
         'group_filter': group_filter,
         'subiekt_filter': subiekt_filter,
         'groups': groups,
+        'product_variants_dict': product_variants_dict,
+        'product_variant_ids_dict': product_variant_ids_dict,
     }
     return render(request, 'wms/product_list.html', context)
 
@@ -2284,20 +2361,31 @@ def htmx_product_images_inline(request, product_id):
 @login_required
 def htmx_product_variants(request, product_id):
     """HTMX endpoint for displaying product variants inline in the next row"""
+
     if request.method != 'GET':
         return HttpResponse(status=405)  # Method not allowed
     
     try:
         product = get_object_or_404(Product, id=product_id)
 
-        variants = Product.objects.filter(
-            parent=product
-        )
+        # Check if variant_ids parameter is provided
+        variant_ids_param = request.GET.get('variant_ids')
+        if variant_ids_param:
+            # Parse comma-separated variant IDs
+            try:
+                variant_ids = [int(id.strip()) for id in variant_ids_param.split(',') if id.strip()]
+                product_variants = Product.objects.filter(id__in=variant_ids)
+            except ValueError:
+                # Fallback to original behavior if parsing fails
+                product_variants = Product.objects.filter(parent=product)
+        else:
+            # Original behavior - get variants by parent
+            product_variants = Product.objects.filter(parent=product)
 
         context = {
             'product': product,
-            'size_color_variants': variants,
-            'variants': variants,
+            'product_variants': product_variants,
+            'silent': request.GET.get('silent'),
         }
 
         # Return HTML content directly for inline display
@@ -2337,20 +2425,16 @@ def htmx_delete_variant(request, variant_id):
 
         # Capture data before deletion
         parent_id = variant.parent.id
-        variants_json = variant.variants or {}
-        size_value = variants_json.get('size', '-')
-        color_value = variants_json.get('color', '-')
-
         # Delete the variant
         variant.delete()
 
         product = get_object_or_404(Product, id=parent_id)
         # Child Product variants for size/color
-        size_color_variants = Product.objects.filter(parent=product).order_by('name')
+        product_variants = Product.objects.filter(parent=product).order_by('name')
         
         context = {
             'product': product,
-            'size_color_variants': size_color_variants,
+            'product_variants': product_variants,
         }
         
         # Return the updated variants HTML with success toast
@@ -2358,7 +2442,7 @@ def htmx_delete_variant(request, variant_id):
         response.content = render(request, 'wms/partials/_product_variants_inline.html', context)
         toast_message = {
             'toastMessage': {
-                'value': f'Usunięto wariant: {size_value} - {color_value}',
+                'value': f'Usunięto wariant',
                 'type': 'success'
             }
         }

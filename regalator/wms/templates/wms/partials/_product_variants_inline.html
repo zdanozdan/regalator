@@ -1,11 +1,12 @@
-{% if size_color_variants %}
+{% if product.variants.type == 'SizeAndColor' %}
+{% if product_variants %}
 <tr class="product-variants-row" id="product-variants-{{ product.id }}" hx-swap="outerHTML" hx-get="{% url 'wms:htmx_product_variants' product.id %}" hx-trigger="product-variants-updated from:body">
     <td colspan="11" class="p-0">
         <div class="card m-2">
             <div class="card-header bg-light py-2">
                 <h6 class="mb-0">
                     <i class="fas fa-tags me-2"></i>Kolory i rozmiary
-                    <button class="btn btn-sm btn-outline-secondary float-end" 
+                    <button class="btn btn-sm btn-outline-secondary float-end"
                             onclick="this.closest('.product-variants-row').innerHTML = ''">
                         <i class="fas fa-times"></i>
                     </button>
@@ -24,18 +25,18 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for variant in size_color_variants %}
+                                {% for variant in product_variants %}
                                 <tr>
                                     <td>{{ variant.variants.color|default:'-' }}</td>
                                     <td>{{ variant.variants.size|default:'-' }}</td>
                                     <td>{{ variant.total_stock|default:'-' }}</td>
                                     <td class="text-end">
                                         <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
-                                            type="button" 
-                                            data-bs-popper-config='{"strategy":"fixed"}' 
-                                            data-bs-toggle="dropdown" 
-                                            aria-expanded="false">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                    type="button"
+                                                    data-bs-popper-config='{"strategy":"fixed"}'
+                                                    data-bs-toggle="dropdown"
+                                                    aria-expanded="false">
                                                 <i class="fas fa-cogs"></i>
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end" style="z-index: 9999;">
@@ -84,7 +85,7 @@
             <div class="card-header bg-light py-2">
                 <h6 class="mb-0">
                     <i class="fas fa-tags me-2"></i>Kolory i rozmiary
-                    <button class="btn btn-sm btn-outline-secondary float-end" 
+                    <button class="btn btn-sm btn-outline-secondary float-end"
                             onclick="this.closest('.product-variants-row').innerHTML = ''">
                         <i class="fas fa-times"></i>
                     </button>
@@ -104,6 +105,30 @@
                 </div>
             </div>
         </div>
+    </td>
+</tr>
+{% endif %}
+{% else %}
+<tr class="product-variants-row" id="product-variants-{{ product.id }}" hx-swap="outerHTML" hx-get="{% url 'wms:htmx_product_variants' product.id %}" hx-trigger="product-variants-updated from:body">
+    <td colspan="11" class="p-0">
+        {% if not silent %}
+        <div class="card m-2">
+            <div class="card-header bg-light py-2">
+                <h6 class="mb-0">
+                    <i class="fas fa-tags me-2"></i>Warianty produktu
+                    <button class="btn btn-sm btn-outline-secondary float-end"
+                            onclick="this.closest('.product-variants-row').innerHTML = ''">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </h6>
+            </div>
+            <div class="card-body text-center py-3">
+                <i class="fas fa-info-circle fa-2x text-muted mb-2"></i>
+                <p class="text-muted mb-0">Brak zdefiniowanych wariantów dla tego produktu</p>
+                <small class="text-muted">Dodaj warianty w menu produktu w panelu administracyjnym</small>
+            </div>
+        </div>
+        {% endif %}
     </td>
 </tr>
 {% endif %}

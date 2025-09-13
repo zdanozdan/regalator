@@ -110,25 +110,44 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for product in page_obj %}
-                                {% partialdef product-row inline %}
-                                <tr id="product-row-{{ product.id }}">
+                                {% for product in page_obj %}                            
+                                {% partialdef product-row inline %}                                
+                                {% with display_product=product.parent|default:product %}
+                                {% if search_query %}
+                                <tr>
+                                    <td>
+                                        {% for product_id, variant_ids in product_variant_ids_dict.items %}
+                                            {% if product_id == display_product.id %}
+                                            <span class="badge bg-info">Warianty: {{ variant_ids|length }}</span>
+                                            {% comment %}Convert variant IDs list to comma-separated string{% endcomment %}
+                                            {% with variant_ids_str=variant_ids|join:"," %}
+                                                <div hx-get="{% url 'wms:htmx_product_variants' display_product.id %}?variant_ids={{ variant_ids_str }}&silent=yes"
+                                                    hx-target="#product-variants-{{ display_product.id }}"
+                                                    hx-swap="outerHTML"
+                                                    hx-trigger="load delay:500ms"></div>
+                                            {% endwith %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                <tr id="product-row-{{ display_product.id }}">                                    
                                     <td class="text-center">
-                                        {% if product.primary_photo %}
-                                            <img src="{{ product.primary_photo.image.url }}" 
-                                                 alt="Zdjęcie produktu {{ product.name }}"
+                                        {% if display_product.primary_photo %}
+                                            <img src="{{ display_product.primary_photo.image.url }}" 
+                                                 alt="Zdjęcie produktu {{ display_product.name }}"
                                                  class="img-thumbnail"
                                                  style="width: 50px; height: 50px; object-fit: cover; cursor: pointer;"
-                                                 title="{{ product.name }}"
-                                                 hx-get="{% url 'wms:htmx_product_images_inline' product.id %}"
-                                                 hx-target="#product-images-{{ product.id }}"
+                                                 title="{{ display_product.name }}"
+                                                 hx-get="{% url 'wms:htmx_product_images_inline' display_product.id %}"
+                                                 hx-target="#product-images-{{ display_product.id }}"
                                                  hx-swap="outerHTML"
                                                  hx-trigger="click">
                                         {% else %}
                                             <div class="bg-light border rounded d-flex align-items-center justify-content-center"
                                                  style="width: 50px; height: 50px; cursor: pointer;"
-                                                 hx-get="{% url 'wms:htmx_product_images_inline' product.id %}"
-                                                 hx-target="#product-images-{{ product.id }}"
+                                                 hx-get="{% url 'wms:htmx_product_images_inline' display_product.id %}"
+                                                 hx-target="#product-images-{{ display_product.id }}"
                                                  hx-swap="outerHTML"
                                                  hx-trigger="click"
                                                  title="Kliknij aby zobaczyć zdjęcia">
@@ -137,37 +156,37 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if product.subiekt_id %}
+                                        {% if display_product.subiekt_id %}
                                             <code class="cursor-pointer" 
-                                                  hx-get="{% url 'wms:htmx_product_details' product.id %}"
+                                                  hx-get="{% url 'wms:htmx_product_details' display_product.id %}"
                                                   hx-swap="none"
                                                   hx-trigger="click"
                                                   style="cursor: pointer;"
                                                   onmouseover="this.style.textDecoration='underline'"
-                                                  onmouseout="this.style.textDecoration='none'">{{ product.subiekt_id }}</code>
+                                                  onmouseout="this.style.textDecoration='none'">{{ display_product.subiekt_id }}</code>
                                         {% else %}
                                             <span class="text-muted">-</span>
                                         {% endif %}
                                     </td>
                                     <td>
                                         <div class="cursor-pointer" 
-                                             hx-get="{% url 'wms:htmx_product_variants' product.id %}"
-                                             hx-target="#product-variants-{{ product.id }}"
+                                             hx-get="{% url 'wms:htmx_product_variants' display_product.id %}"
+                                             hx-target="#product-variants-{{ display_product.id }}"
                                              hx-swap="outerHTML"
                                              hx-trigger="click"
                                              style="cursor: pointer;"
                                              onmouseover="this.style.textDecoration='underline'"
                                              onmouseout="this.style.textDecoration='none'"
                                              title="Kliknij aby zobaczyć warianty">
-                                            {{ product.name }}
+                                            {{ display_product.name }}
                                         </div>
-                                        {% if product.description %}
-                                            <small class="text-muted">{{ product.description|truncatechars:50 }}</small>
+                                        {% if display_product.description %}
+                                            <small class="text-muted">{{ display_product.description|truncatechars:50 }}</small>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if product.groups.all %}
-                                            {% for group in product.groups.all %}
+                                        {% if display_product.groups.all %}
+                                            {% for group in display_product.groups.all %}
                                                 <span class="badge me-1" style="background-color: #6c757d; color: white;">
                                                     {{ group.name }}
                                                 </span>
@@ -177,21 +196,21 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="fw-bold">{{ product.total_stock|floatformat:2 }}</span>
+                                        <span class="fw-bold">{{ display_product.total_stock|floatformat:2 }}</span>
                                     </td>
                                     <td>
-                                        {% if product.subiekt_id %}
-                                            <span class="fw-bold">{{ product.subiekt_stock|floatformat:2 }}</span>
+                                        {% if display_product.subiekt_id %}
+                                            <span class="fw-bold">{{ display_product.subiekt_stock|floatformat:2 }}</span>
                                         {% else %}
                                             <span class="text-muted">-</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if product.subiekt_id %}
-                                            {% if product.stock_difference > 0 %}
-                                                <span class="text-success fw-bold">+{{ product.stock_difference|floatformat:2 }}</span>
-                                            {% elif product.stock_difference < 0 %}
-                                                <span class="text-danger fw-bold">{{ product.stock_difference|floatformat:2 }}</span>
+                                        {% if display_product.subiekt_id %}
+                                            {% if display_product.stock_difference > 0 %}
+                                                <span class="text-success fw-bold">+{{ display_product.stock_difference|floatformat:2 }}</span>
+                                            {% elif display_product.stock_difference < 0 %}
+                                                <span class="text-danger fw-bold">{{ display_product.stock_difference|floatformat:2 }}</span>
                                             {% else %}
                                                 <span class="text-success">✓</span>
                                             {% endif %}
@@ -200,8 +219,8 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if product.subiekt_id %}
-                                            {% if product.needs_sync %}
+                                        {% if display_product.subiekt_id %}
+                                            {% if display_product.needs_sync %}
                                                 <span class="badge bg-warning">
                                                     <i class="fas fa-exclamation-triangle me-1"></i>Wymaga sync
                                                 </span>
@@ -216,7 +235,7 @@
                                             </span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ product.unit }}</td>
+                                    <td>{{ display_product.unit }}</td>
                                     <td>
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
@@ -229,7 +248,7 @@
                                             <ul class="dropdown-menu" style="z-index: 9999;">
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
-                                                       hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
+                                                       hx-get="{% url 'wms:htmx_edit_product_modal' display_product.id %}"
                                                        hx-swap="none"
                                                        hx-trigger="click">
                                                         <i class="fas fa-qrcode me-2"></i>Edycja
@@ -237,21 +256,21 @@
                                                 </li>
                                                 {% comment %}
                                                 <li>
-                                                    <a class="dropdown-item" href="{% url 'wms:edit_product_codes' product.id %}">
+                                                    <a class="dropdown-item" href="{% url 'wms:edit_product_codes' display_product.id %}">
                                                         <i class="fas fa-qrcode me-2"></i>Edytuj kody
                                                     </a>
                                                 </li>
                                                 <li>
-                                                    <a class="dropdown-item" href="{% url 'wms:stock_list' %}?product={{ product.code }}">
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_list' %}?product={{ display_product.code }}">
                                                         <i class="fas fa-warehouse me-2"></i>Pokaż stany magazynowe
                                                     </a>
                                                 </li>
                                                 {% endcomment %}
-                                                {% if product.subiekt_id %}
+                                                {% if display_product.subiekt_id %}
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
-                                                       hx-post="{% url 'wms:htmx_sync_product' product.id %}"
-                                                       hx-target="#product-row-{{ product.id }}"
+                                                       hx-post="{% url 'wms:htmx_sync_product' display_product.id %}"
+                                                       hx-target="#product-row-{{ display_product.id }}"
                                                        hx-swap="outerHTML">
                                                         <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
                                                     </a>
@@ -259,7 +278,7 @@
                                                 <li><hr class="dropdown-divider"></li>
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
-                                                       hx-get="{% url 'wms:htmx_product_details' product.id %}"
+                                                       hx-get="{% url 'wms:htmx_product_details' display_product.id %}"
                                                        hx-swap="none"
                                                        hx-trigger="click">
                                                         <i class="fas fa-info-circle me-2"></i>Szczegóły produktu
@@ -271,9 +290,10 @@
                                     </td>
                                 </tr>
                                 <!-- Placeholder row for product images -->
-                                <tr id="product-images-{{ product.id }}"></tr>
+                                <tr id="product-images-{{ display_product.id }}"></tr>
                                 <!-- Placeholder row for product variants -->
-                                <tr id="product-variants-{{ product.id }}"></tr>
+                                <tr id="product-variants-{{ display_product.id }}"></tr>
+                                {% endwith %}
                                 {% endpartialdef %}
                                 {% endfor %}
                             </tbody>

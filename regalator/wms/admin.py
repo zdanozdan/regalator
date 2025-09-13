@@ -57,6 +57,7 @@ class ProductAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at', 'total_stock', 'stock_difference', 'needs_sync']
     filter_horizontal = ['groups']
     inlines = [ProductCodeInline]
+    actions = ['update_variants_to_size_and_color']
     
     def display_groups(self, obj):
         """Wyświetla grupy produktu"""
@@ -67,6 +68,39 @@ class ProductAdmin(admin.ModelAdmin):
         """Wyświetla główny kod kreskowy"""
         return obj.primary_barcode or '-'
     primary_barcode_display.short_description = 'Główny kod kreskowy'
+    
+    def update_variants_to_size_and_color(self, request, queryset):
+        """Admin action to update variants JSON field to include SizeAndColor type for products without parents"""
+        # Filter only products without parents
+        products_without_parents = queryset.filter(parent__isnull=True)
+        
+        updated_count = 0
+        for product in products_without_parents:
+            # Get current variants or initialize with default
+            variants = product.variants or {'size': '', 'color': ''}
+            
+            # Add the type field
+            variants['type'] = 'SizeAndColor'
+            
+            # Update the product
+            product.variants = variants
+            product.save(update_fields=['variants'])
+            updated_count += 1
+        
+        if updated_count > 0:
+            self.message_user(
+                request,
+                f'Successfully updated variants for {updated_count} product(s) without parents to include SizeAndColor type.',
+                level='SUCCESS'
+            )
+        else:
+            self.message_user(
+                request,
+                'No products without parents were selected. Only products without parent products can be updated.',
+                level='WARNING'
+            )
+    
+    update_variants_to_size_and_color.short_description = "Dodaj kolor i rozmiar"
     
     fieldsets = (
         ('Podstawowe informacje', {
