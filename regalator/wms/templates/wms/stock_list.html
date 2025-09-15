@@ -1,4 +1,5 @@
 {% extends 'wms/base.html' %}
+{% load partials %}
 
 {% block title %}Stany magazynowe - Regalator WMS{% endblock %}
 
@@ -54,13 +55,19 @@
         </div>
     </div>
 </div>
-            </div>
-        </div>
+
+<!-- Spinner for loading state -->
+<div id="stock-list-spinner" class="htmx-indicator text-center">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Ładowanie...</span>
     </div>
+    <div class="mt-2 text-muted">Odświeżanie listy stanów magazynowych...</div>
 </div>
 
+{% partialdef stock-table inline %}
 <!-- Lista stanów magazynowych -->
 <div class="row">
+<div class="row" hx-trigger="stock-list-updated from:body, location-list-updated from:body" hx-get="{% url 'wms:stock_list' %}" hx-swap="innerHTML" hx-indicator="#stock-list-spinner">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -229,6 +236,7 @@
         </div>
     </div>
 </div>
+{% endpartialdef %}
 
 <!-- Statystyki -->
 {% if page_obj %}

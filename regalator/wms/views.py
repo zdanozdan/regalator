@@ -717,7 +717,7 @@ def barcodes_list(request):
     """Lista kodów produktów"""
     search_query = request.GET.get('search', '')
     code_type_filter = request.GET.get('type', '')
-    
+
     barcodes = ProductCode.objects.select_related('product').filter(is_active=True)
     
     if search_query:
@@ -744,6 +744,9 @@ def barcodes_list(request):
         'code_type_filter': code_type_filter,
         'code_types': ProductCode.CODE_TYPES,
     }
+    if request.headers.get('HX-Request'):
+        return render(request, 'wms/barcodes_list.html#barcodes-table', context)
+
     return render(request, 'wms/barcodes_list.html', context)
 
 
@@ -795,6 +798,11 @@ def stock_list(request):
         'product_filter': product_filter,
         'product': product,
     }
+
+    # Check if request comes from HTMX
+    if request.headers.get('HX-Request'):
+        return render(request, 'wms/stock_list.html#stock-table', context)
+    
     return render(request, 'wms/stock_list.html', context)
 
 
@@ -1493,15 +1501,15 @@ def htmx_edit_product_codes(request, product_id, code_id=None):
             response = HttpResponse(status=200)
             response.content = render(request, 'wms/partials/_product_codes_modal.html', context)
             response['HX-Trigger'] = json.dumps({
-                'modalMessage': {
-                    'title': f'Kody produktu - {product.name}',
-                    'body': response.content.decode('utf-8')
-                },
                 'toastMessage': {
                     'value': 'Kod zapisany pomyślnie!',
                     'type': 'success'
+                },
+                'barcodes-list-updated': {
+                    'value': 'barcodes-list-updated'
                 }
             })
+
             return response                
 
     response = HttpResponse(status=200)
@@ -1807,7 +1815,7 @@ def htmx_location_edit(request, location_id=None):
             'modalMessage': {
                 'title': 'Nowa lokalizacja' if not location else 'Edycja lokalizacji',
                 'body': response.content.decode('utf-8')
-            }
+            },
         })
 
         return response
@@ -2525,6 +2533,9 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
                     },
                     'product-variants-updated': {
                         'value': 'product-variants-updated'
+                    },
+                    'stock-list-updated': {
+                        'value': 'stock-list-updated'
                     },
                     'modalHide': {
                         'value': 'modalHide'
