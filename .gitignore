@@ -138,7 +138,7 @@ db.sqlite3-journal
 media/
 
 # Static files (collected)
-static/
+staticfiles/
 
 # Environment variables
 .env
