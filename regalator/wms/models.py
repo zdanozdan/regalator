@@ -215,7 +215,7 @@ class Location(models.Model):
         verbose_name_plural = "Lokalizacje"
 
     def __str__(self):
-        return f"{self.barcode} - {self.name}"
+        return f"{self.name}, {self.get_location_type_display()}"
     
     @property
     def primary_photo(self):
