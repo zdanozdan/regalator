@@ -322,27 +322,6 @@ class Command(BaseCommand):
         wms_product.subiekt_stock_reserved = Decimal(str(getattr(subiekt_product, 'st_StanRez', 0)))
         wms_product.last_sync_date = timezone.now()
         
-        # Obsługa kodów kreskowych z Subiektu
-        subiekt_barcode = str(subiekt_product.tw_Id)
-        if subiekt_barcode:
-            # Sprawdź czy kod już istnieje dla tego produktu
-            existing_code = ProductCode.objects.filter(
-                product=wms_product,
-                code=subiekt_barcode,
-                code_type='barcode'
-            ).first()
-            
-            if not existing_code:
-                # Utwórz nowy kod kreskowy
-                ProductCode.objects.create(
-                    product=wms_product,
-                    code=subiekt_barcode,
-                    code_type='barcode',
-                    description='Kod z Subiektu (tw_Id)'
-                )
-                self.stdout.write(f'  Dodano kod kreskowy: {subiekt_barcode}')
-            else:
-        
         # Obsługa grupy produktów
         subiekt_group = getattr(subiekt_product, 'grt_Nazwa', '')
         if subiekt_group:
@@ -542,8 +521,8 @@ class Command(BaseCommand):
                     # Update existing barcode if needed
                     existing_code.description = 'Kod z Subiektu (tw_Id)'
                     existing_code.save()
-                        updated_count += 1
-                        self.stdout.write(f'  Zaktualizowano kod: {product.code} - {subiekt_id}')
+                    updated_count += 1
+                    self.stdout.write(f'  Zaktualizowano kod: {product.code} - {subiekt_id}')
                 else:
                     # Create new barcode
                     ProductCode.objects.create(

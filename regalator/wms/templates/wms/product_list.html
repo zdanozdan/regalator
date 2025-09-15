@@ -4,6 +4,20 @@
 {% block title %}Produkty - Regalator WMS{% endblock %}
 
 {% block content %}
+<!-- Error Messages -->
+{% if errors %}
+<div class="row mb-3">
+    <div class="col-12">
+        {% for error in errors %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <div class="row">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -27,17 +41,22 @@
                     </div>
                     <div class="col-md-3">
                         <label for="group" class="form-label">Grupa</label>
-                        <select class="form-control" id="group" name="group">
-                            <option value="">Wszystkie grupy</option>
-                            <option value="no_group" {% if group_filter == 'no_group' %}selected{% endif %}>
-                                Bez grupy
-                            </option>
-                            {% for group in groups %}
-                                <option value="{{ group.id }}" {% if group_filter == group.id|stringformat:"s" %}selected{% endif %}>
-                                    {{ group.name }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                        <div class="autocomplete-container position-relative">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="group" 
+                                   name="group" 
+                                   value="{% if group_filter == 'no_group' %}Bez grupy{% elif group_filter %}{% for group in groups %}{% if group_filter == group.id|stringformat:"s" %}{{ group.code }} - {{ group.name }}{% endif %}{% endfor %}{% endif %}"
+                                   placeholder="Wpisz nazwę lub kod grupy..."
+                                   autocomplete="off"
+                                   hx-get="{% url 'wms:htmx_product_groups_autocomplete' %}"
+                                   hx-trigger="keyup changed delay:300ms"
+                                   hx-target="#group-suggestions"
+                                   hx-swap="innerHTML"
+                                   hx-include="[name='group']">
+                            <input type="hidden" id="group-id" name="group_id" value="{{ group_filter }}">
+                            <div id="group-suggestions" class="autocomplete-suggestions position-absolute w-100 bg-white border border-top-0 rounded-bottom shadow-sm" style="z-index: 1000; display: none;"></div>
+                        </div>
                     </div>
                     <div class="col-md-3">
                         <label for="sync" class="form-label">Status synchronizacji</label>
@@ -395,6 +414,54 @@ document.addEventListener('barcode:scanned', function(e) {
     }
 });
 
+// Autocomplete functionality for product groups
+document.addEventListener('DOMContentLoaded', function() {
+    const groupInput = document.getElementById('group');
+    const groupIdInput = document.getElementById('group-id');
+    const suggestionsDiv = document.getElementById('group-suggestions');
+    
+    if (!groupInput || !groupIdInput || !suggestionsDiv) return;
+    
+    // Show suggestions when HTMX response is received
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail.xhr.responseURL.includes('product-groups-autocomplete')) {
+            const response = event.detail.xhr.responseText;
+            if (response.trim()) {
+                suggestionsDiv.innerHTML = response;
+                suggestionsDiv.style.display = 'block';
+                
+                // Add click handlers to suggestions
+                const items = suggestionsDiv.querySelectorAll('.autocomplete-item');
+                items.forEach(item => {
+                    item.addEventListener('click', function() {
+                        groupInput.value = this.textContent;
+                        groupIdInput.value = this.dataset.groupId;
+                        suggestionsDiv.style.display = 'none';
+                    });
+                });
+            } else {
+                suggestionsDiv.style.display = 'none';
+            }
+        }
+    });
+    
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(event) {
+        if (!groupInput.contains(event.target) && !suggestionsDiv.contains(event.target)) {
+            suggestionsDiv.style.display = 'none';
+        }
+    });
+    
+    // Handle special case for "no group"
+    groupInput.addEventListener('input', function() {
+        if (this.value.toLowerCase() === 'bez grupy') {
+            groupIdInput.value = 'no_group';
+        } else if (this.value === '') {
+            groupIdInput.value = '';
+        }
+    });
+});
+
 </script>
 {% endblock %}
 
@@ -423,6 +490,28 @@ document.addEventListener('barcode:scanned', function(e) {
     .product-variants-row .card {
         border: 1px solid #dee2e6;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Autocomplete styles */
+    .autocomplete-suggestions {
+        max-height: 200px;
+        overflow-y: auto;
+        border-top: none !important;
+    }
+    
+    .autocomplete-item {
+        display: block;
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .autocomplete-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .autocomplete-item:last-child {
+        border-bottom: none;
     }
 </style>
 {% endblock %} 

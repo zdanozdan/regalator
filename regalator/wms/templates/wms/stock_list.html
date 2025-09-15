@@ -27,7 +27,7 @@
                     <div class="col-md-6">
                         <label for="location" class="form-label">Lokalizacja</label>
                         <input type="text" class="form-control" id="location" name="location" 
-                               value="{{ location_filter }}" placeholder="Kod lokalizacji">
+                               value="{{ location_filter }}" placeholder="Nazwa lokalizacji">
                     </div>
                 </form>
             </div>
@@ -83,7 +83,6 @@
                             <thead>
                                 <tr>
                                     <th>Produkt</th>
-                                    <th>Kod produktu</th>
                                     <th>Lokalizacja</th>
                                     <th>Ilość dostępna</th>                                 
                                     <th>Ostatnia aktualizacja</th>
@@ -98,10 +97,16 @@
                                         <small class="text-muted">{{ stock.product.description|truncatechars:50 }}</small>
                                     </td>
                                     <td>
-                                        <code>{{ stock.product.code }}</code>
-                                    </td>
-                                    <td>
-                                        <div>{{ stock.location.name }}</div>
+                                        <div class="cursor-pointer" 
+                                             hx-get="{% url 'wms:htmx_location_edit' stock.location.id %}"
+                                             hx-swap="none"
+                                             hx-trigger="click"
+                                             style="cursor: pointer;"
+                                             onmouseover="this.style.textDecoration='underline'"
+                                             onmouseout="this.style.textDecoration='none'"
+                                             title="Kliknij aby edytować lokalizację">
+                                            {{ stock.location.name }}
+                                        </div>
                                         <small class="text-muted">{{ stock.location.barcode }}</small>
                                     </td>
                                     <td>

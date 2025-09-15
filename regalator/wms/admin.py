@@ -3,7 +3,7 @@ from .models import (
     Product, Location, Stock, CustomerOrder, OrderItem,
     PickingOrder, PickingItem, PickingHistory,
     SupplierOrder, SupplierOrderItem, ReceivingOrder, 
-    ReceivingItem, ReceivingHistory, WarehouseDocument, DocumentItem, UserProfile, ProductGroup, ProductCode
+    ReceivingItem, ReceivingHistory, WarehouseDocument, DocumentItem, UserProfile, ProductGroup, ProductCode, ProductImage
 )
 
 
@@ -12,6 +12,13 @@ class ProductCodeInline(admin.TabularInline):
     extra = 1
     fields = ['code', 'code_type', 'is_active', 'description']
     ordering = ['code_type', 'code']
+
+
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
+    fields = ['image', 'description', 'is_primary', 'order']
+    ordering = ['is_primary', 'order', 'created_at']
 
 
 @admin.register(UserProfile)
@@ -56,7 +63,7 @@ class ProductAdmin(admin.ModelAdmin):
     search_fields = ['code', 'name', 'codes__code', 'subiekt_id']
     readonly_fields = ['created_at', 'updated_at', 'total_stock', 'stock_difference', 'needs_sync']
     filter_horizontal = ['groups']
-    inlines = [ProductCodeInline]
+    inlines = [ProductCodeInline, ProductImageInline]
     actions = ['update_variants_to_size_and_color']
     
     def display_groups(self, obj):
@@ -263,6 +270,40 @@ class DocumentItemAdmin(admin.ModelAdmin):
     list_filter = ['document__document_type', 'document__status', 'product', 'location']
     search_fields = ['document__document_number', 'product__name', 'product__codes__code']
     ordering = ['document', 'product']
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ['product', 'image_preview', 'description', 'is_primary', 'order', 'created_at']
+    list_filter = ['is_primary', 'created_at', 'product__groups']
+    search_fields = ['product__name', 'product__code', 'description']
+    readonly_fields = ['created_at', 'updated_at', 'image_preview']
+    ordering = ['product__name', 'is_primary', 'order', 'created_at']
+    autocomplete_fields = ['product']
+    
+    def image_preview(self, obj):
+        """Wyświetla podgląd zdjęcia"""
+        if obj.image:
+            return f'<img src="{obj.image.url}" style="max-width: 100px; max-height: 100px;" />'
+        return "Brak zdjęcia"
+    image_preview.short_description = 'Podgląd'
+    
+    fieldsets = (
+        ('Podstawowe informacje', {
+            'fields': ('product', 'image', 'description')
+        }),
+        ('Ustawienia', {
+            'fields': ('is_primary', 'order')
+        }),
+        ('Podgląd', {
+            'fields': ('image_preview',),
+            'classes': ('collapse',)
+        }),
+        ('Informacje systemowe', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(ProductGroup)

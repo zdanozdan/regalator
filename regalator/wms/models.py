@@ -267,8 +267,8 @@ class ProductImage(models.Model):
         ordering = ['product', 'is_primary', 'order', 'created_at']
     
     def __str__(self):
-        if self.title:
-            return f"{self.product.code} - {self.title}"
+        if self.description:
+            return f"{self.product.code} - {self.description}"
         return f"{self.product.code} - Zdjęcie {self.id}"
     
     def save(self, *args, **kwargs):

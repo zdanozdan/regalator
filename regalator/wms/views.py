@@ -504,8 +504,11 @@ def product_list(request):
     """Lista produktów"""
     search_query = request.GET.get('search', '')
     sync_filter = request.GET.get('sync', '')
-    group_filter = request.GET.get('group', '')
+    group_filter = request.GET.get('group_id', '') or request.GET.get('group', '')
     subiekt_filter = request.GET.get('subiekt', '')
+    
+    # Initialize error list
+    errors = []
     
     products = Product.objects.prefetch_related('images', 'parent').all()
     
@@ -522,7 +525,14 @@ def product_list(request):
         if group_filter == 'no_group':
             products = products.filter(groups__isnull=True)
         else:
-            products = products.filter(groups__id=group_filter)
+            try:
+                # Try to convert to integer, if it fails, ignore the filter
+                group_id = int(group_filter)
+                products = products.filter(groups__id=group_id)
+            except (ValueError, TypeError):
+                products = products.filter(groups__id__icontains=group_filter)
+                # If group_filter is not a valid integer, ignore the filter and add error
+                errors.append(f'Nieprawidłowy identyfikator grupy: "{group_filter}"')
     
     # Filtrowanie po subiekt_id
     if subiekt_filter:
@@ -539,6 +549,7 @@ def product_list(request):
             except ValueError:
                 # Jeśli nie jest liczbą, spróbuj dopasować jako string
                 products = products.filter(subiekt_id__icontains=subiekt_filter)
+                errors.append(f'Nieprawidłowy identyfikator PLU Subiekt: "{subiekt_filter}"')
     
     # Filtrowanie po statusie synchronizacji
     if sync_filter == 'needs_sync':
@@ -601,7 +612,14 @@ def product_list(request):
         if group_filter == 'no_group':
             variants_query = variants_query.filter(groups__isnull=True)
         else:
-            variants_query = variants_query.filter(groups__id=group_filter)
+            try:
+                # Try to convert to integer, if it fails, ignore the filter
+                group_id = int(group_filter)
+                variants_query = variants_query.filter(groups__id=group_id)
+            except (ValueError, TypeError):
+                # If group_filter is not a valid integer, ignore the filter
+                # Error already added above, no need to duplicate
+                pass
     
     # Apply subiekt filter to variants if present
     if subiekt_filter:
@@ -651,6 +669,7 @@ def product_list(request):
         'groups': groups,
         'product_variants_dict': product_variants_dict,
         'product_variant_ids_dict': product_variant_ids_dict,
+        'errors': errors,
     }
     return render(request, 'wms/product_list.html', context)
 
@@ -754,7 +773,7 @@ def stock_list(request):
         ).distinct()
     
     if location_filter:
-        stocks = stocks.filter(location__barcode=location_filter)
+        stocks = stocks.filter(location__name__icontains=location_filter)
     
     if product_filter:
         stocks = stocks.filter(product__code=product_filter)
@@ -2506,19 +2525,13 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
                     },
                     'product-variants-updated': {
                         'value': 'product-variants-updated'
+                    },
+                    'modalHide': {
+                        'value': 'modalHide'
                     }
                 }
 
-                context = {
-                    'form': form,
-                    'stock_formset': ProductStockInlineFormSet(instance=variant_obj, prefix='stock'),
-                    'product': product,
-                    'variant': variant_obj,
-                    'action': reverse('wms:htmx_edit_size_color_modal', kwargs={'product_id': product.id, 'variant_id': variant_obj.id}) if variant_obj else reverse('wms:htmx_add_size_color_modal', kwargs={'product_id': product.id})
-                }
-
                 response = HttpResponse(status=200)
-                response.content = render(request, 'wms/partials/_product_size_color_form.html', context)
                 response['HX-Trigger'] = json.dumps(toast_message)
                 return response
 
@@ -2557,6 +2570,27 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
         })
 
         return response
+
+
+@login_required
+def htmx_product_groups_autocomplete(request):
+    """HTMX endpoint for product groups autocomplete"""
+    query = request.GET.get('group', '').strip()
+    if not query:
+        return HttpResponse('')
+
+    # Search for product groups by name or code
+    groups = ProductGroup.objects.filter(
+        Q(name__icontains=query) | Q(code__icontains=query),
+        is_active=True
+    ).order_by('name')[:10]  # Limit to 10 results
+
+    # Create HTML divs for the autocomplete dropdown
+    options_html = ''
+    for group in groups:
+        options_html += f'<div class="autocomplete-item" data-group-id="{group.id}" data-group-name="{group.name}" data-group-code="{group.code}">{group.code} - {group.name}</div>'
+    
+    return HttpResponse(options_html)
 
 
 

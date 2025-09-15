@@ -82,6 +82,7 @@ urlpatterns = [
     path('htmx/variant/<int:variant_id>/delete/', views.htmx_delete_variant, name='htmx_delete_variant'),
     path('htmx/product/<int:product_id>/edit-codes/', views.htmx_edit_product_codes, name='htmx_edit_product_codes'),
     path('htmx/product/<int:product_id>/edit-codes/<int:code_id>/', views.htmx_edit_product_codes, name='htmx_edit_product_codes'),
+    path('htmx/product-groups-autocomplete/', views.htmx_product_groups_autocomplete, name='htmx_product_groups_autocomplete'),
 
     
     # Profile
