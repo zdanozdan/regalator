@@ -5,3 +5,6 @@ class WmsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'wms'
     verbose_name = 'System WMS'
+    
+    def ready(self):
+        import wms.signals

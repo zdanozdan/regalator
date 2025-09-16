@@ -76,6 +76,7 @@ urlpatterns = [
     path('htmx/product/<int:product_id>/add-code-inline/', views.htmx_add_code_inline, name='htmx_add_code_inline'),
     path('htmx/product/<int:product_id>/images-inline/', views.htmx_product_images_inline, name='htmx_product_images_inline'),
     path('htmx/product/<int:product_id>/variants/', views.htmx_product_variants, name='htmx_product_variants'),
+    path('htmx/product/<int:product_id>/row/', views.htmx_product_row, name='htmx_product_row'),
     path('htmx/product/<int:product_id>/add-size-color/', views.htmx_add_size_color_modal, name='htmx_add_size_color_modal'),
     path('htmx/product/<int:product_id>/edit-size-color/<int:variant_id>/', views.htmx_add_size_color_modal, name='htmx_edit_size_color_modal'),
     path('htmx/product/<int:product_id>/edit-product-modal/', views.htmx_edit_product_modal, name='htmx_edit_product_modal'),

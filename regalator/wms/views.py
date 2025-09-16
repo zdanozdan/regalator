@@ -17,6 +17,11 @@ import logging
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.db import IntegrityError
+from .signals import product_updated
+
+# Import subiekt models
+from subiekt.models import tw_Towar
+            
 
 logger = logging.getLogger(__name__)
 
@@ -511,7 +516,7 @@ def product_list(request):
     errors = []
     
     products = Product.objects.prefetch_related('images', 'parent').all()
-    
+
     if search_query:
         products = products.filter(
             Q(code__icontains=search_query) |
@@ -671,8 +676,21 @@ def product_list(request):
         'product_variant_ids_dict': product_variant_ids_dict,
         'errors': errors,
     }
+
+    if request.headers.get('HX-Request'):
+        return render(request, 'wms/product_list.html#product-list-table', context)
+
     return render(request, 'wms/product_list.html', context)
 
+
+@login_required
+def htmx_product_row(request, product_id):
+    """HTMX endpoint for displaying product row inline in the next row"""
+    product = get_object_or_404(Product, id=product_id)
+    context = {
+        'display_product': product,
+    }
+    return render(request, 'wms/product_list.html#product-row-partial', context)
 
 @login_required
 def location_list(request):
@@ -863,15 +881,9 @@ def htmx_sync_product(request, product_id):
         try:
             product = get_object_or_404(Product, id=product_id)
 
-            raise Exception('test')
-            
-            # Import subiekt models
-            from subiekt.models import tw_Towar
-            from decimal import Decimal
-            
             # Pobierz produkt z Subiektu
             subiekt_product = tw_Towar.subiekt_objects.get_product_by_id(product.subiekt_id)
-            
+
             if not subiekt_product:
                 raise Exception(f'Produkt o ID {product.subiekt_id} nie istnieje w Subiekcie')
             
@@ -884,26 +896,7 @@ def htmx_sync_product(request, product_id):
             product.subiekt_stock = Decimal(str(getattr(subiekt_product, 'st_Stan', 0)))
             product.subiekt_stock_reserved = Decimal(str(getattr(subiekt_product, 'st_StanRez', 0)))
             product.last_sync_date = timezone.now()
-            
-            # Obsługa kodów kreskowych z Subiektu
-            from wms.models import ProductCode
-            subiekt_barcode = str(subiekt_product.tw_Id)
-            if subiekt_barcode:
-                # Sprawdź czy kod już istnieje dla tego produktu
-                existing_code = ProductCode.objects.filter(
-                    product=product,
-                    code=subiekt_barcode
-                ).first()
-                
-                if not existing_code:
-                    # Utwórz nowy kod kreskowy
-                    ProductCode.objects.create(
-                        product=product,
-                        code=subiekt_barcode,
-                        code_type='barcode',
-                        description='Kod z Subiektu (tw_Id)'
-                    )
-            
+
             # Obsługa grupy produktów
             subiekt_group = getattr(subiekt_product, 'grt_Nazwa', '')
             if subiekt_group:
@@ -911,12 +904,11 @@ def htmx_sync_product(request, product_id):
                     name=subiekt_group,
                     defaults={
                         'code': subiekt_group[:20],  # Używamy nazwy jako kodu (max 20 znaków)
-                        'description': f'Grupa z Subiektu: {subiekt_group}',
+                        'description': f'Grupa z Subiekta: {subiekt_group}',
                         'color': '#007bff',  # Domyślny kolor
                     }
                 )
                 
-                # Dodaj produkt do grupy (jeśli nie jest już w tej grupie)
                 if wms_group not in product.groups.all():
                     product.groups.add(wms_group)
             
@@ -931,7 +923,7 @@ def htmx_sync_product(request, product_id):
             
             # Add success toast trigger
             response['HX-Trigger'] = json.dumps({
-                'toastMessage': {'value': f'Produkt {product.name} został zsynchronizowany', 'type': 'success'}
+                'toastMessage': {'value': f'Produkt {product.name} został zsynchronizowany. Stan w Subiekcie: {product.subiekt_stock}', 'type': 'success'}
             })
             
             return response
@@ -2431,6 +2423,8 @@ def htmx_edit_product_modal(request, product_id):
         if form.is_valid() and stock_formset.is_valid():
             form.save()
             stock_formset.save()
+            # Dispatch signal for product update
+            product_updated.send(sender=None, product=product)
             # Rebuild fresh, unbound form and formset to avoid rendering deleted rows/errors
             context['form'] = ProductForm(instance=product)
             context['stock_formset'] = ProductStockInlineFormSet(instance=product, prefix='stock')
@@ -2439,6 +2433,9 @@ def htmx_edit_product_modal(request, product_id):
                 'toastMessage': {
                     'value': 'Produkt został zaktualizowany',
                     'type': 'success'
+                },
+                'product-list-updated': {
+                    'value': 'product-list-updated'
                 },
                 'modalMessage': {
                     'title': f"Edytuj produkt - {product.name}",
@@ -2535,7 +2532,7 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
                         'value': 'product-variants-updated'
                     },
                     'stock-list-updated': {
-                        'value': 'stock-list-updated'
+                        'value': 'stock-list-updated'                    
                     },
                     'modalHide': {
                         'value': 'modalHide'

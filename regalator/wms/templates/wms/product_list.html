@@ -98,8 +98,17 @@
     </div>
 </div>              
 
+<!-- Spinner -->
+<div id="product-list-spinner" class="htmx-indicator text-center">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Ładowanie...</span>
+    </div>
+    <div class="mt-2 text-muted">Odświeżanie listy produktów...</div>
+</div>
+
+{% partialdef product-list-table inline %}
 <!-- Lista produktów -->
-<div class="row">
+<div class="row" hx-trigger="product-list-updated from:body" hx-get="{% url 'wms:product_list' %}" hx-swap="innerHTML" hx-indicator="#product-list-spinner">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -150,7 +159,8 @@
                                     </td>
                                 </tr>
                                 {% endif %}
-                                <tr id="product-row-{{ display_product.id }}">                                    
+                                {% partialdef product-row-partial inline %}
+                                <tr id="product-row-{{ display_product.id }}" hx-get="{% url 'wms:htmx_product_row' display_product.id %}" hx-swap="outerHTML" hx-trigger="product-variants-updated from:body delay:500ms">                                    
                                     <td class="text-center">
                                         {% if display_product.primary_photo %}
                                             <img src="{{ display_product.primary_photo.image.url }}" 
@@ -308,6 +318,7 @@
                                         </div>
                                     </td>
                                 </tr>
+                                {% endpartialdef product-row-partial %}
                                 <!-- Placeholder row for product images -->
                                 <tr id="product-images-{{ display_product.id }}"></tr>
                                 <!-- Placeholder row for product variants -->
@@ -380,6 +391,7 @@
         </div>
     </div>
 </div>
+{% endpartialdef %}
 
 <script>
 function copyToClipboard(text) {

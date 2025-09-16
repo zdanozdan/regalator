@@ -7,8 +7,6 @@ from decimal import Decimal
 import uuid
 import os
 
-
-
 def user_avatar_path(instance, filename):
     """Generuje ścieżkę dla avatarów użytkowników"""
     ext = filename.split('.')[-1]
@@ -160,8 +158,14 @@ class Product(models.Model):
     
     @property
     def total_stock(self):
-        """Łączny stan magazynowy we wszystkich lokalizacjach"""
-        return Stock.objects.filter(product=self).aggregate(
+        """Łączny stan magazynowy we wszystkich lokalizacjach (włącznie z produktami potomnymi)"""
+        # Get all child products
+        child_products = Product.objects.filter(parent=self)
+        
+        # Get stock for this product and all child products
+        product_ids = [self.id] + list(child_products.values_list('id', flat=True))
+        
+        return Stock.objects.filter(product_id__in=product_ids).aggregate(
             total=models.Sum('quantity')
         )['total'] or 0
     
