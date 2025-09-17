@@ -693,6 +693,27 @@ def htmx_product_row(request, product_id):
     return render(request, 'wms/product_list.html#product-row-partial', context)
 
 @login_required
+def htmx_stock_row(request, product_id):
+    """HTMX endpoint for displaying stock row inline in the next row"""
+    product = get_object_or_404(Product, id=product_id)
+    stock = Stock.objects.get(product=product)
+    context = {
+        'product': product,
+        'stock': stock,
+    }
+    
+    toast_message = {
+        'toastMessage': {
+            'value': f'Produkt {product.name} został zsynchronizowany. Stan w Subiektem: {stock.quantity}',
+            'type': 'success'
+        }
+    }
+    response = HttpResponse(status=200)
+    response.content = render(request, 'wms/stock_list.html#stock-row-partial', context)
+    response['HX-Trigger'] = json.dumps(toast_message)
+    return response
+
+@login_required
 def location_list(request):
     """Lista lokalizacji"""
     search_query = request.GET.get('search', '')
@@ -775,6 +796,7 @@ def stock_list(request):
     location_filter = request.GET.get('location', '')
     product_filter = request.GET.get('product', '')
     product_id = request.GET.get('product_id', '')
+    subiekt_id_filter = request.GET.get('subiekt_id', '')
 
     try:
         product = Product.objects.get(id=product_id)
@@ -802,6 +824,12 @@ def stock_list(request):
     if product_id:
         stocks = stocks.filter(product__id=product_id)
     
+    if subiekt_id_filter:
+        stocks = stocks.filter(
+            Q(product__subiekt_id=subiekt_id_filter) |
+            Q(product__parent__subiekt_id=subiekt_id_filter)
+        )
+    
     stocks = stocks.order_by('location__barcode', 'product__name')
     
     # Paginacja
@@ -809,12 +837,17 @@ def stock_list(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     
+    # Get all active locations for the dropdown
+    locations = Location.objects.filter(is_active=True).order_by('name')
+    
     context = {
         'page_obj': page_obj,
         'search_query': search_query,
         'location_filter': location_filter,
         'product_filter': product_filter,
+        'subiekt_id_filter': subiekt_id_filter,
         'product': product,
+        'locations': locations,
     }
 
     # Check if request comes from HTMX
@@ -2436,6 +2469,9 @@ def htmx_edit_product_modal(request, product_id):
                 },
                 'product-list-updated': {
                     'value': 'product-list-updated'
+                },
+                'stock-list-updated': {
+                    'value': 'stock-list-updated'
                 },
                 'modalMessage': {
                     'title': f"Edytuj produkt - {product.name}",

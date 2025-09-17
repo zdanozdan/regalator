@@ -202,6 +202,21 @@
         </div>
     </footer>
     <script>
+        document.body.addEventListener('htmx:targetError', function (evt) {
+            // Create error toast message
+            htmx.trigger(document.body, 'toastMessage', {
+                type: 'danger',
+                value: 'Wystąpił błąd podczas ładowania zawartości (targetError)'
+            });
+        });
+
+        document.body.addEventListener('htmx:responseError', function (evt) {
+            // Create error toast message for HTTP response errors
+            htmx.trigger(document.body, 'toastMessage', {
+                type: 'danger',
+                value: 'Wystąpił błąd serwera (responseError)'
+            });
+        });
         htmx.on('modalHide', function (event) {
             // Find all visible modals
             const visibleModals = document.querySelectorAll('.modal.show');

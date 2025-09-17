@@ -282,19 +282,7 @@
                                                        hx-trigger="click">
                                                         <i class="fas fa-qrcode me-2"></i>Edycja
                                                     </a>
-                                                </li>
-                                                {% comment %}
-                                                <li>
-                                                    <a class="dropdown-item" href="{% url 'wms:edit_product_codes' display_product.id %}">
-                                                        <i class="fas fa-qrcode me-2"></i>Edytuj kody
-                                                    </a>
-                                                </li>
-                                                <li>
-                                                    <a class="dropdown-item" href="{% url 'wms:stock_list' %}?product={{ display_product.code }}">
-                                                        <i class="fas fa-warehouse me-2"></i>Pokaż stany magazynowe
-                                                    </a>
-                                                </li>
-                                                {% endcomment %}
+                                                </li>                                                
                                                 {% if display_product.subiekt_id %}
                                                 <li>
                                                     <a class="dropdown-item" href="#" 

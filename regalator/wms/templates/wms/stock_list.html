@@ -20,15 +20,26 @@
         <div class="card">
             <div class="card-body">
                 <form method="get" class="row g-3" id="search-form">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label for="search" class="form-label">Wyszukaj</label>
                         <input type="text" class="form-control" id="search" name="search" 
                                value="{{ search_query }}" placeholder="Nazwa produktu, kod lub lokalizacja">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label for="location" class="form-label">Lokalizacja</label>
-                        <input type="text" class="form-control" id="location" name="location" 
-                               value="{{ location_filter }}" placeholder="Nazwa lokalizacji">
+                        <select class="form-select" id="location" name="location">
+                            <option value="">Wszystkie lokalizacje</option>
+                            {% for location in locations %}
+                                <option value="{{ location.name }}" {% if location_filter == location.name %}selected{% endif %}>
+                                    {{ location.name }} ({{ location.barcode }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="subiekt_id" class="form-label">Subiekt ID</label>
+                        <input type="number" class="form-control" id="subiekt_id" name="subiekt_id" 
+                               value="{{ subiekt_id_filter }}" placeholder="ID produktu w Subiekcie">
                     </div>
                 </form>
             </div>
@@ -47,7 +58,7 @@
                 <i class="fas fa-times me-1"></i>Wyczyść
             </a>
             {% if product_filter %}
-                <a href="{% url 'wms:stock_list' %}?search={{ search_query }}&location={{ location_filter }}" 
+                <a href="{% url 'wms:stock_list' %}?search={{ search_query }}&location={{ location_filter }}&subiekt_id={{ subiekt_id_filter }}" 
                    class="btn btn-outline-info btn-sm">
                     <i class="fas fa-filter me-1"></i>Wyczyść filtr produktu
                 </a>
@@ -91,16 +102,19 @@
                                 <tr>
                                     <th>Produkt</th>
                                     <th>Lokalizacja</th>
-                                    <th>Ilość dostępna</th>                                 
+                                    <th>Stan WMS</th>
+                                    <th>Stan Subiekt</th>
+                                    <th>Różnica</th>                                 
                                     <th>Ostatnia aktualizacja</th>
                                     <th>Akcje</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for stock in page_obj %}
-                                <tr>
+                                {% partialdef stock-row-partial inline %}
+                                <tr id="stock-row-{{ stock.id }}" hx-get="{% url 'wms:htmx_stock_row' stock.product.id %}" hx-swap="outerHTML" hx-trigger="stock-list-updated from:body delay:500ms">
                                     <td>
-                                        <div>{{ stock.product.name }}</div>
+                                        <div>{{ stock.product.name }} {{ stock.product.subiekt_id }}</div>
                                         <small class="text-muted">{{ stock.product.description|truncatechars:50 }}</small>
                                     </td>
                                     <td>
@@ -117,7 +131,27 @@
                                         <small class="text-muted">{{ stock.location.barcode }}</small>
                                     </td>
                                     <td>
-                                        <span class="badge bg-success">{{ stock.quantity }} {{ stock.product.unit }}</span>
+                                        {{ stock.quantity }} {{ stock.product.unit }}
+                                    </td>
+                                    <td>
+                                        {% if stock.product.parent %}
+                                            <span class="badge bg-secondary me-1">variant</span>
+                                        {% else %}
+                                            {{ stock.product.subiekt_stock }} {{ stock.product.unit }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if stock.product.subiekt_id %}
+                                            {% if stock.product.stock_difference > 0 %}
+                                                <span class="text-success fw-bold">+{{ stock.product.stock_difference|floatformat:2 }} {{ stock.product.unit }}</span>
+                                            {% elif stock.product.stock_difference < 0 %}
+                                                <span class="text-danger fw-bold">{{ stock.product.stock_difference|floatformat:2 }} {{ stock.product.unit }}</span>
+                                            {% else %}
+                                                <span class="text-success">✓</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
                                     </td>
                                     <td>{{ stock.updated_at|date:"d.m.Y H:i" }}</td>     
                                     <td>
@@ -147,10 +181,27 @@
                                                     </a>
                                                 </li>
                                                 {% endif %}
+                                                {% if stock.product.parent %}
+                                                <li>
+                                                    <a class="dropdown-item disabled" href="#" title="Nie można synchronizować wariantów">
+                                                        <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
+                                                    </a>
+                                                </li>
+                                                {% else %}
+                                                <li>
+                                                    <a class="dropdown-item" href="#" 
+                                                       hx-post="{% url 'wms:htmx_sync_product' stock.product.id %}"
+                                                       hx-target="#stock-row-{{ stock.id }}"
+                                                       hx-swap="outerHTML">
+                                                        <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
+                                                    </a>
+                                                </li>
+                                                {% endif %}
                                             </ul>
                                         </div>
                                     </td>
                                 </tr>
+                                {% endpartialdef stock-row-partial %}
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -162,12 +213,12 @@
                             <ul class="pagination justify-content-center">
                                 {% if page_obj.has_previous %}
                                     <li class="page-item">
-                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                             <i class="fas fa-angle-double-left"></i>
                                         </a>
                                     </li>
                                     <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                             <i class="fas fa-angle-left"></i>
                                         </a>
                                     </li>
@@ -180,19 +231,19 @@
                                         </li>
                                     {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
                                         <li class="page-item">
-                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">{{ num }}</a>
+                                            <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}">{{ num }}</a>
                                         </li>
                                     {% endif %}
                                 {% endfor %}
                                 
                                 {% if page_obj.has_next %}
                                     <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                             <i class="fas fa-angle-right"></i>
                                         </a>
                                     </li>
                                     <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if location_filter %}&location={{ location_filter }}{% endif %}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                             <i class="fas fa-angle-double-right"></i>
                                         </a>
                                     </li>
@@ -299,5 +350,6 @@ document.addEventListener('barcode:scanned', function(e) {
         // no-op
     }
 });
+
 </script>
 {% endblock %}
