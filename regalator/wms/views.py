@@ -702,15 +702,8 @@ def htmx_stock_row(request, product_id):
         'stock': stock,
     }
     
-    toast_message = {
-        'toastMessage': {
-            'value': f'Produkt {product.name} został zsynchronizowany. Stan w Subiektem: {stock.quantity}',
-            'type': 'success'
-        }
-    }
     response = HttpResponse(status=200)
     response.content = render(request, 'wms/stock_list.html#stock-row-partial', context)
-    response['HX-Trigger'] = json.dumps(toast_message)
     return response
 
 @login_required
@@ -908,7 +901,7 @@ def api_scan_barcode(request):
 
 
 @login_required
-def htmx_sync_product(request, product_id):
+def htmx_sync_product(request, product_id, stock_id=None):
     """HTMX view do synchronizacji produktu z Subiektem"""
     if request.method == 'POST':
         try:
@@ -956,7 +949,8 @@ def htmx_sync_product(request, product_id):
             
             # Add success toast trigger
             response['HX-Trigger'] = json.dumps({
-                'toastMessage': {'value': f'Produkt {product.name} został zsynchronizowany. Stan w Subiekcie: {product.subiekt_stock}', 'type': 'success'}
+                'toastMessage': {'value': f'Produkt {product.name} został zsynchronizowany. Stan w Subiekcie: {product.subiekt_stock}', 'type': 'success'},
+                'subiekt-stock-synced-'+str(product.id): {'value': 'true'}
             })
             
             return response

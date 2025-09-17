@@ -112,7 +112,7 @@
                             <tbody>
                                 {% for stock in page_obj %}
                                 {% partialdef stock-row-partial inline %}
-                                <tr id="stock-row-{{ stock.id }}" hx-get="{% url 'wms:htmx_stock_row' stock.product.id %}" hx-swap="outerHTML" hx-trigger="stock-list-updated from:body delay:500ms">
+                                <tr hx-get="{% url 'wms:htmx_stock_row' stock.product.id %}" hx-swap="outerHTML" hx-trigger="stock-list-updated from:body delay:500ms, subiekt-stock-synced-{{ stock.product.id }} from:body">
                                     <td>
                                         <div>{{ stock.product.name }} {{ stock.product.subiekt_id }}</div>
                                         <small class="text-muted">{{ stock.product.description|truncatechars:50 }}</small>
@@ -190,9 +190,8 @@
                                                 {% else %}
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
-                                                       hx-post="{% url 'wms:htmx_sync_product' stock.product.id %}"
-                                                       hx-target="#stock-row-{{ stock.id }}"
-                                                       hx-swap="outerHTML">
+                                                       hx-post="{% url 'wms:htmx_sync_product' stock.product.id%}"
+                                                       hx-swap="none">
                                                         <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
                                                     </a>
                                                 </li>
