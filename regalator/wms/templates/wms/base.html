@@ -217,6 +217,14 @@
                 value: 'Wystąpił błąd serwera (responseError)'
             });
         });
+
+        document.body.addEventListener('htmx:sendError', function (evt) {
+            // Create error toast message for HTTP response errors
+            htmx.trigger(document.body, 'toastMessage', {
+                type: 'danger',
+                value: 'Wystąpił błąd serwera (sendError)'
+            });
+        });
         htmx.on('modalHide', function (event) {
             // Find all visible modals
             const visibleModals = document.querySelectorAll('.modal.show');

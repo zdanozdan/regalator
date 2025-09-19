@@ -70,7 +70,6 @@ urlpatterns = [
     path('htmx/sync-product/<int:product_id>/', views.htmx_sync_product, name='htmx_sync_product'),
     path('htmx/product-details/<int:product_id>/', views.htmx_product_details, name='htmx_product_details'),
     path('htmx/delete-code/<int:product_id>/<int:code_id>/', views.htmx_delete_code, name='htmx_delete_code'),
-    path('htmx/set-main-code/<int:product_id>/<int:code_id>/', views.htmx_set_main_code, name='htmx_set_main_code'),
     path('htmx/product/<int:product_id>/add-code-modal/', views.htmx_add_code_modal, name='htmx_add_code_modal'),
     path('htmx/product/<int:product_id>/codes-list/', views.htmx_product_codes_list, name='htmx_product_codes_list'),
     path('htmx/product/<int:product_id>/add-code-inline/', views.htmx_add_code_inline, name='htmx_add_code_inline'),

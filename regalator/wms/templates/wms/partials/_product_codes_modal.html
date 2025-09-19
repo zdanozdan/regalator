@@ -1,4 +1,5 @@
 {% load widget_tweaks %}
+{% load partials %}
 
 <form class="product-codes-form" hx-post="{% if editing_code %}{% url 'wms:htmx_edit_product_codes' product.id editing_code.id %}{% else %}{% url 'wms:htmx_edit_product_codes' product.id %}{% endif %}" hx-swap="innerHTML">
     {% csrf_token %}
@@ -87,7 +88,8 @@
             {% endif %}
         </div>
 
-        <div class="col-12">
+        {% partialdef product_codes_list inline %}
+        <div class="col-12" hx-trigger="product-codes-list from:body" hx-get="{% url 'wms:htmx_product_codes_list' product.id %}" hx-swap="innerHTML">
             <div class="card">
                 <div class="card-header py-2 d-flex align-items-center justify-content-between">
                     <h6 class="mb-0"><i class="fas fa-barcode me-2"></i>Istniejące kody</h6>
@@ -154,7 +156,7 @@
                                                 <i class="fas fa-barcode fa-3x text-muted mb-3"></i>
                                                 <h5 class="text-muted">Brak kodów</h5>
                                                 <p class="text-muted">Ten produkt nie ma jeszcze żadnych kodów kreskowych ani QR.</p>
-                                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCodeModal">
+                                                <button class="btn btn-primary" type="submit"
                                                     <i class="fas fa-plus me-2"></i>Dodaj pierwszy kod
                                                 </button>
                                             </td>
@@ -169,8 +171,7 @@
                             <h5 class="text-muted">Brak kodów</h5>
                             <p class="text-muted">Ten produkt nie ma jeszcze żadnych kodów kreskowych ani QR.</p>
                             <button class="btn btn-primary"
-                                    hx-get="{% url 'wms:htmx_add_code_modal' product.id %}"
-                                    hx-swap="none">
+                                    type="submit">
                                 <i class="fas fa-plus me-2"></i>Dodaj pierwszy kod
                             </button>
                         </div>
@@ -178,6 +179,7 @@
                 </div>
             </div>
         </div>
+        {% endpartialdef %}
 
         <div class="col-12">
             <div class="d-flex gap-2">

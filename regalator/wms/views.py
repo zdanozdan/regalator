@@ -1655,19 +1655,6 @@ def htmx_add_code_modal(request, product_id):
     return response
 
 @login_required
-def htmx_set_main_code(request, product_id, code_id):
-    # Primary code functionality has been removed
-    response = HttpResponse(status=200)
-    toast_message = {
-        "toastMessage": {
-            "value": "Funkcja ustawiania kodu głównego została wyłączona",
-            "type": "info"
-        }
-    }
-    response['HX-Trigger'] = json.dumps(toast_message)
-    return response
-
-@login_required
 def htmx_delete_code(request, product_id, code_id):
     if request.method == 'DELETE':
         try:
@@ -1738,7 +1725,7 @@ def htmx_product_codes_list(request, product_id):
         'product_codes': product_codes,
     }
     
-    return render(request, 'wms/partials/_product_codes_list.html', context)
+    return render(request, 'wms/partials/_product_codes_modal.html#product_codes_list', context)
 
 @login_required
 def htmx_add_code_inline(request, product_id):
