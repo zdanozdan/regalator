@@ -1,6 +1,6 @@
 {% load widget_tweaks %}
 
-<form class="product-codes-form" hx-post="{% if editing_code %}{% url 'wms:htmx_edit_product_codes' product.id editing_code.id %}{% else %}{% url 'wms:htmx_edit_product_codes' product.id %}{% endif %}" hx-swap="none">
+<form class="product-codes-form" hx-post="{% if editing_code %}{% url 'wms:htmx_edit_product_codes' product.id editing_code.id %}{% else %}{% url 'wms:htmx_edit_product_codes' product.id %}{% endif %}" hx-swap="innerHTML">
     {% csrf_token %}
 
     {% for message in messages %}
