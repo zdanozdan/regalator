@@ -2,6 +2,35 @@
 
 Regalator WMS to kompleksowy system zarządzania magazynem zbudowany w Django, zaprojektowany do zarządzania operacjami magazynowymi, w tym kompletacją, przyjęciami, zarządzaniem zapasami oraz integracją z systemem księgowym Subiekt GT.
 
+## ⚡ Szybki start
+
+```bash
+# Pobierz projekt
+git clone https://github.com/yourusername/regalator.git
+cd regalator
+
+# Zainstaluj (tylko Python 3.8+ wymagany!)
+# Wybierz jedną z poniższych opcji:
+
+./install.sh           # Linux/macOS (najprostsze)
+python3 install.py     # Linux/macOS (alternatywa)
+
+install.bat            # Windows (dwuklik lub przez cmd)
+python install.py      # Windows (alternatywa)
+
+# Aktywuj venv
+source venv/bin/activate  # Linux/macOS
+venv\Scripts\activate     # Windows
+
+# Uruchom
+cd regalator
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+Gotowe! Aplikacja działa na http://127.0.0.1:8000/ 🎉
+
 ## 🚀 Funkcje
 
 ### Podstawowe funkcje WMS
@@ -50,20 +79,30 @@ Regalator WMS to kompleksowy system zarządzania magazynem zbudowany w Django, z
 
 ### Opcja 1: Automatyczna instalacja (zalecana)
 
+**Linux/macOS:**
 ```bash
-# Sklonuj repozytorium
 git clone https://github.com/yourusername/regalator.git
 cd regalator
+./install.sh          # Lub: python3 install.py
+```
 
-# Uruchom skrypt instalacyjny
-python install.py
+**Windows:**
+```cmd
+git clone https://github.com/yourusername/regalator.git
+cd regalator
+install.bat           # Lub: python install.py
 ```
 
 Skrypt automatycznie:
 - ✅ Utworzy środowisko wirtualne `venv`
 - ✅ Zaktualizuje pip do najnowszej wersji
-- ✅ Zainstaluje wszystkie wymagane zależności
+- ✅ Zainstaluje wszystkie wymagane zależności (Django, Pillow, pyodbc, itd.)
 - ✅ Opcjonalnie zainstaluje narzędzia deweloperskie
+
+**⚠️ Ważne:** 
+- Skrypty instalacyjne (`install.py`, `install.sh`, `install.bat`) używają tylko biblioteki standardowej Python
+- **NIE uruchamiaj `setup.py` bezpośrednio** - użyj skryptów instalacyjnych
+- `setup.py` jest używany wewnętrznie przez pip i wymaga setuptools (który zostanie zainstalowany automatycznie)
 
 ### Opcja 2: Ręczna instalacja
 
