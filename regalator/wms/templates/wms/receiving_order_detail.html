@@ -154,14 +154,25 @@
                         </thead>
                         <tbody>
                             {% for item in pending_items %}
-                            <tr>
+                            <tr style="cursor: pointer;"
+                                hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
+                                hx-swap="none"
+                                hx-trigger="click">
                                 <td>
-                                    <strong>{{ item.product.name }}</strong>
+                                    {{ item.product.name }}
                                     {% if item.notes %}
                                         <br><small class="text-muted">{{ item.notes }}</small>
                                     {% endif %}
                                 </td>
-                                <td>{{ item.product.barcode }}</td>
+                                <td>
+                                    {% if item.product.codes.first.code %}
+                                        <i class="fas fa-barcode me-1 text-muted"></i>{{ item.product.codes.first.code }}
+                                    {% else %}
+                                        <span class="text-muted">
+                                            <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu
+                                        </span>
+                                    {% endif %}
+                                </td>
                                 <td>{{ item.quantity_ordered }}</td>
                                 <td>
                                     {% if item.quantity_received > 0 %}
@@ -228,14 +239,25 @@
                         </thead>
                         <tbody>
                             {% for item in received_items %}
-                            <tr>
+                            <tr style="cursor: pointer;"
+                                hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
+                                hx-swap="none"
+                                hx-trigger="click">
                                 <td>
-                                    <strong>{{ item.product.name }}</strong>
+                                    {{ item.product.name }}
                                     {% if item.notes %}
                                         <br><small class="text-muted">{{ item.notes }}</small>
                                     {% endif %}
                                 </td>
-                                <td>{{ item.product.barcode }}</td>
+                                <td>
+                                    {% if item.product.codes.first.code %}
+                                        <i class="fas fa-barcode me-1 text-muted"></i>{{ item.product.codes.first.code }}
+                                    {% else %}
+                                        <span class="text-muted">
+                                            <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu
+                                        </span>
+                                    {% endif %}
+                                </td>
                                 <td>{{ item.quantity_ordered }}</td>
                                 <td>
                                     <span class="text-success">{{ item.quantity_received }}</span>
@@ -284,11 +306,18 @@
                         </thead>
                         <tbody>
                             {% for entry in history %}
-                            <tr>
+                            <tr style="cursor: pointer;"
+                                hx-get="{% url 'wms:htmx_edit_product_modal' entry.product.id %}"
+                                hx-swap="none"
+                                hx-trigger="click">
                                 <td>{{ entry.scanned_at|date:"d.m.Y H:i" }}</td>
                                 <td>
-                                    <strong>{{ entry.product.name }}</strong>
-                                    <br><small class="text-muted">{{ entry.product.barcode }}</small>
+                                    {{ entry.product.name }}
+                                    {% if entry.product.codes.first.code %}
+                                        <br><small class="text-muted"><i class="fas fa-barcode me-1"></i>{{ entry.product.codes.first.code }}</small>
+                                    {% else %}
+                                        <br><small class="text-muted"><i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu</small>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     <span class="badge bg-info">{{ entry.location.name }}</span>

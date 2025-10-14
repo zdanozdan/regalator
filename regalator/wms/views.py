@@ -5,7 +5,7 @@ from django.http import JsonResponse, HttpResponse
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
-from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch
+from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from decimal import Decimal
@@ -307,9 +307,18 @@ def scan_location(request, picking_id):
         else:
             messages.error(request, 'Proszę wprowadzić kod lokalizacji.')
     
+    # Get unique locations that have pending items for this picking order
+    locations_with_items = Location.objects.filter(
+        pickingitem__picking_order=picking_order,
+        pickingitem__quantity_picked__lt=F('pickingitem__quantity_to_pick'),
+        is_active=True
+    ).distinct().order_by('name')[:10]
+    
     return render(request, 'wms/scan_location.html', {
         'picking_order': picking_order,
-        'pending_items': PickingItem.objects.filter(picking_order=picking_order, quantity_picked=0)
+        'pending_items': PickingItem.objects.filter(picking_order=picking_order, quantity_picked=0),
+        'picked_items': PickingItem.objects.filter(picking_order=picking_order, quantity_picked__gt=0),
+        'available_locations': locations_with_items
     })
 
 
@@ -373,6 +382,10 @@ def scan_product(request, picking_id):
             picking_order=picking_order, 
             location=location,
             is_completed=False
+        ),
+        'picked_items': PickingItem.objects.filter(
+            picking_order=picking_order,
+            quantity_picked__gt=0
         )
     })
 
@@ -1221,9 +1234,16 @@ def scan_receiving_location(request, receiving_id):
         else:
             messages.error(request, 'Proszę wprowadzić kod lokalizacji.')
     
+    # Get active locations for receiving (can receive to any location)
+    available_locations = Location.objects.filter(
+        is_active=True
+    ).order_by('name')[:10]
+    
     return render(request, 'wms/scan_receiving_location.html', {
         'receiving_order': receiving_order,
-        'pending_items': ReceivingItem.objects.filter(receiving_order=receiving_order, quantity_received=0)
+        'pending_items': ReceivingItem.objects.filter(receiving_order=receiving_order, quantity_received=0),
+        'received_items': ReceivingItem.objects.filter(receiving_order=receiving_order, quantity_received__gt=0),
+        'available_locations': available_locations
     })
 
 
@@ -1271,6 +1291,7 @@ def scan_receiving_product(request, receiving_id):
     return render(request, 'wms/scan_receiving_product.html', {
         'receiving_order': receiving_order,
         'pending_items': ReceivingItem.objects.filter(receiving_order=receiving_order, quantity_received=0),
+        'received_items': ReceivingItem.objects.filter(receiving_order=receiving_order, quantity_received__gt=0),
         'location': location
     })
 
@@ -2614,6 +2635,51 @@ def htmx_product_groups_autocomplete(request):
     options_html = ''
     for group in groups:
         options_html += f'<div class="autocomplete-item" data-group-id="{group.id}" data-group-name="{group.name}" data-group-code="{group.code}">{group.code} - {group.name}</div>'
+    
+    return HttpResponse(options_html)
+
+
+@login_required
+def htmx_locations_autocomplete(request):
+    """HTMX endpoint for locations autocomplete"""
+    query = request.GET.get('location', '').strip()
+    picking_id = request.GET.get('picking_id', '').strip()
+    receiving_id = request.GET.get('receiving_id', '').strip()
+    
+    
+    if not query:
+        return HttpResponse('')
+
+    # Base query for active locations
+    locations_query = Location.objects.filter(
+        Q(name__icontains=query) | Q(barcode__icontains=query),
+        is_active=True
+    )
+    
+    # If picking_id is provided, filter locations that have items for this picking order
+    if picking_id:
+        try:
+            picking_order = PickingOrder.objects.get(id=picking_id)
+            # Get locations that have picking items for this order
+            location_ids = PickingItem.objects.filter(
+                picking_order=picking_order,
+                quantity_picked__lt=F('quantity_to_pick')
+            ).values_list('location_id', flat=True).distinct()
+            
+            if location_ids:
+                locations_query = locations_query.filter(id__in=location_ids)
+        except PickingOrder.DoesNotExist:
+            pass
+    
+    # If receiving_id is provided, just show all active locations (receiving can go to any location)
+    # No need to filter by receiving items as they can be received to any location
+    
+    locations = locations_query.order_by('name')[:10]  # Limit to 10 results
+
+    # Create HTML divs for the autocomplete dropdown
+    options_html = ''
+    for location in locations:
+        options_html += f'<div class="autocomplete-item" data-location-id="{location.id}" data-location-barcode="{location.barcode}" data-location-name="{location.name}">{location.name} ({location.barcode})</div>'
     
     return HttpResponse(options_html)
 

@@ -101,26 +101,33 @@
                 </div>
                 {% endif %}
                 
-                <!-- Symulacja kodów kreskowych -->
+                <!-- Szybki wybór produktu -->
+                {% if pending_items %}
                 <div class="card">
                     <div class="card-header">
                         <h6 class="mb-0">
-                            <i class="fas fa-info-circle me-2"></i>Symulacja kodów kreskowych
+                            <i class="fas fa-hand-pointer me-2"></i>Szybki wybór produktu
                         </h6>
                     </div>
                     <div class="card-body">
                         <p class="text-muted mb-3">
-                            W demo możesz użyć tego kodu do symulacji skanowania:
+                            Kliknij produkt aby go zeskanować:
                         </p>
-                        {% if current_item %}
-                            <button type="button" class="btn btn-outline-primary btn-lg w-100" 
-                                    onclick="simulateScan('{{ current_item.product.barcode }}')">
-                                <i class="fas fa-barcode me-2"></i>
-                                {{ current_item.product.name }}: {{ current_item.product.barcode }}
-                            </button>
-                        {% endif %}
+                        {% for item in pending_items %}
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-2 text-start" 
+                                onclick="simulateScan('{{ item.product.codes.first.code|default:item.product.code }}')">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-barcode me-2"></i>{{ item.product.name }}
+                                    <br><small class="text-muted">{{ item.product.codes.first.code|default:item.product.code }}</small>
+                                </div>
+                                <span class="badge bg-secondary">{{ item.quantity_to_pick }} {{ item.product.unit }}</span>
+                            </div>
+                        </button>
+                        {% endfor %}
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -165,22 +172,96 @@
                     <i class="fas fa-list me-2"></i>Pozostałe pozycje
                 </h5>
             </div>
-            <div class="card-body">
-                {% for item in picking_order.pending_items %}
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                        <strong>{{ item.product.name }}</strong><br>
-                        <small class="text-muted">{{ item.location.name }}</small>
-                    </div>
-                    <span class="badge bg-secondary">{{ item.quantity_to_pick }} {{ item.product.unit }}</span>
+            <div class="card-body p-0">
+                {% if picking_order.pending_items %}
+                <div class="list-group list-group-flush">
+                    {% for item in picking_order.pending_items %}
+                    <a href="#" 
+                       class="list-group-item list-group-item-action py-2"
+                       hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                       hx-swap="none"
+                       hx-trigger="click">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div>{{ item.product.name }}</div>
+                                <small class="text-muted">{{ item.location.name }}</small>
+                            </div>
+                            <span class="badge bg-secondary">{{ item.quantity_to_pick }} {{ item.product.unit }}</span>
+                        </div>
+                    </a>
+                    {% endfor %}
                 </div>
-                {% empty %}
-                <p class="text-muted mb-0">Wszystkie pozycje zostały skompletowane</p>
-                {% endfor %}
+                {% else %}
+                <div class="p-3 text-center">
+                    <p class="text-muted mb-0">Wszystkie pozycje zostały skompletowane</p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+<!-- Skompletowane pozycje -->
+{% if picked_items %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-check-circle me-2"></i>Skompletowane pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Produkt</th>
+                                <th>Lokalizacja</th>
+                                <th>Ilość zlecona</th>
+                                <th>Ilość pobrana</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in picked_items %}
+                            <tr style="cursor: pointer;"
+                                hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                                hx-swap="none"
+                                hx-trigger="click">
+                                <td>
+                                    {{ item.product.name }}
+                                    <br><small class="text-muted">Kod: {{ item.product.code }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ item.location.name }}</span>
+                                </td>
+                                <td>{{ item.quantity_to_pick }} {{ item.product.unit }}</td>
+                                <td>
+                                    <span class="text-success">{{ item.quantity_picked }} {{ item.product.unit }}</span>
+                                </td>
+                                <td>
+                                    {% if item.quantity_picked == item.quantity_to_pick %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Skompletowane
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>Częściowo
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -192,11 +273,11 @@
         }
     });
     
-    // Symulacja skanowania
+    // Szybkie skanowanie produktu
     function simulateScan(barcode) {
         document.getElementById('barcodeInput').value = barcode;
-        // Nie wysyłaj automatycznie - poczekaj na kliknięcie przycisku OK
-        document.getElementById('barcodeInput').focus();
+        // Automatycznie wyślij formularz
+        document.getElementById('scanForm').submit();
     }
     
     // Fokus na pole skanowania

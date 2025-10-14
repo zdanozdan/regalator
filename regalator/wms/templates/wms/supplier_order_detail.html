@@ -150,9 +150,12 @@
                             </thead>
                             <tbody>
                                 {% for item in supplier_order.items.all %}
-                                <tr>
+                                <tr style="cursor: pointer;"
+                                    hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
+                                    hx-swap="none"
+                                    hx-trigger="click">
                                     <td>
-                                        <strong>{{ item.product.name }}</strong>
+                                        {{ item.product.name }}
                                         {% if item.product.subiekt_id %}
                                             <br><small class="text-muted">
                                                 Subiekt ID: 
@@ -161,6 +164,7 @@
                                                    hx-trigger="click"
                                                    class="text-muted"
                                                    hx-swap="none"
+                                                   onclick="event.stopPropagation();"
                                                    style="cursor: pointer; text-decoration: none;"
                                                    onmouseover="this.style.textDecoration='underline'"
                                                    onmouseout="this.style.textDecoration='none'"
@@ -170,7 +174,15 @@
                                             </small>
                                         {% endif %}
                                     </td>
-                                    <td>{{ item.product.barcode }}</td>
+                                    <td>
+                                        {% if item.product.codes.first.code %}
+                                            <i class="fas fa-barcode me-1 text-muted"></i>{{ item.product.codes.first.code }}
+                                        {% else %}
+                                            <span class="text-muted">
+                                                <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu
+                                            </span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if item.product.subiekt_id %}
                                             <a href="#" 

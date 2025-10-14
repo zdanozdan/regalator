@@ -5,6 +5,7 @@ from wms.models import SupplierOrder, SupplierOrderItem, Product
 from subiekt.models import dok_Dokument
 from decimal import Decimal
 from datetime import datetime
+from wms.utils import get_or_create_product_from_subiekt
 
 
 class Command(BaseCommand):
@@ -217,8 +218,8 @@ class Command(BaseCommand):
             for i, position in enumerate(zd_positions, 1):
                 self.stdout.write(f'  Pozycja {i}: {position}')
                 
-                # Try to find corresponding product in WMS
-                product = Product.objects.filter(subiekt_id=position['tw_Id']).first()
+                # Try to find corresponding product in WMS, or create it from Subiekt
+                product = get_or_create_product_from_subiekt(position['tw_Id'], stdout=self.stdout)
                 
                 if product:
                     # Create or update order item
@@ -240,7 +241,7 @@ class Command(BaseCommand):
                     
                     self.stdout.write(f'    ✓ {product.name} - {order_item.quantity_ordered}')
                 else:
-                    self.stdout.write(f'    Produkt nie znaleziony w WMS (Subiekt ID: {position["tw_Id"]})')
+                    self.stdout.write(f'    ⚠️  Nie można utworzyć pozycji - produkt niedostępny (Subiekt ID: {position["tw_Id"]})')
                     
         except Exception as e:
             self.stdout.write(f'  Błąd podczas pobierania pozycji ZD: {str(e)}')

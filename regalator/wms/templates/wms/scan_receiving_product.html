@@ -65,29 +65,39 @@
                     </div>
                 </form>
                 
-                <!-- Symulacja skanowania -->
+                <!-- Szybki wybór produktu -->
+                {% if pending_items %}
                 <hr>
-                <h6>Symulacja skanowania:</h6>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123457')">
-                        5901234123457
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123458')">
-                        5901234123458
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123459')">
-                        5901234123459
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123460')">
-                        5901234123460
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123461')">
-                        5901234123461
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setProductBarcode('5901234123462')">
-                        5901234123462
-                    </button>
-                </div>
+                <h6><i class="fas fa-hand-pointer me-2"></i>Szybki wybór produktu:</h6>
+                <p class="text-muted small mb-2">Kliknij produkt aby go zeskanować:</p>
+                {% for item in pending_items %}
+                {% if item.product.codes.first.code %}
+                <button type="button" class="btn btn-outline-primary btn-sm w-100 mb-2 text-start" 
+                        onclick="setProductBarcode('{{ item.product.codes.first.code }}')">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            {{ item.product.name }}
+                            <br><small class="text-muted"><i class="fas fa-barcode me-1"></i>{{ item.product.codes.first.code }}</small>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">{{ item.quantity_ordered }}</span>
+                    </div>
+                </button>
+                {% else %}
+                <button type="button" class="btn btn-outline-secondary btn-sm w-100 mb-2 text-start" 
+                        hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                        hx-swap="none"
+                        hx-trigger="click">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            {{ item.product.name }}
+                            <br><small class="text-muted"><i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu kreskowego</small>
+                        </div>
+                        <span class="badge bg-secondary">{{ item.quantity_ordered }}</span>
+                    </div>
+                </button>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
             </div>
         </div>
     </div>
@@ -99,21 +109,35 @@
                     <i class="fas fa-list me-2"></i>Pozostałe pozycje
                 </h5>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 {% if pending_items %}
                     <div class="list-group list-group-flush">
                         {% for item in pending_items %}
-                        <div class="list-group-item d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>{{ item.product.name }}</strong>
-                                <br><small class="text-muted">{{ item.product.barcode }}</small>
+                        <a href="#" 
+                           class="list-group-item list-group-item-action py-2"
+                           hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                           hx-swap="none"
+                           hx-trigger="click">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div>{{ item.product.name }}</div>
+                                    {% if item.product.codes.first.code %}
+                                        <small class="text-muted">
+                                            <i class="fas fa-barcode me-1"></i>{{ item.product.codes.first.code }}
+                                        </small>
+                                    {% else %}
+                                        <small class="text-muted">
+                                            <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu kreskowego
+                                        </small>
+                                    {% endif %}
+                                </div>
+                                <span class="badge bg-primary rounded-pill">{{ item.quantity_ordered }}</span>
                             </div>
-                            <span class="badge bg-primary rounded-pill">{{ item.quantity_ordered }}</span>
-                        </div>
+                        </a>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="text-center py-3">
+                    <div class="p-3 text-center">
                         <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
                         <p class="text-muted mb-0">Wszystkie pozycje zostały przyjęte!</p>
                     </div>
@@ -123,10 +147,81 @@
     </div>
 </div>
 
+<!-- Przyjęte pozycje -->
+{% if received_items %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-check-circle me-2"></i>Przyjęte pozycje
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Produkt</th>
+                                <th>Kod kreskowy</th>
+                                <th>Ilość zamówiona</th>
+                                <th>Ilość przyjęta</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in received_items %}
+                            <tr style="cursor: pointer;"
+                                hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                                hx-swap="none"
+                                hx-trigger="click">
+                                <td>
+                                    {{ item.product.name }}
+                                    {% if item.notes %}
+                                        <br><small class="text-muted">{{ item.notes }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.product.codes.first.code %}
+                                        <i class="fas fa-barcode me-1 text-muted"></i>{{ item.product.codes.first.code }}
+                                    {% else %}
+                                        <span class="text-muted">
+                                            <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.quantity_ordered }}</td>
+                                <td>
+                                    <span class="text-success">{{ item.quantity_received }}</span>
+                                </td>
+                                <td>
+                                    {% if item.quantity_received == item.quantity_ordered %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Przyjęte
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>Częściowo
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <script>
 function setProductBarcode(barcode) {
-    document.getElementById('product_barcode').value = barcode;
-    document.getElementById('product_barcode').focus();
+    const input = document.getElementById('product_barcode');
+    input.value = barcode;
+    // Automatycznie wyślij formularz
+    input.form.submit();
 }
 </script>
 {% endblock %} 

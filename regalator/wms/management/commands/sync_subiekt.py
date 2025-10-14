@@ -3,6 +3,7 @@ from django.utils import timezone
 from wms.models import Product, ProductGroup, ProductCode
 from subiekt.models import tw_Towar
 from decimal import Decimal
+from wms.utils import sync_product_from_subiekt
 
 
 class Command(BaseCommand):
@@ -290,64 +291,8 @@ class Command(BaseCommand):
     
     def sync_product_from_subiekt(self, subiekt_product):
         """Synchronizuje produkt z Subiektu do WMS"""
-        from wms.models import ProductCode
-        
-        # Mapowanie pól zgodnie z wymaganiami:
-        # code = tw_Symbol
-        # name = tw_Nazwa  
-        # description = tw_Opis
-        # subiekt_id = tw_Id
-        # subiekt_stock = st_Stan
-        # subiekt_stock_reserved = st_StanRez
-        
-        # Sprawdź czy produkt już istnieje w WMS
-        wms_product, created = Product.objects.get_or_create(
-            subiekt_id=subiekt_product.tw_Id,
-            defaults={
-                'code': subiekt_product.tw_Symbol,
-                'name': subiekt_product.tw_Nazwa,
-                'description': subiekt_product.tw_Opis or '',
-                'unit': 'szt',  # Domyślna jednostka
-            }
-        )
-        
-        if not created:
-            # Aktualizuj istniejący produkt
-            wms_product.code = subiekt_product.tw_Symbol
-            wms_product.name = subiekt_product.tw_Nazwa
-            wms_product.description = subiekt_product.tw_Opis or ''
-        
-        # Aktualizuj dane z Subiektu
-        wms_product.subiekt_stock = Decimal(str(getattr(subiekt_product, 'st_Stan', 0)))
-        wms_product.subiekt_stock_reserved = Decimal(str(getattr(subiekt_product, 'st_StanRez', 0)))
-        wms_product.last_sync_date = timezone.now()
-        
-        # Obsługa grupy produktów
-        subiekt_group = getattr(subiekt_product, 'grt_Nazwa', '')
-        if subiekt_group:
-            wms_group, group_created = ProductGroup.objects.get_or_create(
-                name=subiekt_group,
-                defaults={
-                    'code': subiekt_group[:20],  # Używamy nazwy jako kodu (max 20 znaków)
-                    'description': f'Grupa z Subiektu: {subiekt_group}',
-                    'color': '#007bff',  # Domyślny kolor
-                }
-            )
-            
-            # Dodaj produkt do grupy (jeśli nie jest już w tej grupie)
-            if wms_group not in wms_product.groups.all():
-                wms_product.groups.add(wms_group)
-                if group_created:
-                    self.stdout.write(f'  → Utworzono nową grupę: {wms_group.name}')
-                else:
-                    self.stdout.write(f'  → Dodano do grupy: {wms_group.name}')
-        
-        wms_product.save()
-        
-        if created:
-            self.stdout.write(f'  → Utworzono nowy produkt: {wms_product.name}')
-        else:
-            self.stdout.write(f'  → Zaktualizowano produkt: {wms_product.name}')
+        # Use the shared utility function from wms.utils
+        sync_product_from_subiekt(subiekt_product, stdout=self.stdout)
     
     def display_product_info(self, subiekt_product):
         """Wyświetla informacje o produkcie z Subiektu"""
