@@ -48,19 +48,38 @@ Regalator WMS to kompleksowy system zarządzania magazynem zbudowany w Django, z
 
 ## 🛠️ Instalacja
 
-### 1. Sklonuj repozytorium
+### Opcja 1: Automatyczna instalacja (zalecana)
+
+```bash
+# Sklonuj repozytorium
+git clone https://github.com/yourusername/regalator.git
+cd regalator
+
+# Uruchom skrypt instalacyjny
+python install.py
+```
+
+Skrypt automatycznie:
+- ✅ Utworzy środowisko wirtualne `venv`
+- ✅ Zaktualizuje pip do najnowszej wersji
+- ✅ Zainstaluje wszystkie wymagane zależności
+- ✅ Opcjonalnie zainstaluje narzędzia deweloperskie
+
+### Opcja 2: Ręczna instalacja
+
+#### 1. Sklonuj repozytorium
 ```bash
 git clone https://github.com/yourusername/regalator.git
 cd regalator
 ```
 
-### 2. Utwórz środowisko wirtualne
+#### 2. Utwórz środowisko wirtualne
 ```bash
 python -m venv venv
 source venv/bin/activate  # W systemie Windows: venv\Scripts\activate
 ```
 
-### 3. Zainstaluj zależności
+#### 3. Zainstaluj zależności
 ```bash
 pip install -r requirements.txt
 ```
