@@ -1162,16 +1162,19 @@ def htmx_sync_zd_orders(request):
                     
                     # Only update if there are actual changes
                     new_document_number = zd_doc.dok_Nr
+                    new_document_id = zd_doc.dok_Id
                     if (existing_order.supplier_name != new_supplier_name or
                         existing_order.order_date != new_order_date or
                         existing_order.expected_delivery_date != new_expected_delivery_date or
                         existing_order.actual_delivery_date != new_actual_delivery_date or
                         existing_order.notes != new_notes or
-                        existing_order.document_number != new_document_number):
+                        existing_order.document_number != new_document_number or
+                        existing_order.document_id != new_document_id):
                         
                         existing_order.supplier_name = new_supplier_name
                         existing_order.supplier_code = ''
                         existing_order.document_number = new_document_number  # Store original document number
+                        existing_order.document_id = new_document_id  # Store document ID
                         existing_order.order_date = new_order_date
                         existing_order.expected_delivery_date = new_expected_delivery_date
                         existing_order.actual_delivery_date = new_actual_delivery_date
@@ -1183,6 +1186,7 @@ def htmx_sync_zd_orders(request):
                     supplier_order = SupplierOrder.objects.create(
                         order_number=zd_doc.dok_NrPelny,
                         document_number=zd_doc.dok_Nr,  # Store original document number
+                        document_id=zd_doc.dok_Id,  # Store document ID
                         supplier_name=zd_doc.adr_Nazwa or zd_doc.adr_NazwaPelna or 'Nieznany dostawca',
                         supplier_code='',
                         order_date=zd_doc.dok_DataWyst or timezone.now().date(),

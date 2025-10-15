@@ -181,13 +181,16 @@ class PickingHistoryAdmin(admin.ModelAdmin):
 class SupplierOrderAdmin(admin.ModelAdmin):
     list_display = ['order_number', 'supplier_name', 'order_date', 'expected_delivery_date', 'status', 'total_items', 'received_items']
     list_filter = ['status', 'order_date', 'expected_delivery_date']
-    search_fields = ['order_number', 'supplier_name', 'supplier_code']
+    search_fields = ['order_number', 'supplier_name', 'supplier_code', 'document_number', 'document_id']
     date_hierarchy = 'order_date'
     readonly_fields = ['created_at', 'updated_at']
     
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('order_number', 'supplier_name', 'supplier_code', 'status')
+        }),
+        ('Dokument Subiektu', {
+            'fields': ('document_number', 'document_id')
         }),
         ('Daty', {
             'fields': ('order_date', 'expected_delivery_date', 'actual_delivery_date')

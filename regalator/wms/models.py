@@ -457,6 +457,7 @@ class SupplierOrder(models.Model):
     
     order_number = models.CharField(max_length=50, unique=True)
     document_number = models.IntegerField(null=True, blank=True, verbose_name="Oryginalny numer dokumentu", help_text="Oryginalny numer dokumentu z Subiektu")
+    document_id = models.IntegerField(null=True, blank=True, verbose_name="ID dokumentu", help_text="ID dokumentu z Subiektu (dok_Id)")
     supplier_name = models.CharField(max_length=200)
     supplier_code = models.CharField(max_length=50, blank=True)
     order_date = models.DateField()
