@@ -223,6 +223,94 @@ class DokumentManager(models.Manager):
         """
         return self._get_documents(DocumentType.ZD.value, limit)
 
+    def get_new_zd(self, latest_document_id: int = 0, limit: int = 200) -> list['dok_Dokument']:
+        """
+        Fetches only NEW ZD documents from Subiekt that are not yet in WMS.
+        Returns documents where dok_Id is greater than the latest document_id in SupplierOrder.
+        
+        Args:
+            latest_document_id: The highest document_id from SupplierOrder (dok_Id)
+            limit: Maximum number of documents to return
+        """
+        from django.db import connections
+        
+        # Build TOP clause conditionally
+        top_clause = f"TOP {limit}" if limit > 0 else ""
+        
+        query = f"""
+            SELECT {top_clause}
+                d.dok_Id,
+                d.dok_Typ,
+                d.dok_Podtyp,
+                d.dok_MagId,
+                d.dok_Nr,
+                d.dok_NrRoz,
+                d.dok_NrPelny,
+                d.dok_NrPelnyOryg,
+                d.dok_DoDokId,
+                d.dok_DoDokNrPelny,
+                d.dok_PlatnikId,
+                d.dok_PlatnikAdreshId,
+                d.dok_OdbiorcaId,
+                d.dok_OdbiorcaAdreshId,
+                d.dok_DataWyst,
+                d.dok_DataMag,
+                d.dok_PlatTermin,
+                a.adr_Nazwa,
+                a.adr_NazwaPelna,
+                a.adr_Ulica,
+                a.adr_Miejscowosc,
+                a.adr_Kod,
+                a.adr_Poczta,
+                a.adr_Adres
+            FROM [dbo].[dok__Dokument] d
+            LEFT JOIN [dbo].[adr__Ewid] a ON d.dok_OdbiorcaId = a.adr_IdObiektu
+            WHERE d.dok_Typ = %s 
+              AND d.dok_Id > %s
+              AND a.adr_TypAdresu = 1
+            ORDER BY d.dok_Id ASC
+        """
+        
+        with connections['subiekt'].cursor() as cursor:
+            cursor.execute(query, [DocumentType.ZD.value, latest_document_id])
+            
+            documents = []
+            for row in cursor.fetchall():
+                document = dok_Dokument(
+                    dok_Id=row[0],
+                    dok_Typ=row[1],
+                    dok_Podtyp=row[2],
+                    dok_MagId=row[3],
+                    dok_Nr=row[4],
+                    dok_NrRoz=row[5],
+                    dok_NrPelny=row[6],
+                    dok_NrPelnyOryg=row[7],
+                    dok_DoDokId=row[8],
+                    dok_DoDokNrPelny=row[9],
+                    dok_PlatnikId=row[10],
+                    dok_PlatnikAdreshId=row[11],
+                    dok_OdbiorcaId=row[12],
+                    dok_OdbiorcaAdreshId=row[13]
+                )
+                
+                # Add document dates as attributes
+                document.dok_DataWyst = row[14]
+                document.dok_DataMag = row[15]
+                document.dok_PlatTermin = row[16]
+                
+                # Add address information as attributes
+                document.adr_Nazwa = row[17]
+                document.adr_NazwaPelna = row[18]
+                document.adr_Ulica = row[19]
+                document.adr_Miejscowosc = row[20]
+                document.adr_Kod = row[21]
+                document.adr_Poczta = row[22]
+                document.adr_Adres = row[23]
+                
+                documents.append(document)
+            
+            return documents
+
     def get_zk_pozycje(self, zk_number: int) -> list[dict]:
         """
         Fetches all document positions/items for a specific ZK document.

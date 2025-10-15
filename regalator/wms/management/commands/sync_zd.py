@@ -24,6 +24,11 @@ class Command(BaseCommand):
             help='Liczba najnowszych zamówień do synchronizacji (domyślnie 20)',
         )
         parser.add_argument(
+            '--new-only',
+            action='store_true',
+            help='Synchronizuj tylko nowe zamówienia (dok_Nr > najwyższy document_number w WMS)',
+        )
+        parser.add_argument(
             '--dry-run',
             action='store_true',
             help='Pokaż tylko listę zamówień do synchronizacji bez ich tworzenia',
@@ -49,27 +54,33 @@ class Command(BaseCommand):
         """Shows interactive menu for ZD sync operations"""
         while True:
             self.display_menu()
-            choice = input('\nWybierz opcję (1-7): ').strip()
+            choice = input('\nWybierz opcję (1-9): ').strip()
             
             if choice == '1':
                 self.sync_zd_from_subiekt(options)
             elif choice == '2':
-                self.dry_run_sync(options)
+                options['new_only'] = True
+                self.sync_zd_from_subiekt(options)
             elif choice == '3':
-                self.show_sync_status()
+                self.dry_run_sync(options)
             elif choice == '4':
-                self.sync_single_zd()
+                options['new_only'] = True
+                self.dry_run_sync(options)
             elif choice == '5':
-                self.show_zd_details()
+                self.show_sync_status()
             elif choice == '6':
-                self.manage_zd_orders()
+                self.sync_single_zd()
             elif choice == '7':
+                self.show_zd_details()
+            elif choice == '8':
+                self.manage_zd_orders()
+            elif choice == '9':
                 self.stdout.write(self.style.SUCCESS('Do widzenia!'))
                 break
             else:
                 self.stdout.write(self.style.ERROR('Nieprawidłowy wybór. Spróbuj ponownie.'))
             
-            if choice in ['1', '2', '3', '4', '5', '6']:
+            if choice in ['1', '2', '3', '4', '5', '6', '7', '8']:
                 input('\nNaciśnij Enter, aby kontynuować...')
 
     def display_menu(self):
@@ -78,12 +89,14 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('MENU SYNCHRONIZACJI ZD Z SUBIEKTEM'))
         self.stdout.write('='*60)
         self.stdout.write('1. Synchronizuj ZD z Subiektu')
-        self.stdout.write('2. Podgląd synchronizacji (dry-run)')
-        self.stdout.write('3. Pokaż status synchronizacji')
-        self.stdout.write('4. Synchronizuj pojedynczy ZD')
-        self.stdout.write('5. Szczegóły ZD z Subiektu')
-        self.stdout.write('6. Zarządzaj zamówieniami ZD')
-        self.stdout.write('7. Wyjdź')
+        self.stdout.write('2. Synchronizuj tylko NOWE ZD (dok_Nr > najwyższy w WMS)')
+        self.stdout.write('3. Podgląd synchronizacji (dry-run)')
+        self.stdout.write('4. Podgląd NOWYCH ZD (dry-run)')
+        self.stdout.write('5. Pokaż status synchronizacji')
+        self.stdout.write('6. Synchronizuj pojedynczy ZD')
+        self.stdout.write('7. Szczegóły ZD z Subiektu')
+        self.stdout.write('8. Zarządzaj zamówieniami ZD')
+        self.stdout.write('9. Wyjdź')
         self.stdout.write('='*60)
 
     def sync_zd_from_subiekt(self, options):
@@ -92,13 +105,31 @@ class Command(BaseCommand):
         
         try:
             # Get ZD documents from Subiekt
-            subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=options['limit'])
-            
-            if not subiekt_zd_documents:
-                self.stdout.write(self.style.WARNING('⚠️  Nie znaleziono dokumentów ZD w Subiekcie.'))
-                return
-            
-            self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} dokumentów ZD do synchronizacji.')
+            if options.get('new_only'):
+                self.stdout.write('🆕 Synchronizacja tylko NOWYCH dokumentów ZD...')
+                
+                # Get the latest document_id from SupplierOrder
+                latest_document_id = SupplierOrder.objects.filter(
+                    document_id__isnull=False
+                ).order_by('-document_id').values_list('document_id', flat=True).first() or 0
+                
+                self.stdout.write(f'Najwyższy document_id w WMS: {latest_document_id}')
+                
+                subiekt_zd_documents = dok_Dokument.dokument_objects.get_new_zd(
+                    latest_document_id=latest_document_id,
+                    limit=options['limit']
+                )
+                if subiekt_zd_documents:
+                    self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} NOWYCH dokumentów ZD do synchronizacji.')
+                else:
+                    self.stdout.write(self.style.SUCCESS('✅ Brak nowych dokumentów ZD do synchronizacji.'))
+                    return
+            else:
+                subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=options['limit'])
+                if not subiekt_zd_documents:
+                    self.stdout.write(self.style.WARNING('⚠️  Nie znaleziono dokumentów ZD w Subiekcie.'))
+                    return
+                self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} dokumentów ZD do synchronizacji.')
             
             if not options['force']:
                 confirm = input('Czy chcesz kontynuować? (y/N): ')
@@ -132,13 +163,31 @@ class Command(BaseCommand):
         self.stdout.write('='*50)
         
         try:
-            subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=options['limit'])
+            if options.get('new_only'):
+                self.stdout.write('🆕 Podgląd tylko NOWYCH dokumentów ZD...')
+                
+                # Get the latest document_id from SupplierOrder
+                latest_document_id = SupplierOrder.objects.filter(
+                    document_id__isnull=False
+                ).order_by('-document_id').values_list('document_id', flat=True).first() or 0
+                
+                self.stdout.write(f'Najwyższy document_id w WMS: {latest_document_id}')
+                
+                subiekt_zd_documents = dok_Dokument.dokument_objects.get_new_zd(
+                    latest_document_id=latest_document_id,
+                    limit=options['limit']
+                )
+                if not subiekt_zd_documents:
+                    self.stdout.write(self.style.SUCCESS('✅ Brak nowych dokumentów ZD do synchronizacji.'))
+                    return
+                self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} NOWYCH dokumentów ZD:')
+            else:
+                subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=options['limit'])
+                if not subiekt_zd_documents:
+                    self.stdout.write(self.style.WARNING('⚠️  Nie znaleziono dokumentów ZD w Subiekcie.'))
+                    return
+                self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} dokumentów ZD:')
             
-            if not subiekt_zd_documents:
-                self.stdout.write(self.style.WARNING('⚠️  Nie znaleziono dokumentów ZD w Subiekcie.'))
-                return
-            
-            self.stdout.write(f'Znaleziono {len(subiekt_zd_documents)} dokumentów ZD:')
             self.stdout.write('='*50)
             
             for i, zd_doc in enumerate(subiekt_zd_documents, 1):

@@ -1127,20 +1127,28 @@ def htmx_sync_zd_orders(request):
         from wms.utils import get_or_create_product_from_subiekt
         from decimal import Decimal
         
-        # Get ZD documents from Subiekt
-        subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=20)
+        # Get the latest document_id from SupplierOrder
+        latest_document_id = SupplierOrder.objects.filter(
+            document_id__isnull=False
+        ).order_by('-document_id').values_list('document_id', flat=True).first() or 0
+        
+        # Get ZD documents from Subiekt - use new documents only by default
+        subiekt_zd_documents = dok_Dokument.dokument_objects.get_new_zd(
+            latest_document_id=latest_document_id, 
+            limit=20
+        )
         
         if not subiekt_zd_documents:
             context = {
                 'success': False,
-                'message': 'Nie znaleziono dokumentów ZD w Subiekcie.',
+                'message': 'Nie znaleziono NOWYCH dokumentów ZD w Subiekcie.',
                 'synced_count': 0
             }
             response = render(request, 'wms/sync_zd_result.html', context)
             response['HX-Trigger'] = json.dumps({
                 'toastMessage': {
-                    'type': 'warning',
-                    'value': '⚠ Brak dokumentów ZD w Subiekcie'
+                    'type': 'success',
+                    'value': '✅ Brak nowych dokumentów ZD do synchronizacji'
                 }
             })
             return response
