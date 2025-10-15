@@ -31,6 +31,8 @@ python manage.py runserver
 
 Gotowe! Aplikacja działa na http://127.0.0.1:8000/ 🎉
 
+**💡 Problemy z instalacją?** Zobacz szczegółową instrukcję w [INSTALL.md](INSTALL.md)
+
 ## 🚀 Funkcje
 
 ### Podstawowe funkcje WMS
@@ -312,6 +314,72 @@ Ten projekt jest licencjonowany na licencji MIT - zobacz plik [LICENSE](LICENSE)
 - Dołącz do naszego serwera Discord
 - Śledź nas na Twitterze
 - Zapisz się do naszego newslettera
+
+## 🔧 Troubleshooting
+
+### Błąd: "no such column: wms_product.parent_id"
+
+**Przyczyna:** Używasz starej bazy danych, która nie ma najnowszego schematu.
+
+**Rozwiązanie 1 - Nowa baza (zalecane dla developmentu):**
+```bash
+# Usuń starą bazę
+rm regalator/db.sqlite3          # Linux/macOS
+del regalator\db.sqlite3         # Windows
+
+# Uruchom migracje od nowa
+cd regalator
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+**Rozwiązanie 2 - Zaktualizuj istniejącą bazę:**
+```bash
+cd regalator
+python manage.py migrate
+```
+
+### Błąd: "ModuleNotFoundError: No module named 'setuptools'"
+
+**Przyczyna:** Próbujesz uruchomić `setup.py` bezpośrednio.
+
+**Rozwiązanie:**
+```bash
+# NIE używaj:
+python setup.py install  ❌
+
+# Zamiast tego użyj:
+python install.py        ✅
+# lub
+./install.sh            ✅ (Linux/macOS)
+install.bat             ✅ (Windows)
+```
+
+`setup.py` wymaga setuptools, ale `install.py` nie wymaga żadnych dodatkowych pakietów!
+
+### Błąd: Brakujące migracje po aktualizacji kodu
+
+**Rozwiązanie:**
+```bash
+cd regalator
+python manage.py makemigrations
+python manage.py migrate
+```
+
+### Problem: Nie mogę połączyć się z Subiekt GT
+
+**Sprawdź:**
+1. Czy masz zainstalowane sterowniki ODBC (ODBC Driver 17 for SQL Server)
+2. Czy konfiguracja w `settings.py` jest poprawna
+3. Czy masz dostęp do bazy Subiekt (sprawdź credentials i sieć)
+
+```bash
+# Test połączenia
+cd regalator
+python manage.py shell
+>>> from django.db import connections
+>>> connections['subiekt'].cursor()
+```
 
 ## 🔄 Historia zmian
 
