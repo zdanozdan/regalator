@@ -2,7 +2,7 @@
 # This script sets up static and media files for nginx on Windows
 
 param(
-    [string]$NginxPath = "C:\nginx",
+    [string]$NginxPath = "C:\Users\Administrator\projects\regalator\nginx-1.28.0",
     [string]$ProjectPath = "C:\Users\Administrator\projects\regalator",
     [switch]$Force = $false
 )
