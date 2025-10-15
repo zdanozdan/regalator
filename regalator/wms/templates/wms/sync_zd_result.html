@@ -1,0 +1,24 @@
+{% if success %}
+    <div class="col-12">
+        <div class="alert alert-{{ alert_type }} alert-dismissible fade show" role="alert">
+            <i class="fas fa-{% if alert_type == 'success' %}check-circle{% elif alert_type == 'warning' %}exclamation-triangle{% else %}times-circle{% endif %} me-2"></i>{{ message }}
+            {% if new_orders %}
+                <br><strong>Nowe zamówienia:</strong>
+                <ul class="mb-0 mt-2">
+                    {% for order_number in new_orders %}
+                        <li>{{ order_number }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+{% else %}
+    <div class="col-12">
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>{{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+{% endif %}
+

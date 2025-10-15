@@ -167,6 +167,7 @@ class Command(BaseCommand):
             # Update existing order
             existing_order.supplier_name = zd_doc.adr_Nazwa or zd_doc.adr_NazwaPelna or 'Nieznany dostawca'
             existing_order.supplier_code = ''  # No supplier code in Subiekt
+            existing_order.document_number = zd_doc.dok_Nr  # Store original document number
             existing_order.order_date = zd_doc.dok_DataWyst or timezone.now().date()
             existing_order.expected_delivery_date = zd_doc.dok_PlatTermin or zd_doc.dok_DataMag or zd_doc.dok_DataWyst or timezone.now().date()
             existing_order.actual_delivery_date = zd_doc.dok_DataOtrzym
@@ -185,6 +186,7 @@ class Command(BaseCommand):
             # Create new order
             supplier_order = SupplierOrder.objects.create(
                 order_number=zd_doc.dok_NrPelny,
+                document_number=zd_doc.dok_Nr,  # Store original document number
                 supplier_name=zd_doc.adr_Nazwa or zd_doc.adr_NazwaPelna or 'Nieznany dostawca',
                 supplier_code='',  # No supplier code in Subiekt
                 order_date=zd_doc.dok_DataWyst or timezone.now().date(),

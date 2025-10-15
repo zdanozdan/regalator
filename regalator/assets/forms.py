@@ -7,7 +7,7 @@ class AssetUploadForm(forms.ModelForm):
     
     class Meta:
         model = Asset
-        fields = ['title', 'description', 'file', 'file_type', 'category', 'tags', 'is_public']
+        fields = ['title', 'description', 'file', 'file_type', 'category', 'tags', 'is_public', 'is_splash_image']
         widgets = {
             'title': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -35,6 +35,9 @@ class AssetUploadForm(forms.ModelForm):
             'is_public': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
+            'is_splash_image': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
         }
     
     def __init__(self, *args, **kwargs):
@@ -49,7 +52,7 @@ class AssetEditForm(forms.ModelForm):
     
     class Meta:
         model = Asset
-        fields = ['title', 'description', 'file', 'file_type', 'category', 'tags', 'is_public']
+        fields = ['title', 'description', 'file', 'file_type', 'category', 'tags', 'is_public', 'is_splash_image']
         widgets = {
             'title': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -75,6 +78,9 @@ class AssetEditForm(forms.ModelForm):
                 'size': 5
             }),
             'is_public': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_splash_image': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
         }

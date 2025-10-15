@@ -40,6 +40,11 @@
                     <dt class="col-sm-4">Numer ZD:</dt>
                     <dd class="col-sm-8"><strong>{{ supplier_order.order_number }}</strong></dd>
                     
+                    {% if supplier_order.document_number and supplier_order.document_number != supplier_order.order_number %}
+                        <dt class="col-sm-4">Oryginalny numer:</dt>
+                        <dd class="col-sm-8"><span class="text-muted">{{ supplier_order.document_number }}</span></dd>
+                    {% endif %}
+                    
                     <dt class="col-sm-4">Dostawca:</dt>
                     <dd class="col-sm-8">{{ supplier_order.supplier_name }}</dd>
                     

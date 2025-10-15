@@ -237,3 +237,5 @@ def asset_download(request, slug):
     
     # Tutaj można dodać logikę liczenia downloadów
     return redirect(asset.file.url)
+
+

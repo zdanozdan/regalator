@@ -51,10 +51,8 @@ def login_view(request):
 def dashboard(request):
     """Dashboard główny - wybór procesu"""
     # Pobierz splash image
-    try:
-        splash_image = Asset.objects.get(slug='regalator')
-    except Asset.DoesNotExist:
-        splash_image = None
+    splash_image = Asset.get_splash_image()
+        
     
     # Ogólne statystyki
     total_zk_orders = CustomerOrder.objects.count()
@@ -1093,11 +1091,15 @@ def supplier_order_list(request):
     if status_filter:
         supplier_orders = supplier_orders.filter(status=status_filter)
     
+    # Check if there are any new orders
+    has_new_orders = supplier_orders.filter(is_new=True).exists()
+    
     context = {
         'supplier_orders': supplier_orders,
         'search_query': search_query,
         'status_filter': status_filter,
         'status_choices': SupplierOrder.SUPPLIER_STATUS_CHOICES,
+        'has_new_orders': has_new_orders,
     }
     return render(request, 'wms/supplier_order_list.html', context)
 
@@ -1112,6 +1114,217 @@ def supplier_order_detail(request, order_id):
         'receiving_orders': supplier_order.receiving_orders.all(),
     }
     return render(request, 'wms/supplier_order_detail.html', context)
+
+
+@login_required
+def htmx_sync_zd_orders(request):
+    """HTMX action to sync ZD orders from Subiekt"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        from subiekt.models import dok_Dokument
+        from wms.utils import get_or_create_product_from_subiekt
+        from decimal import Decimal
+        
+        # Get ZD documents from Subiekt
+        subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=20)
+        
+        if not subiekt_zd_documents:
+            context = {
+                'success': False,
+                'message': 'Nie znaleziono dokumentów ZD w Subiekcie.',
+                'synced_count': 0
+            }
+            response = render(request, 'wms/sync_zd_result.html', context)
+            response['HX-Trigger'] = json.dumps({
+                'toastMessage': {
+                    'type': 'warning',
+                    'value': '⚠ Brak dokumentów ZD w Subiekcie'
+                }
+            })
+            return response
+        
+        new_orders = []
+        
+        for zd_doc in subiekt_zd_documents:
+            try:
+                # Check if order already exists
+                existing_order = SupplierOrder.objects.filter(order_number=zd_doc.dok_NrPelny).first()
+                
+                if existing_order:
+                    # Check if order needs updating
+                    new_supplier_name = zd_doc.adr_Nazwa or zd_doc.adr_NazwaPelna or 'Nieznany dostawca'
+                    new_order_date = zd_doc.dok_DataWyst or timezone.now().date()
+                    new_expected_delivery_date = zd_doc.dok_PlatTermin or zd_doc.dok_DataMag or zd_doc.dok_DataWyst or timezone.now().date()
+                    new_actual_delivery_date = zd_doc.dok_DataOtrzym
+                    new_notes = f'ZD z Subiektu: {zd_doc.dok_NrPelny}'
+                    
+                    # Only update if there are actual changes
+                    new_document_number = zd_doc.dok_Nr
+                    if (existing_order.supplier_name != new_supplier_name or
+                        existing_order.order_date != new_order_date or
+                        existing_order.expected_delivery_date != new_expected_delivery_date or
+                        existing_order.actual_delivery_date != new_actual_delivery_date or
+                        existing_order.notes != new_notes or
+                        existing_order.document_number != new_document_number):
+                        
+                        existing_order.supplier_name = new_supplier_name
+                        existing_order.supplier_code = ''
+                        existing_order.document_number = new_document_number  # Store original document number
+                        existing_order.order_date = new_order_date
+                        existing_order.expected_delivery_date = new_expected_delivery_date
+                        existing_order.actual_delivery_date = new_actual_delivery_date
+                        existing_order.notes = new_notes
+                        existing_order.updated_at = timezone.now()
+                        existing_order.save()
+                else:
+                    # Create new order
+                    supplier_order = SupplierOrder.objects.create(
+                        order_number=zd_doc.dok_NrPelny,
+                        document_number=zd_doc.dok_Nr,  # Store original document number
+                        supplier_name=zd_doc.adr_Nazwa or zd_doc.adr_NazwaPelna or 'Nieznany dostawca',
+                        supplier_code='',
+                        order_date=zd_doc.dok_DataWyst or timezone.now().date(),
+                        expected_delivery_date=zd_doc.dok_PlatTermin or zd_doc.dok_DataMag or zd_doc.dok_DataWyst or timezone.now().date(),
+                        actual_delivery_date=zd_doc.dok_DataOtrzym,
+                        status='pending',
+                        notes=f'ZD z Subiektu: {zd_doc.dok_NrPelny}',
+                        is_new=True  # Mark as new
+                    )
+                    new_orders.append(supplier_order.order_number)
+                    
+                    # Try to sync order items if available
+                    try:
+                        zd_positions = dok_Dokument.dokument_objects.get_zd_pozycje(zd_doc.dok_Id)
+                        
+                        if zd_positions:
+                            for position in zd_positions:
+                                product = get_or_create_product_from_subiekt(position['tw_Id'])
+                                
+                                if product:
+                                    SupplierOrderItem.objects.get_or_create(
+                                        supplier_order=supplier_order,
+                                        product=product,
+                                        defaults={
+                                            'quantity_ordered': Decimal(str(position.get('ob_Znak', 0))),
+                                            'quantity_received': 0,
+                                            'notes': f'Pozycja z Subiektu: {position.get("ob_Id", "")}'
+                                        }
+                                    )
+                    except Exception as e:
+                        # Log error but continue with order creation
+                        pass
+                
+            except Exception as e:
+                # Log error but continue with other orders
+                continue
+        
+        context = {
+            'success': True,
+            'message': f'✓ Załadowano {len(new_orders)} nowych zamówień ZD' if new_orders else '⚠ Brak nowych zamówień do załadowania',
+            'new_orders': new_orders,
+            'alert_type': 'success' if new_orders else 'warning',
+        }
+        response = render(request, 'wms/sync_zd_result.html', context)
+        
+        # Add HTMX trigger for toast message
+        if new_orders:
+            response['HX-Trigger'] = json.dumps({
+                'toastMessage': {
+                    'type': 'success',
+                    'value': f'✓ Załadowano {len(new_orders)} nowych zamówień ZD'
+                }
+            })
+        else:
+            response['HX-Trigger'] = json.dumps({
+                'toastMessage': {
+                    'type': 'warning',
+                    'value': '⚠ Brak nowych zamówień do załadowania'
+                }
+            })
+        
+        return response
+        
+    except Exception as e:
+        context = {
+            'success': False,
+            'message': f'Błąd podczas synchronizacji: {str(e)}',
+            'synced_count': 0
+        }
+        response = render(request, 'wms/sync_zd_result.html', context)
+        response['HX-Trigger'] = json.dumps({
+            'toastMessage': {
+                'type': 'danger',
+                'value': f'✗ Błąd synchronizacji: {str(e)}'
+            }
+        })
+        return response
+
+
+@login_required
+def mark_orders_as_viewed(request):
+    """HTMX action to mark all new orders as viewed"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        # Mark all new orders as viewed
+        updated_count = SupplierOrder.objects.filter(is_new=True).update(is_new=False)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Oznaczono {updated_count} zamówień jako przeglądnięte',
+            'updated_count': updated_count
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Błąd podczas oznaczania zamówień: {str(e)}'
+        })
+
+
+@login_required
+def htmx_delete_supplier_order(request, order_id):
+    """HTMX action to delete a supplier order"""
+    if request.method != 'DELETE':
+        response = HttpResponse(status=405)
+        response['HX-Trigger'] = json.dumps({
+            'toastMessage': {
+                'type': 'danger',
+                'value': 'Metoda nie dozwolona'
+            }
+        })
+        return response
+    
+    try:
+        supplier_order = get_object_or_404(SupplierOrder, id=order_id)
+        order_number = supplier_order.order_number
+        supplier_name = supplier_order.supplier_name
+        
+        # Delete the order
+        supplier_order.delete()
+        
+        # Return empty response to remove the row, with toast
+        response = HttpResponse(status=200)
+        response['HX-Trigger'] = json.dumps({
+            'toastMessage': {
+                'type': 'success',
+                'value': f'✓ Usunięto zamówienie ZD {order_number} - {supplier_name}'
+            }
+        })
+        return response
+        
+    except Exception as e:
+        response = HttpResponse(status=500)
+        response['HX-Trigger'] = json.dumps({
+            'toastMessage': {
+                'type': 'danger',
+                'value': f'✗ Błąd podczas usuwania zamówienia: {str(e)}'
+            }
+        })
+        return response
 
 
 @login_required

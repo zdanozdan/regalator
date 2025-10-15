@@ -111,6 +111,19 @@
                         {% endif %}
                     </div>
                     
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ form.is_splash_image }}
+                            <label class="form-check-label" for="{{ form.is_splash_image.id_for_label }}">
+                                <i class="fas fa-image me-1"></i>Użyj jako obraz splash
+                            </label>
+                        </div>
+                        {% if form.is_splash_image.errors %}
+                            <div class="text-danger small">{{ form.is_splash_image.errors }}</div>
+                        {% endif %}
+                        <small class="text-muted">Obraz splash będzie wyświetlany na głównej stronie WMS</small>
+                    </div>
+                    
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                         <button type="submit" class="btn btn-warning">
                             <i class="fas fa-save me-1"></i>Zapisz zmiany

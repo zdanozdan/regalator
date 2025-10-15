@@ -64,6 +64,7 @@ class Asset(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Dodano")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
     is_public = models.BooleanField(default=True, verbose_name="Publiczne")
+    is_splash_image = models.BooleanField(default=False, verbose_name="Obraz splash")
     
     class Meta:
         verbose_name = "Asset"
@@ -77,6 +78,11 @@ class Asset(models.Model):
         """Automatyczne generowanie sluga jeśli nie istnieje"""
         if not self.slug:
             self.slug = self.generate_unique_slug()
+        
+        # Jeśli ten asset ma być splash image, odznacz wszystkie inne
+        if self.is_splash_image:
+            Asset.objects.filter(is_splash_image=True).exclude(id=self.id).update(is_splash_image=False)
+        
         super().save(*args, **kwargs)
     
     def generate_unique_slug(self):
@@ -116,3 +122,8 @@ class Asset(models.Model):
         """Zwraca URL do szczegółów assetu"""
         from django.urls import reverse
         return reverse('assets:asset_detail', args=[self.slug])
+    
+    @classmethod
+    def get_splash_image(cls):
+        """Zwraca aktualny splash image"""
+        return cls.objects.filter(is_splash_image=True).first()

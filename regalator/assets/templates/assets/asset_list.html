@@ -103,6 +103,13 @@
                                 <i class="fas fa-lock"></i>
                             </span>
                         {% endif %}
+                        
+                        <!-- Splash image indicator -->
+                        {% if asset.is_splash_image %}
+                            <span class="position-absolute top-0 start-0 badge bg-success m-2">
+                                <i class="fas fa-image"></i> Splash
+                            </span>
+                        {% endif %}
                     </div>
                     
                     <div class="card-body d-flex flex-column">
@@ -209,4 +216,4 @@
         </ul>
     </nav>
 {% endif %}
-{% endblock %} 
+{% endblock %}
