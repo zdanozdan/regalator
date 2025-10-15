@@ -42,7 +42,7 @@ echo.
 echo Step 3: Setting up nginx configuration...
 REM Use project directory for static files (no copying needed)
 set PROJECT_DIR=C:\Users\Administrator\projects\regalator
-set NGINX_DIR=C:\nginx
+set NGINX_DIR=C:\Users\Administrator\projects\regalator\nginx-1.28.0
 
 echo Project directory: %PROJECT_DIR%
 echo Nginx directory: %NGINX_DIR%

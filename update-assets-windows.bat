@@ -25,7 +25,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Step 2: Reloading nginx configuration...
-set NGINX_DIR=C:\nginx
+set NGINX_DIR=C:\Users\Administrator\projects\regalator\nginx-1.28.0
 set PROJECT_DIR=C:\Users\Administrator\projects\regalator
 
 echo Project directory: %PROJECT_DIR%
