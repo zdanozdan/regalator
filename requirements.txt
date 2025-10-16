@@ -8,6 +8,7 @@ django-sqlserver==1.11
 django-tables2==2.7.5
 django-template-partials==24.4
 django-widget-tweaks==1.5.0
+mysqlclient==2.2.4
 et_xmlfile==2.0.0
 greenlet==3.2.3
 mssql-django==1.5

@@ -79,25 +79,59 @@ WSGI_APPLICATION = 'regalator.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    },
-    'subiekt': {
-        'ENGINE': 'mssql',
-        'NAME': 'MIKRAN',  # Nazwa bazy danych Subiekt
-        'USER': 'mikran_com',  # Nazwa użytkownika
-        'PASSWORD': 'mikran_comqwer4321',  # Hasło
-        'HOST': '192.168.0.140',  # Serwer MSSQL
-        'PORT': '1433',  # Port MSSQL (domyślny)
-        'OPTIONS': {
-            'driver': 'ODBC Driver 17 for SQL Server',
-            'unicode_results': True,
-            'extra_params': 'Encrypt=No;TrustServerCertificate=Yes'
+# Get database type from environment variable (default to sqlite for development)
+DB_TYPE = os.getenv('DB_TYPE', 'sqlite').lower()
+
+if DB_TYPE == 'mysql':
+    # MySQL configuration for production
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.getenv('DB_NAME', 'regalator'),
+            'USER': os.getenv('DB_USER', 'regalator'),
+            'PASSWORD': os.getenv('DB_PASSWORD', 'REgalator2025'),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
         },
+        'subiekt': {
+            'ENGINE': 'mssql',
+            'NAME': 'MIKRAN',  # Nazwa bazy danych Subiekt
+            'USER': 'mikran_com',  # Nazwa użytkownika
+            'PASSWORD': 'mikran_comqwer4321',  # Hasło
+            'HOST': '192.168.0.140',  # Serwer MSSQL
+            'PORT': '1433',  # Port MSSQL (domyślny)
+            'OPTIONS': {
+                'driver': 'ODBC Driver 17 for SQL Server',
+                'unicode_results': True,
+                'extra_params': 'Encrypt=No;TrustServerCertificate=Yes'
+            },
+        }
     }
-}
+else:
+    # SQLite configuration for development (default)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        },
+        'subiekt': {
+            'ENGINE': 'mssql',
+            'NAME': 'MIKRAN',  # Nazwa bazy danych Subiekt
+            'USER': 'mikran_com',  # Nazwa użytkownika
+            'PASSWORD': 'mikran_comqwer4321',  # Hasło
+            'HOST': '192.168.0.140',  # Serwer MSSQL
+            'PORT': '1433',  # Port MSSQL (domyślny)
+            'OPTIONS': {
+                'driver': 'ODBC Driver 17 for SQL Server',
+                'unicode_results': True,
+                'extra_params': 'Encrypt=No;TrustServerCertificate=Yes'
+            },
+        }
+    }
 
 # Database routers
 DATABASE_ROUTERS = ['subiekt.routers.SubiektRouter']
