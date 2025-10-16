@@ -174,7 +174,7 @@ def create_picking_order(request, order_id):
         
         # Utwórz nowe zlecenie kompletacji
         picking_order = PickingOrder.objects.create(
-            order_number=f"RegOut-{customer_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
+            order_number=f"Terminacja-{customer_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
             customer_order=customer_order,
             status='created',
             assigned_to=request.user
@@ -1091,15 +1091,11 @@ def supplier_order_list(request):
     if status_filter:
         supplier_orders = supplier_orders.filter(status=status_filter)
     
-    # Check if there are any new orders
-    has_new_orders = supplier_orders.filter(is_new=True).exists()
-    
     context = {
         'supplier_orders': supplier_orders,
         'search_query': search_query,
         'status_filter': status_filter,
         'status_choices': SupplierOrder.SUPPLIER_STATUS_CHOICES,
-        'has_new_orders': has_new_orders,
     }
     return render(request, 'wms/supplier_order_list.html', context)
 
@@ -1275,29 +1271,6 @@ def htmx_sync_zd_orders(request):
 
 
 @login_required
-def mark_orders_as_viewed(request):
-    """HTMX action to mark all new orders as viewed"""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
-    try:
-        # Mark all new orders as viewed
-        updated_count = SupplierOrder.objects.filter(is_new=True).update(is_new=False)
-        
-        return JsonResponse({
-            'success': True,
-            'message': f'Oznaczono {updated_count} zamówień jako przeglądnięte',
-            'updated_count': updated_count
-        })
-        
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'message': f'Błąd podczas oznaczania zamówień: {str(e)}'
-        })
-
-
-@login_required
 def htmx_delete_supplier_order(request, order_id):
     """HTMX action to delete a supplier order"""
     if request.method != 'DELETE':
@@ -1341,29 +1314,33 @@ def htmx_delete_supplier_order(request, order_id):
 
 @login_required
 def create_receiving_order(request, supplier_order_id):
-    """Tworzenie rejestru przyjęć (RegIn)"""
+    """Tworzenie rejestru przyjęć (Regalacja)"""
     supplier_order = get_object_or_404(SupplierOrder, id=supplier_order_id)
     
     if request.method == 'POST':
-        # Sprawdź czy już istnieje aktywny RegIn dla tego ZD
+        # Sprawdź czy już istnieje aktywna Regalacja dla tego ZD
         existing_receiving = ReceivingOrder.objects.filter(
             supplier_order=supplier_order,
             status__in=['pending', 'in_progress']
         ).first()
         
         if existing_receiving:
-            messages.warning(request, f'Rejestr przyjęć już istnieje: {existing_receiving.order_number}')
+            messages.warning(request, f'Regalacja już istnieje: {existing_receiving.order_number}')
             return redirect('wms:supplier_order_detail', order_id=supplier_order_id)
         
-        # Utwórz nowy RegIn
+        # Utwórz nową Regalację
         receiving_order = ReceivingOrder.objects.create(
-            order_number=f"RegIn-{supplier_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
+            order_number=f"Regalacja-{supplier_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
             supplier_order=supplier_order,
             status='pending',
             assigned_to=request.user
         )
         
-        # Utwórz pozycje RegIn na podstawie pozycji ZD
+        # Automatycznie oznacz zamówienie jako przeczytane
+        supplier_order.is_new = False
+        supplier_order.save()
+        
+        # Utwórz pozycje Regalacji na podstawie pozycji ZD
         sequence = 1
         for supplier_item in supplier_order.items.all():
             ReceivingItem.objects.create(
@@ -1376,7 +1353,7 @@ def create_receiving_order(request, supplier_order_id):
             )
             sequence += 1
         
-        messages.success(request, f'Utworzono rejestr przyjęć: {receiving_order.order_number}')
+        messages.success(request, f'Utworzono regalację: {receiving_order.order_number}')
         return redirect('wms:receiving_order_detail', receiving_id=receiving_order.id)
     
     return redirect('wms:supplier_order_detail', order_id=supplier_order_id)
@@ -1384,7 +1361,7 @@ def create_receiving_order(request, supplier_order_id):
 
 @login_required
 def receiving_order_list(request):
-    """Lista rejestrów przyjęć (RegIn)"""
+    """Lista rejestrów przyjęć (Regalacja)"""
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
     
@@ -1442,7 +1419,7 @@ def scan_receiving_location(request, receiving_id):
             location = Location.objects.filter(barcode=location_code).first()
             
             if location:
-                # Sprawdź czy w tej lokalizacji są produkty z tego RegIn
+                # Sprawdź czy w tej lokalizacji są produkty z tej Regalacji
                 receiving_items = ReceivingItem.objects.filter(
                     receiving_order=receiving_order
                 ).distinct()
@@ -1497,7 +1474,7 @@ def scan_receiving_product(request, receiving_id):
             product = Product.find_by_code(scanned_code)
             
             if product:
-                # Sprawdź czy produkt jest w tym RegIn
+                # Sprawdź czy produkt jest w tej Regalacji
                 receiving_item = ReceivingItem.objects.filter(
                     receiving_order=receiving_order,
                     product=product
@@ -1607,7 +1584,7 @@ def enter_receiving_quantity(request, receiving_id, item_id):
 
 
 def create_warehouse_document(receiving_order):
-    """Tworzenie dokumentu PZ na podstawie RegIn"""
+    """Tworzenie dokumentu PZ na podstawie Regalacji"""
     supplier_order = receiving_order.supplier_order
     
     # Utwórz dokument PZ
@@ -1617,7 +1594,7 @@ def create_warehouse_document(receiving_order):
         supplier_order=supplier_order,
         document_date=timezone.now().date(),
         status='completed',
-        notes=f'Utworzone automatycznie z RegIn {receiving_order.order_number}'
+        notes=f'Utworzone automatycznie z Regalacji {receiving_order.order_number}'
     )
     
     # Utwórz pozycje dokumentu
@@ -1640,7 +1617,7 @@ def create_warehouse_document(receiving_order):
 
 @login_required
 def complete_receiving(request, receiving_id):
-    """Zakończenie rejestru przyjęć"""
+    """Zakończenie regalacji"""
     receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
     
     if request.method == 'POST':
@@ -1652,7 +1629,7 @@ def complete_receiving(request, receiving_id):
             # Utwórz dokument PZ
             create_warehouse_document(receiving_order)
             
-            messages.success(request, f'Zakończono rejestr przyjęć {receiving_order.order_number}. Utworzono dokument PZ.')
+            messages.success(request, f'Zakończono regalację {receiving_order.order_number}. Utworzono dokument PZ.')
             return redirect('wms:receiving_order_detail', receiving_id=receiving_order.id)
     
     return redirect('wms:receiving_order_detail', receiving_id=receiving_order.id)

@@ -19,7 +19,7 @@ urlpatterns = [
     path('orders/<int:order_id>/', views.order_detail, name='order_detail'),
     path('orders/<int:order_id>/create-picking/', views.create_picking_order, name='create_picking_order'),
     
-    # Zlecenia kompletacji (RegOut)
+    # Zlecenia kompletacji (Terminacja)
     path('picking/', views.picking_list, name='picking_list'),
     path('picking/<int:picking_id>/', views.picking_detail, name='picking_detail'),
     path('picking/<int:picking_id>/start/', views.start_picking, name='start_picking'),
@@ -33,10 +33,9 @@ urlpatterns = [
     path('supplier-orders/<int:order_id>/', views.supplier_order_detail, name='supplier_order_detail'),
     path('supplier-orders/<int:supplier_order_id>/create-receiving/', views.create_receiving_order, name='create_receiving_order'),
     path('htmx/sync-zd-orders/', views.htmx_sync_zd_orders, name='sync_zd_orders'),
-    path('htmx/mark-orders-viewed/', views.mark_orders_as_viewed, name='mark_orders_as_viewed'),
     path('htmx/delete-supplier-order/<int:order_id>/', views.htmx_delete_supplier_order, name='htmx_delete_supplier_order'),
     
-    # Rejestry przyjęć (RegIn)
+    # Rejestry przyjęć (Regalacja)
     path('receiving/', views.receiving_order_list, name='receiving_order_list'),
     path('receiving/<int:receiving_id>/', views.receiving_order_detail, name='receiving_order_detail'),
     path('receiving/<int:receiving_id>/scan-location/', views.scan_receiving_location, name='scan_receiving_location'),

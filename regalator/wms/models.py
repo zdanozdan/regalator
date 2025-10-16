@@ -345,7 +345,7 @@ class OrderItem(models.Model):
 
 
 class PickingOrder(models.Model):
-    """Zlecenie kompletacji (RegOut)"""
+    """Zlecenie kompletacji (Terminacja)"""
     PICKING_STATUS = [
         ('created', 'Utworzone'),
         ('in_progress', 'W trakcie'),
@@ -367,7 +367,7 @@ class PickingOrder(models.Model):
         verbose_name_plural = "Zlecenia kompletacji"
 
     def __str__(self):
-        return f"RegOut {self.order_number} - {self.customer_order.customer_name}"
+        return f"Terminacja {self.order_number} - {self.customer_order.customer_name}"
 
     @property
     def completed_items_count(self):
@@ -504,7 +504,7 @@ class SupplierOrderItem(models.Model):
 
 
 class ReceivingOrder(models.Model):
-    """Rejestr przyjęć (RegIn)"""
+    """Rejestr przyjęć (Regalacja)"""
     RECEIVING_STATUS_CHOICES = [
         ('pending', 'Oczekujące'),
         ('in_progress', 'W trakcie'),
@@ -525,7 +525,7 @@ class ReceivingOrder(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"RegIn {self.order_number} - {self.supplier_order.supplier_name}"
+        return f"Regalacja {self.order_number} - {self.supplier_order.supplier_name}"
     
     @property
     def total_items(self):

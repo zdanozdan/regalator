@@ -61,7 +61,7 @@
         <div class="card text-center h-100">
             <div class="card-body">
                 <i class="fas fa-clipboard-check fa-2x text-primary mb-2"></i>
-                <h5 class="card-title">Aktywne RegIn</h5>
+                <h5 class="card-title">Aktywne Regalacje</h5>
                 <h2 class="text-primary">{{ active_receiving }}</h2>
                 <p class="card-text">Rejestry przyjęć</p>
             </div>
@@ -107,13 +107,13 @@
             </div>
             <div class="card-body">
                 <a href="{% url 'wms:receiving_order_list' %}" class="btn btn-info w-100 mb-2">
-                    <i class="fas fa-clipboard-check me-2"></i>Lista RegIn
+                    <i class="fas fa-clipboard-check me-2"></i>Lista Regalacji
                 </a>
                 <a href="{% url 'wms:receiving_order_list' %}?status=in_progress" class="btn btn-outline-primary w-100 mb-2">
-                    <i class="fas fa-play me-2"></i>Aktywne RegIn
+                    <i class="fas fa-play me-2"></i>Aktywne Regalacje
                 </a>
                 <a href="{% url 'wms:receiving_order_list' %}?status=pending" class="btn btn-outline-secondary w-100">
-                    <i class="fas fa-file me-2"></i>Nowe RegIn
+                    <i class="fas fa-file me-2"></i>Nowe Regalacje
                 </a>
             </div>
         </div>

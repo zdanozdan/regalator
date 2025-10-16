@@ -91,7 +91,7 @@
                     <form method="post" action="{% url 'wms:create_picking_order' order.id %}" class="mb-3">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-success w-100">
-                            <i class="fas fa-clipboard-list me-2"></i>Utwórz RegOut
+                            <i class="fas fa-clipboard-list me-2"></i>Utwórz Terminację
                         </button>
                     </form>
                 {% endif %}
@@ -197,7 +197,7 @@
                         <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>Numer RegOut</th>
+                                    <th>Numer Terminacji</th>
                                     <th>Status</th>
                                     <th>Przypisane do</th>
                                     <th>Utworzone</th>

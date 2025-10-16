@@ -17,7 +17,7 @@
                     <form method="post" action="{% url 'wms:create_receiving_order' supplier_order.id %}" class="d-inline">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-success">
-                            <i class="fas fa-clipboard-check me-2"></i>Utwórz RegIn
+                            <i class="fas fa-clipboard-check me-2"></i>Utwórz Regalację
                         </button>
                     </form>
                 {% endif %}
@@ -251,7 +251,7 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="fas fa-clipboard-check me-2"></i>Rejestry przyjęć (RegIn)
+                    <i class="fas fa-clipboard-check me-2"></i>Rejestry przyjęć (Regalacja)
                 </h5>
             </div>
             <div class="card-body">
@@ -259,7 +259,7 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>Numer RegIn</th>
+                                <th>Numer Regalacji</th>
                                 <th>Status</th>
                                 <th>Przypisane do</th>
                                 <th>Utworzone</th>

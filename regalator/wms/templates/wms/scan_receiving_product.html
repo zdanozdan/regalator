@@ -1,6 +1,6 @@
 {% extends 'wms/base.html' %}
 
-{% block title %}Skanowanie produktu - RegIn {{ receiving_order.order_number }}{% endblock %}
+{% block title %}Skanowanie produktu - Regalacja {{ receiving_order.order_number }}{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -16,13 +16,13 @@
     </div>
 </div>
 
-<!-- Informacje o RegIn -->
+<!-- Informacje o Regalacji -->
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
             <div class="card-body">
                 <dl class="row">
-                    <dt class="col-sm-4">RegIn:</dt>
+                    <dt class="col-sm-4">Regalacja:</dt>
                     <dd class="col-sm-8">{{ receiving_order.order_number }}</dd>
                     
                     <dt class="col-sm-4">ZD:</dt>

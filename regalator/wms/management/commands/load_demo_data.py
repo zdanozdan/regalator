@@ -164,17 +164,17 @@ class Command(BaseCommand):
             supplier_orders.append(order)
             self.stdout.write(f'✓ Utworzono ZD: {order.order_number}')
 
-        # Rejestry przyjęć (RegIn)
+        # Rejestry przyjęć (Regalacja)
         for i, supplier_order in enumerate(supplier_orders[:2]):  # Tylko pierwsze 2 ZD
             receiving_order = ReceivingOrder.objects.create(
-                order_number=f'RegIn-{supplier_order.order_number}-{timezone.now().strftime("%Y%m%d%H%M")}',
+                order_number=f'Regalacja-{supplier_order.order_number}-{timezone.now().strftime("%Y%m%d%H%M")}',
                 supplier_order=supplier_order,
                 status='pending' if i == 0 else 'in_progress',
                 assigned_to=user,
                 started_at=timezone.now() if i == 1 else None
             )
             
-            # Dodaj pozycje do RegIn
+            # Dodaj pozycje do Regalacji
             sequence = 1
             for supplier_item in supplier_order.items.all():
                 ReceivingItem.objects.create(
@@ -188,7 +188,7 @@ class Command(BaseCommand):
                 )
                 sequence += 1
             
-            self.stdout.write(f'✓ Utworzono RegIn: {receiving_order.order_number}')
+            self.stdout.write(f'✓ Utworzono Regalację: {receiving_order.order_number}')
 
         self.stdout.write(self.style.SUCCESS('✓ Wszystkie dane demo zostały załadowane!'))
         self.stdout.write('Dane logowania: demo / demo123') 
