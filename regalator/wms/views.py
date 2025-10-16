@@ -1113,10 +1113,11 @@ def supplier_order_detail(request, order_id):
 
 
 @login_required
-def htmx_sync_zd_orders(request):
-    """HTMX action to sync ZD orders from Subiekt"""
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+def sync_zd_orders(request):
+    """Sync ZD orders from Subiekt"""
+    if request.method != 'POST':
+        messages.error(request, 'Nieprawidłowa metoda żądania')
+        return redirect('wms:supplier_order_list')
     
     try:
         from subiekt.models import dok_Dokument
@@ -1127,29 +1128,21 @@ def htmx_sync_zd_orders(request):
         latest_document_id = SupplierOrder.objects.filter(
             document_id__isnull=False
         ).order_by('-document_id').values_list('document_id', flat=True).first() or 0
-        
-        # Get ZD documents from Subiekt - use new documents only by default
-        subiekt_zd_documents = dok_Dokument.dokument_objects.get_new_zd(
-            latest_document_id=latest_document_id, 
-            limit=20
-        )
+
+        if latest_document_id == 0:
+            subiekt_zd_documents = dok_Dokument.dokument_objects.get_zd(limit=20)
+        else:
+            subiekt_zd_documents = dok_Dokument.dokument_objects.get_new_zd(
+                latest_document_id=latest_document_id, 
+                limit=20
+            )
         
         if not subiekt_zd_documents:
-            context = {
-                'success': False,
-                'message': 'Nie znaleziono NOWYCH dokumentów ZD w Subiekcie.',
-                'synced_count': 0
-            }
-            response = render(request, 'wms/sync_zd_result.html', context)
-            response['HX-Trigger'] = json.dumps({
-                'toastMessage': {
-                    'type': 'success',
-                    'value': '✅ Brak nowych dokumentów ZD do synchronizacji'
-                }
-            })
-            return response
+            messages.info(request, 'Brak nowych dokumentów ZD do synchronizacji')
+            return redirect('wms:supplier_order_list')
         
         new_orders = []
+        updated_orders = []
         
         for zd_doc in subiekt_zd_documents:
             try:
@@ -1185,6 +1178,7 @@ def htmx_sync_zd_orders(request):
                         existing_order.notes = new_notes
                         existing_order.updated_at = timezone.now()
                         existing_order.save()
+                        updated_orders.append(existing_order.order_number)
                 else:
                     # Create new order
                     supplier_order = SupplierOrder.objects.create(
@@ -1228,46 +1222,22 @@ def htmx_sync_zd_orders(request):
                 # Log error but continue with other orders
                 continue
         
-        context = {
-            'success': True,
-            'message': f'✓ Załadowano {len(new_orders)} nowych zamówień ZD' if new_orders else '⚠ Brak nowych zamówień do załadowania',
-            'new_orders': new_orders,
-            'alert_type': 'success' if new_orders else 'warning',
-        }
-        response = render(request, 'wms/sync_zd_result.html', context)
-        
-        # Add HTMX trigger for toast message
+        # Add success messages
         if new_orders:
-            response['HX-Trigger'] = json.dumps({
-                'toastMessage': {
-                    'type': 'success',
-                    'value': f'✓ Załadowano {len(new_orders)} nowych zamówień ZD'
-                }
-            })
-        else:
-            response['HX-Trigger'] = json.dumps({
-                'toastMessage': {
-                    'type': 'warning',
-                    'value': '⚠ Brak nowych zamówień do załadowania'
-                }
-            })
+            order_list = ', '.join(new_orders)
+            messages.success(request, f'Załadowano {len(new_orders)} nowych zamówień ZD: {order_list}')
         
-        return response
+        if updated_orders:
+            messages.info(request, f'Zaktualizowano {len(updated_orders)} istniejących zamówień')
+        
+        if not new_orders and not updated_orders:
+            messages.warning(request, 'Brak nowych zamówień do załadowania')
+        
+        return redirect('wms:supplier_order_list')
         
     except Exception as e:
-        context = {
-            'success': False,
-            'message': f'Błąd podczas synchronizacji: {str(e)}',
-            'synced_count': 0
-        }
-        response = render(request, 'wms/sync_zd_result.html', context)
-        response['HX-Trigger'] = json.dumps({
-            'toastMessage': {
-                'type': 'danger',
-                'value': f'✗ Błąd synchronizacji: {str(e)}'
-            }
-        })
-        return response
+        messages.error(request, f'Błąd podczas synchronizacji: {str(e)}')
+        return redirect('wms:supplier_order_list')
 
 
 @login_required
