@@ -66,6 +66,7 @@ urlpatterns = [
     # Autentykacja
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('change-password-first-time/', views.change_password_first_time, name='change_password_first_time'),
     
         # API
     path('api/scan-barcode/', views.api_scan_barcode, name='api_scan_barcode'),

@@ -6,8 +6,9 @@ from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
+from django.contrib.auth.models import User
 from decimal import Decimal
 from .models import *
 from .forms import UserProfileForm, ProductCodeForm, LocationEditForm, LocationImageForm, ProductColorSizeForm, ProductStockInlineFormSet, ProductForm
@@ -31,6 +32,9 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect('wms:dashboard')
     
+    # Pobierz listę wszystkich użytkowników
+    users = User.objects.all().order_by('username')
+    
     if request.method == 'POST':
         form = AuthenticationForm(request, data=request.POST)
         if form.is_valid():
@@ -39,12 +43,44 @@ def login_view(request):
             user = authenticate(username=username, password=password)
             if user is not None:
                 login(request, user)
+                
+                # Sprawdź czy użytkownik musi zmienić hasło
+                profile, created = UserProfile.objects.get_or_create(user=user)
+                if not profile.password_changed:
+                    return redirect('wms:change_password_first_time')
+                
                 next_url = request.GET.get('next', '/')
                 return redirect(next_url)
     else:
         form = AuthenticationForm()
     
-    return render(request, 'wms/login.html', {'form': form})
+    return render(request, 'wms/login.html', {'form': form, 'users': users})
+
+
+@login_required
+def change_password_first_time(request):
+    """Widok zmiany hasła dla użytkowników logujących się po raz pierwszy"""
+    # Sprawdź czy użytkownik rzeczywiście musi zmienić hasło
+    profile, created = UserProfile.objects.get_or_create(user=request.user)
+    if profile.password_changed:
+        return redirect('wms:dashboard')
+    
+    if request.method == 'POST':
+        form = SetPasswordForm(request.user, request.POST)
+        if form.is_valid():
+            form.save()
+            update_session_auth_hash(request, form.user)
+            
+            # Oznacz że użytkownik zmienił hasło
+            profile.password_changed = True
+            profile.save()
+            
+            messages.success(request, 'Hasło zostało pomyślnie zmienione!')
+            return redirect('wms:dashboard')
+    else:
+        form = SetPasswordForm(request.user)
+    
+    return render(request, 'wms/change_password_first_time.html', {'form': form})
 
 
 @login_required
@@ -1609,7 +1645,7 @@ def logout_view(request):
     """Widok wylogowania"""
     logout(request)
     messages.success(request, 'Zostałeś pomyślnie wylogowany.')
-    return redirect('login')
+    return redirect('wms:login')
 
 
 @login_required

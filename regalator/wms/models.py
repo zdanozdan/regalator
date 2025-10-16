@@ -35,6 +35,7 @@ class UserProfile(models.Model):
     phone = models.CharField(max_length=20, blank=True, verbose_name="Telefon")
     department = models.CharField(max_length=100, blank=True, verbose_name="Dział")
     position = models.CharField(max_length=100, blank=True, verbose_name="Stanowisko")
+    password_changed = models.BooleanField(default=False, verbose_name="Hasło zmienione")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
     
