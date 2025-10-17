@@ -136,7 +136,7 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>Pozycje zamówienia
+                    <i class="fas fa-list me-2"></i>Pozycje zamówienia xxx
                 </h5>
             </div>
             <div class="card-body">
@@ -157,7 +157,8 @@
                                 {% for item in supplier_order.items.all %}
                                 <tr style="cursor: pointer;"
                                     hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
-                                    hx-swap="none"
+                                    hx-swap="innerHTML"
+                                    hx-target="#modalBody"
                                     hx-trigger="click">
                                     <td>
                                         {{ item.product.name }}
@@ -168,7 +169,8 @@
                                                    hx-get="{% url 'wms:htmx_product_details' item.product.id %}"
                                                    hx-trigger="click"
                                                    class="text-muted"
-                                                   hx-swap="none"
+                                                   hx-swap="innerHTML"
+                                                   hx-target="#modalBody"
                                                    onclick="event.stopPropagation();"
                                                    style="cursor: pointer; text-decoration: none;"
                                                    onmouseover="this.style.textDecoration='underline'"
@@ -193,7 +195,8 @@
                                             <a href="#" 
                                                hx-get="{% url 'wms:htmx_product_details' item.product.id %}"
                                                hx-trigger="click"
-                                               hx-swap="none"
+                                               hx-swap="innerHTML"
+                                               hx-target="#modalBody"
                                                class="text-muted"
                                                style="cursor: pointer; text-decoration: none;"
                                                onmouseover="this.style.textDecoration='underline'"

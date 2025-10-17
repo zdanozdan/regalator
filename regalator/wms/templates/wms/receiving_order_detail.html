@@ -156,7 +156,8 @@
                             {% for item in pending_items %}
                             <tr style="cursor: pointer;"
                                 hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
-                                hx-swap="none"
+                                hx-swap="innerHTML"
+                                hx-target="#modalBody"
                                 hx-trigger="click">
                                 <td>
                                     {{ item.product.name }}
