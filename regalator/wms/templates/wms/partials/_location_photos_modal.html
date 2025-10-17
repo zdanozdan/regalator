@@ -190,7 +190,7 @@
             <div class="d-flex justify-content-end gap-2">
                 <button type="button" class="btn btn-secondary" 
                         hx-get="{% url 'wms:htmx_location_edit' location.id %}"
-                        hx-target="closest .location-photos-container"
+                        hx-target="#modalBody"
                         hx-swap="innerHTML">
                     <i class="fas fa-edit me-2"></i>Edytuj lokalizację
                 </button>

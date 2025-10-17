@@ -92,7 +92,7 @@
                 <button type="button" class="btn btn-outline-primary ms-auto" 
                         hx-get="{% url 'wms:htmx_location_photos' location.id %}"
                         hx-swap="innerHTML"
-                        hx-target="closest .location-edit-form">
+                        hx-target="#modalBody">
                     <i class="fas fa-images me-1"></i>Zarządzaj zdjęciami
                 </button>
                 {% endif %}

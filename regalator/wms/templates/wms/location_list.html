@@ -12,8 +12,8 @@
             </h1>
             <button class="btn btn-primary" 
                     hx-get="{% url 'wms:htmx_location_create' %}"
-                    hx-target="body"
-                    hx-swap="none">
+                    hx-target="#modalBody"
+                    hx-swap="innerHTML">
                 <i class="fas fa-plus me-1"></i>Nowa lokalizacja
             </button>
         </div>
@@ -176,8 +176,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
                                                        hx-get="{% url 'wms:htmx_location_edit' location.id %}"
-                                                       hx-target="closest tr"
-                                                       hx-swap="none">
+                                                       hx-target="#modalBody"
+                                                       hx-swap="innerHTML">
                                                         <i class="fas fa-edit me-2"></i>Edytuj
                                                     </a>
                                                 </li>                                               

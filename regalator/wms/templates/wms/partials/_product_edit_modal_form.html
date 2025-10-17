@@ -5,7 +5,7 @@
     <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
 {% endif %}
 
-<form class="product-size-color-form" hx-post="{{ action }}" hx-swap="outerHTML">
+<form class="product-size-color-form" hx-post="{{ action }}" hx-swap="innerHTML" hx-target="#modalBody">
     {% csrf_token %}
     
     <div class="mb-3">
@@ -151,7 +151,7 @@
                 </button>
                 {% if form.instance.id %}
                 <div class="ms-auto d-flex gap-2">
-                    <a hx-get="{% url 'wms:htmx_edit_product_codes' form.instance.id %}" hx-swap="none" class="btn btn-primary">
+                    <a hx-get="{% url 'wms:htmx_edit_product_codes' form.instance.id %}" hx-swap="innerHTML" hx-target="#modalBody" class="btn btn-primary">
                         <i class="fas fa-barcode me-1"></i>Kody kreskowe
                     </a>
                     <a href="{% url 'wms:stock_list' %}?product_id={{ form.instance.id }}" class="btn btn-primary">

@@ -89,7 +89,7 @@
         </div>
 
         {% partialdef product_codes_list inline %}
-        <div class="col-12" hx-trigger="product-codes-list from:body" hx-get="{% url 'wms:htmx_product_codes_list' product.id %}" hx-swap="innerHTML">
+        <div class="col-12" hx-trigger="product-codes-list from:body" hx-get="{% url 'wms:htmx_product_codes_list' product.id %}" hx-swap="innerHTML" hx-target="#modalBody">
             <div class="card">
                 <div class="card-header py-2 d-flex align-items-center justify-content-between">
                     <h6 class="mb-0"><i class="fas fa-barcode me-2"></i>Istniejące kody</h6>
@@ -197,7 +197,8 @@
                 <div class="ms-auto">
                     <button type="button" class="btn btn-outline-primary"
                             hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
-                            hx-swap="none"
+                            hx-swap="innerHTML"
+                            hx-target="#modalBody">
                         <i class="fas fa-box me-1"></i>Przejdź do produktu
                     </button>
                 </div>
