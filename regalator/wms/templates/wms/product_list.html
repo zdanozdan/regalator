@@ -188,7 +188,8 @@
                                         {% if display_product.subiekt_id %}
                                             <code class="cursor-pointer" 
                                                   hx-get="{% url 'wms:htmx_product_details' display_product.id %}"
-                                                  hx-swap="none"
+                                                  hx-swap="innerHTML"
+                                                  hx-target="#modalBody"
                                                   hx-trigger="click"
                                                   style="cursor: pointer;"
                                                   onmouseover="this.style.textDecoration='underline'"
@@ -297,7 +298,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
                                                        hx-get="{% url 'wms:htmx_product_details' display_product.id %}"
-                                                       hx-swap="none"
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody"
                                                        hx-trigger="click">
                                                         <i class="fas fa-info-circle me-2"></i>Szczegóły produktu
                                                     </a>

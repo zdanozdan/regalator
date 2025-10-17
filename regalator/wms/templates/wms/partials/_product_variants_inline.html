@@ -43,7 +43,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#"
                                                        hx-get="{% url 'wms:htmx_edit_size_color_modal' product.id variant.id %}"
-                                                       hx-swap="none"
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody"
                                                        hx-trigger="click">
                                                         <i class="fas fa-edit me-2"></i>Edycja
                                                     </a>
@@ -69,7 +70,8 @@
                 <div class="mt-3 text-end">
                     <a class="btn btn-sm btn-primary"
                        hx-get="{% url 'wms:htmx_add_size_color_modal' product.id %}"
-                       hx-swap="none"
+                       hx-swap="innerHTML"
+                       hx-target="#modalBody"
                        hx-trigger="click">
                         <i class="fas fa-plus me-1"></i>Dodaj rozmiar i kolor
                     </a>
@@ -98,7 +100,8 @@
                 <div class="mt-3">
                     <a class="btn btn-sm btn-primary"
                        hx-get="{% url 'wms:htmx_add_size_color_modal' product.id %}"
-                       hx-swap="none"
+                       hx-swap="innerHTML"
+                       hx-target="#modalBody"
                        hx-trigger="click">
                         <i class="fas fa-plus me-1"></i>Dodaj rozmiar i kolor
                     </a>

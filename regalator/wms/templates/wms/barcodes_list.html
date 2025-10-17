@@ -103,7 +103,7 @@
                             {% for barcode in page_obj %}
                                 <tr>
                                     <td>
-                                        <a href="#" class="barcode-link" hx-get="{% url 'wms:htmx_edit_product_codes' barcode.product.id barcode.id %}" hx-swap="none" hx-trigger="click"><code class="text-muted">{{ barcode.code|truncatechars:20 }}</code></a>
+                                        <a href="#" class="barcode-link" hx-get="{% url 'wms:htmx_edit_product_codes' barcode.product.id barcode.id %}" hx-swap="innerHTML" hx-target="#modalBody" hx-trigger="click"><code class="text-muted">{{ barcode.code|truncatechars:20 }}</code></a>
                                     </td>
                                     <td>
                                         <span class="badge bg-secondary">{{ barcode.get_code_type_display }}</span>

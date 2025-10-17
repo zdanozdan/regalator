@@ -215,7 +215,8 @@
                 </h5>
                 <button class="btn btn-primary btn-sm"
                         hx-get="{% url 'wms:htmx_add_code_modal' product.id %}"
-                        hx-swap="none">
+                        hx-swap="innerHTML"
+                        hx-target="#modalBody">
                     <i class="fas fa-plus me-2"></i>Dodaj kod ręcznie
                 </button>
             </div>

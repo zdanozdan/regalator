@@ -242,7 +242,8 @@
                             {% for item in received_items %}
                             <tr style="cursor: pointer;"
                                 hx-get="{% url 'wms:htmx_edit_product_modal' item.product.id %}"
-                                hx-swap="none"
+                                hx-swap="innerHTML"
+                                hx-target="#modalBody"
                                 hx-trigger="click">
                                 <td>
                                     {{ item.product.name }}
@@ -309,7 +310,8 @@
                             {% for entry in history %}
                             <tr style="cursor: pointer;"
                                 hx-get="{% url 'wms:htmx_edit_product_modal' entry.product.id %}"
-                                hx-swap="none"
+                                hx-swap="innerHTML"
+                                hx-target="#modalBody"
                                 hx-trigger="click">
                                 <td>{{ entry.scanned_at|date:"d.m.Y H:i" }}</td>
                                 <td>
