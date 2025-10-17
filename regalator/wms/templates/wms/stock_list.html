@@ -120,7 +120,8 @@
                                     <td>
                                         <div class="cursor-pointer" 
                                              hx-get="{% url 'wms:htmx_location_edit' stock.location.id %}"
-                                             hx-swap="none"
+                                             hx-swap="innerHTML"
+                                             hx-target="#modalBody"
                                              hx-trigger="click"
                                              style="cursor: pointer;"
                                              onmouseover="this.style.textDecoration='underline'"
@@ -166,7 +167,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#"
                                                        hx-get="{% url 'wms:htmx_edit_size_color_modal' stock.product.parent.id stock.product.id %}"
-                                                       hx-swap="none"
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody"
                                                        hx-trigger="click">
                                                         <i class="fas fa-warehouse me-2"></i>Edycja
                                                     </a>
@@ -175,7 +177,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#"
                                                        hx-get="{% url 'wms:htmx_edit_product_modal' stock.product.id %}"
-                                                       hx-swap="none"
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody"
                                                        hx-trigger="click">
                                                         <i class="fas fa-warehouse me-2"></i>Edycja
                                                     </a>
@@ -191,7 +194,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
                                                        hx-post="{% url 'wms:htmx_sync_product' stock.product.id%}"
-                                                       hx-swap="none">
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody">
                                                         <i class="fas fa-sync-alt me-2"></i>Synchronizuj z Subiektem
                                                     </a>
                                                 </li>
@@ -268,14 +272,16 @@
                     {% if product.parent %}
                         <a class="btn btn-primary" href="#"
                         hx-get="{% url 'wms:htmx_edit_size_color_modal' product.parent.id product.id %}"
-                        hx-swap="none"
+                        hx-swap="innerHTML"
+                        hx-target="#modalBody"
                         hx-trigger="click">
                             <i class="fas fa-warehouse me-2"></i>Dodaj stan magazynowy
                         </a>
                     {% else %}
                         <a class="btn btn-primary" href="#"
                         hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
-                        hx-swap="none"
+                        hx-swap="innerHTML"
+                        hx-target="#modalBody"
                         hx-trigger="click">
                             <i class="fas fa-warehouse me-2"></i>Dodaj stan magazynowy
                         </a>
