@@ -1071,7 +1071,7 @@ def htmx_product_details(request, product_id):
             response['HX-Trigger'] = json.dumps({
                 'modalMessage': {
                     'title': f'Szczegóły produktu: {product.name}',
-                    'body': response.content.decode('utf-8')
+                    #'body': response.content.decode('utf-8')
                 }
             })
             
@@ -1766,7 +1766,7 @@ def htmx_edit_product_codes(request, product_id, code_id=None):
     response['HX-Trigger'] = json.dumps({
         'modalMessage': {
             'title': f'Kody produktu - {product.name}',
-            'body': response.content.decode('utf-8')
+            #'body': response.content.decode('utf-8')
         },
     })
 
@@ -1877,7 +1877,7 @@ def htmx_add_code_modal(request, product_id):
     response['HX-Trigger'] = json.dumps({
         'modalMessage': {
             'title': f'Dodaj kod ręcznie',
-            'body': response.content.decode('utf-8')
+            #'body': response.content.decode('utf-8')
         }
     })
 
@@ -2049,7 +2049,7 @@ def htmx_location_edit(request, location_id=None):
         response['HX-Trigger'] = json.dumps({
             'modalMessage': {
                 'title': 'Nowa lokalizacja' if not location else 'Edycja lokalizacji',
-                'body': response.content.decode('utf-8')
+                #'body': response.content.decode('utf-8')
             },
         })
 
@@ -2184,7 +2184,7 @@ def htmx_location_photos(request, location_id):
         response['HX-Trigger'] = json.dumps({
             'modalMessage': {
                 'title': f'Zdjęcia lokalizacji: {location.name}',
-                'body': response.content.decode('utf-8')
+                #'body': response.content.decode('utf-8')
             }
         })
 
@@ -2685,7 +2685,7 @@ def htmx_edit_product_modal(request, product_id):
                 },
                 'modalMessage': {
                     'title': f"Edytuj produkt - {product.name}",
-                    'body': response.content.decode('utf-8')
+                    #'body': response.content.decode('utf-8')
                 }
             }
             response['HX-Trigger'] = json.dumps(toast_message)
@@ -2695,7 +2695,7 @@ def htmx_edit_product_modal(request, product_id):
             response['HX-Trigger'] = json.dumps({
                 'modalMessage': {
                     'title': f"Edytuj produkt - {product.name}",
-                    'body': response.content.decode('utf-8')
+                    #'body': response.content.decode('utf-8')
                 },
                 'toastMessage': {
                     'value': 'Wystąpił błąd podczas zapisywania formularza',
@@ -2708,7 +2708,7 @@ def htmx_edit_product_modal(request, product_id):
     response['HX-Trigger'] = json.dumps({
         'modalMessage': {
             'title': f"Edytuj produkt - {product.name}",
-            'body': response.content.decode('utf-8')
+            #'body': response.content.decode('utf-8')
         }
     })
     return response
@@ -2749,7 +2749,7 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
         response['HX-Trigger'] = json.dumps({
             'modalMessage': {
                 'title': (f"Edytuj rozmiar i kolor - {product.name}" if variant else f"Dodaj rozmiar i kolor - {product.name}"),
-                'body': response.content.decode('utf-8')
+                #'body': response.content.decode('utf-8')
             }
         })
         
@@ -2815,7 +2815,7 @@ def htmx_add_size_color_modal(request, product_id, variant_id=None):
         response['HX-Trigger'] = json.dumps({
             'modalMessage': {
                 'title': (f"Edytuj rozmiar i kolor - {product.name}" if variant else f"Dodaj rozmiar i kolor - {product.name}"),
-                'body': response.content.decode('utf-8')
+                #'body': response.content.decode('utf-8')
             },
             'toastMessage': {
                 'value': 'Wystąpił błąd podczas zapisywania formularza',

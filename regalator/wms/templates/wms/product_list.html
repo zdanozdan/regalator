@@ -278,7 +278,8 @@
                                                 <li>
                                                     <a class="dropdown-item" href="#" 
                                                        hx-get="{% url 'wms:htmx_edit_product_modal' display_product.id %}"
-                                                       hx-swap="none"
+                                                       hx-swap="innerHTML"
+                                                       hx-target="#modalBody"
                                                        hx-trigger="click">
                                                         <i class="fas fa-qrcode me-2"></i>Edycja
                                                     </a>
