@@ -341,6 +341,9 @@ class DokumentManager(models.Manager):
                 p.ob_DokHanId,
                 p.ob_DokMagId,
                 p.ob_TowId,
+                p.ob_Ilosc,
+				p.ob_IloscMag,
+				p.ob_Jm,
                 t.tw_Id,
                 t.tw_Nazwa,
                 ISNULL(s.st_Stan, 0) as st_Stan,
@@ -364,10 +367,13 @@ class DokumentManager(models.Manager):
                     'ob_DokHanId': row[4],
                     'ob_DokMagId': row[5],
                     'ob_TowId': row[6],
-                    'tw_Id': row[7],
-                    'tw_Nazwa': row[8] or "",
-                    'st_Stan': float(row[9]),
-                    'st_StanRez': float(row[10])
+                    'ob_Ilosc': row[7],
+                    'ob_IloscMag': row[8],
+                    'ob_Jm': row[9],
+                    'tw_Id': row[10],
+                    'tw_Nazwa': row[11] or "",
+                    'st_Stan': float(row[12]),
+                    'st_StanRez': float(row[13])
                 }
                 positions.append(position)
             

@@ -130,7 +130,9 @@
                                                         <li>
                                                             <button class="dropdown-item" 
                                                                     hx-get="{% url 'wms:htmx_edit_product_codes' product.id code.id %}"
-                                                                    hx-swap="none", hx-trigger="click">
+                                                                    hx-swap="innerHTML"
+                                                                    hx-target="#modalBody"
+                                                                    hx-trigger="click">
                                                                 <i class="fas fa-edit me-2"></i>Edytuj
                                                             </button>
                                                         </li>

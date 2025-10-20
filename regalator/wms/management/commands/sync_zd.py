@@ -221,7 +221,7 @@ class Command(BaseCommand):
             existing_order.order_date = zd_doc.dok_DataWyst or timezone.now().date()
             existing_order.expected_delivery_date = zd_doc.dok_PlatTermin or zd_doc.dok_DataMag or zd_doc.dok_DataWyst or timezone.now().date()
             existing_order.actual_delivery_date = zd_doc.dok_DataOtrzym
-            existing_order.notes = f'ZD z Subiektu: {zd_doc.dok_NrPelny}'
+            existing_order.notes = f'ZD z Subiekta: {zd_doc.dok_NrPelny}'
             existing_order.updated_at = timezone.now()
             existing_order.save()
             
@@ -280,7 +280,7 @@ class Command(BaseCommand):
                         supplier_order=supplier_order,
                         product=product,
                         defaults={
-                            'quantity_ordered': Decimal(str(position.get('ob_Znak', 0))),
+                            'quantity_ordered': Decimal(str(position.get('ob_Ilosc', 0))),
                             'quantity_received': 0,
                             'notes': f'Pozycja z Subiektu: {position.get("ob_Id", "")}'
                         }
@@ -288,7 +288,7 @@ class Command(BaseCommand):
                     
                     if not created:
                         # Update existing item
-                        order_item.quantity_ordered = Decimal(str(position.get('ob_Znak', 0)))
+                        order_item.quantity_ordered = Decimal(str(position.get('ob_Ilosc', 0)))
                         order_item.notes = f'Pozycja z Subiektu: {position.get("ob_Id", "")}'
                         order_item.save()
                     

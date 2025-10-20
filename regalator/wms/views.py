@@ -1245,7 +1245,7 @@ def sync_zd_orders(request):
                                         supplier_order=supplier_order,
                                         product=product,
                                         defaults={
-                                            'quantity_ordered': Decimal(str(position.get('ob_Znak', 0))),
+                                            'quantity_ordered': Decimal(str(position.get('ob_Ilosc', 0))),
                                             'quantity_received': 0,
                                             'notes': f'Pozycja z Subiektu: {position.get("ob_Id", "")}'
                                         }
