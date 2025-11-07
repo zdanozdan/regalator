@@ -9,7 +9,7 @@ from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.contrib.auth.models import User
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from .models import *
 from .forms import UserProfileForm, ProductCodeForm, LocationEditForm, LocationImageForm, ProductColorSizeForm, ProductStockInlineFormSet, ProductForm
 from assets.models import Asset
@@ -1404,6 +1404,498 @@ def receiving_order_detail(request, receiving_id):
         'history': receiving_order.history.all()[:10],  # Ostatnie 10 wpisów
     }
     return render(request, 'wms/receiving_order_detail.html', context)
+
+
+def _receiving_session_key(receiving_id, suffix):
+    return f'receiving_{receiving_id}_{suffix}'
+
+
+def _get_current_location(request, receiving_id):
+    location_id = request.session.get(_receiving_session_key(receiving_id, 'location_id'))
+    if not location_id:
+        return None
+    try:
+        return Location.objects.get(id=location_id)
+    except Location.DoesNotExist:
+        request.session.pop(_receiving_session_key(receiving_id, 'location_id'), None)
+        return None
+
+
+def _set_current_location(request, receiving_id, location):
+    if location:
+        request.session[_receiving_session_key(receiving_id, 'location_id')] = location.id
+        request.session.modified = True
+
+
+def _clear_current_location(request, receiving_id):
+    if _receiving_session_key(receiving_id, 'location_id') in request.session:
+        request.session.pop(_receiving_session_key(receiving_id, 'location_id'), None)
+        request.session.modified = True
+
+
+def _get_current_receiving_item(request, receiving_id):
+    item_id = request.session.get(_receiving_session_key(receiving_id, 'item_id'))
+    if not item_id:
+        return None
+    try:
+        return ReceivingItem.objects.get(id=item_id, receiving_order_id=receiving_id)
+    except ReceivingItem.DoesNotExist:
+        request.session.pop(_receiving_session_key(receiving_id, 'item_id'), None)
+        return None
+
+
+def _set_current_receiving_item(request, receiving_id, receiving_item):
+    if receiving_item:
+        request.session[_receiving_session_key(receiving_id, 'item_id')] = receiving_item.id
+        request.session.modified = True
+
+
+def _clear_current_receiving_item(request, receiving_id):
+    item_session_key = _receiving_session_key(receiving_id, 'item_id')
+    item_id = request.session.pop(item_session_key, None)
+    if item_id:
+        quantity_key = _receiving_session_key(receiving_id, f'quantity_{item_id}')
+        request.session.pop(quantity_key, None)
+    request.session.modified = True
+
+
+def _clear_item_quantity_cache(request, receiving_id, item_id):
+    quantity_key = _receiving_session_key(receiving_id, f'quantity_{item_id}')
+    if quantity_key in request.session:
+        request.session.pop(quantity_key, None)
+        request.session.modified = True
+
+
+def _set_item_default_quantity(request, receiving_id, receiving_item):
+    remaining = receiving_item.quantity_ordered - receiving_item.quantity_received
+    quantity_key = _receiving_session_key(receiving_id, f'quantity_{receiving_item.id}')
+
+    if remaining > 0:
+        request.session[quantity_key] = str(remaining)
+        request.session.modified = True
+    elif receiving_item.quantity_received > 0:
+        request.session[quantity_key] = str(receiving_item.quantity_received)
+        request.session.modified = True
+    else:
+        if quantity_key in request.session:
+            request.session.pop(quantity_key, None)
+            request.session.modified = True
+
+
+def _apply_receiving_intake(receiving_order, receiving_item, location, quantity, user):
+    with transaction.atomic():
+        receiving_item.quantity_received += quantity
+        receiving_item.location = location
+        receiving_item.save()
+
+        supplier_item = receiving_item.supplier_order_item
+        supplier_item.quantity_received += quantity
+        supplier_item.save()
+
+        ReceivingHistory.objects.create(
+            receiving_order=receiving_order,
+            product=receiving_item.product,
+            location=location,
+            quantity_received=quantity,
+            scanned_by=user
+        )
+
+        stock, _ = Stock.objects.get_or_create(
+            product=receiving_item.product,
+            location=location,
+            defaults={'quantity': 0}
+        )
+        stock.quantity += quantity
+        stock.save()
+
+        if receiving_order.status == 'pending':
+            receiving_order.status = 'in_progress'
+            receiving_order.started_at = timezone.now()
+            receiving_order.save(update_fields=['status', 'started_at'])
+
+        receiving_order.refresh_from_db()
+
+        if receiving_order.received_items == receiving_order.total_items and receiving_order.total_items > 0:
+            receiving_order.status = 'completed'
+            receiving_order.completed_at = timezone.now()
+            receiving_order.save(update_fields=['status', 'completed_at'])
+            create_warehouse_document(receiving_order)
+            return True
+
+    return False
+
+
+def _build_receiving_fast_context(request, receiving_order, receiving_id):
+    current_location = _get_current_location(request, receiving_id)
+    current_receiving_item = _get_current_receiving_item(request, receiving_id)
+
+    receiving_items = list(
+        receiving_order.items.select_related('product', 'location')
+        .prefetch_related('product__codes')
+        .order_by('sequence')
+    )
+
+    pending_items = []
+    received_items = []
+
+    for item in receiving_items:
+        item.remaining_quantity = item.quantity_ordered - item.quantity_received
+        item.last_quantity_input = request.session.get(_receiving_session_key(receiving_id, f'quantity_{item.id}'))
+        if item.quantity_received > 0:
+            received_items.append(item)
+        else:
+            pending_items.append(item)
+
+    selected_item = None
+    if current_receiving_item:
+        for item in receiving_items:
+            if item.id == current_receiving_item.id:
+                selected_item = item
+                break
+        if selected_item:
+            current_receiving_item = selected_item
+
+    form_mode = 'append'
+    form_quantity_value = ''
+    form_product_value = ''
+    form_location_value = ''
+
+    if current_location:
+        form_location_value = current_location.barcode or current_location.name or ''
+
+    if current_receiving_item:
+        if current_receiving_item.quantity_received > 0:
+            form_mode = 'overwrite'
+        if current_receiving_item.last_quantity_input:
+            form_quantity_value = current_receiving_item.last_quantity_input
+        elif current_receiving_item.quantity_received > 0:
+            form_quantity_value = str(current_receiving_item.quantity_received)
+        elif current_receiving_item.remaining_quantity > 0:
+            form_quantity_value = str(current_receiving_item.remaining_quantity)
+
+        # Prefill product code using first associated code if available
+        product_codes = list(current_receiving_item.product.codes.all()) if hasattr(current_receiving_item.product, 'codes') else []
+        if product_codes:
+            form_product_value = product_codes[0].code
+        else:
+            form_product_value = getattr(current_receiving_item.product, 'sku', '') or ''
+
+        if current_receiving_item.location:
+            form_location_value = current_receiving_item.location.barcode or current_receiving_item.location.name or ''
+            current_location = current_receiving_item.location
+
+    focus_target = 'location_code'
+    if current_location:
+        focus_target = 'product_code'
+    if current_receiving_item and current_location:
+        focus_target = 'quantity'
+
+    return {
+        'receiving_order': receiving_order,
+        'pending_items': pending_items,
+        'received_items': received_items,
+        'receiving_items': receiving_items,
+        'current_location': current_location,
+        'current_receiving_item': current_receiving_item,
+        'focus_target': focus_target,
+        'form_mode': form_mode,
+        'form_quantity_value': form_quantity_value,
+        'form_product_value': form_product_value,
+        'form_location_value': form_location_value,
+    }
+
+
+@login_required
+def receiving_order_fast(request, receiving_id):
+    """Nowy, jednookienkowy widok przyjęcia"""
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+
+    if receiving_order.status == 'pending':
+        receiving_order.status = 'in_progress'
+        receiving_order.started_at = timezone.now()
+        receiving_order.save(update_fields=['status', 'started_at'])
+
+    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+
+    return render(request, 'wms/receiving_fast.html', context)
+
+
+@login_required
+def htmx_receiving_submit(request, receiving_id):
+    if request.method != 'POST' or request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+
+    location_code = request.POST.get('location_code', '').strip()
+    product_code = request.POST.get('product_code', '').strip()
+    quantity_text = request.POST.get('quantity', '').strip()
+    receiving_item_id = request.POST.get('receiving_item_id', '').strip()
+    action = request.POST.get('action', '').strip()
+    mode = request.POST.get('mode', 'append').strip()  # append lub overwrite
+
+    feedback_message = None
+    feedback_type = 'info'
+
+    current_location = _get_current_location(request, receiving_id)
+    current_receiving_item = _get_current_receiving_item(request, receiving_id)
+
+    if action == 'clear_selection':
+        _clear_current_receiving_item(request, receiving_id)
+        _clear_current_location(request, receiving_id)
+        current_location = None
+        current_receiving_item = None
+        feedback_message = 'Wyczyszczono bieżące wybory.'
+        feedback_type = 'success'
+
+    if receiving_item_id and feedback_type != 'error':
+        try:
+            receiving_item = ReceivingItem.objects.get(id=receiving_item_id, receiving_order=receiving_order)
+        except ReceivingItem.DoesNotExist:
+            feedback_message = 'Wybrana pozycja przyjęcia nie istnieje.'
+            feedback_type = 'error'
+        else:
+            _set_current_receiving_item(request, receiving_id, receiving_item)
+            current_receiving_item = receiving_item
+            if receiving_item.location:
+                _set_current_location(request, receiving_id, receiving_item.location)
+                current_location = receiving_item.location
+            _set_item_default_quantity(request, receiving_id, receiving_item)
+            feedback_message = f'Wybrano produkt {receiving_item.product.name}.'
+            feedback_type = 'success'
+
+    # Obsługa lokalizacji
+    if location_code:
+        location = Location.objects.filter(barcode=location_code).first()
+        if not location:
+            location = Location.objects.filter(name__iexact=location_code).first()
+
+        if location:
+            _set_current_location(request, receiving_id, location)
+            current_location = location
+            feedback_message = f'Ustawiono lokalizację {location.name}.'
+            feedback_type = 'success'
+        else:
+            feedback_message = f'Lokalizacja {location_code} nie istnieje.'
+            feedback_type = 'error'
+
+    # Obsługa produktu
+    if product_code and feedback_type != 'error':
+        product = Product.find_by_code(product_code)
+        if product:
+            receiving_item = ReceivingItem.objects.filter(
+                receiving_order=receiving_order,
+                product=product
+            ).select_related('product').first()
+
+            if receiving_item:
+                _set_current_receiving_item(request, receiving_id, receiving_item)
+                current_receiving_item = receiving_item
+                _set_item_default_quantity(request, receiving_id, receiving_item)
+                feedback_message = f'Wybrano produkt {receiving_item.product.name}.'
+                feedback_type = 'success'
+            else:
+                feedback_message = f'Produkt {product.name} nie znajduje się w tej regalacji.'
+                feedback_type = 'error'
+        else:
+            feedback_message = f'Nie znaleziono produktu dla kodu {product_code}.'
+            feedback_type = 'error'
+
+    # Obsługa ilości
+    if quantity_text and feedback_type != 'error':
+        if not current_receiving_item:
+            feedback_message = 'Najpierw wybierz produkt z tej regalacji.'
+            feedback_type = 'error'
+        elif not current_location:
+            feedback_message = 'Najpierw wybierz lokalizację przyjęcia.'
+            feedback_type = 'error'
+        else:
+            try:
+                quantity = Decimal(quantity_text)
+                if quantity <= 0:
+                    raise ValueError
+            except (ValueError, TypeError, InvalidOperation):
+                feedback_message = 'Nieprawidłowa ilość. Wprowadź liczbę dodatnią.'
+                feedback_type = 'error'
+            else:
+                if mode == 'overwrite':
+                    with transaction.atomic():
+                        previous_quantity = current_receiving_item.quantity_received
+
+                        delta = quantity - previous_quantity
+
+                        current_receiving_item.quantity_received = quantity
+                        current_receiving_item.location = current_location
+                        current_receiving_item.save()
+
+                        supplier_item = current_receiving_item.supplier_order_item
+                        supplier_item.quantity_received = max(Decimal('0'), supplier_item.quantity_received + delta)
+                        supplier_item.save()
+
+                        stock, _ = Stock.objects.get_or_create(
+                            product=current_receiving_item.product,
+                            location=current_location,
+                            defaults={'quantity': 0}
+                        )
+                        stock.quantity = max(Decimal('0'), stock.quantity + delta)
+                        stock.save()
+
+                        if delta != 0:
+                            ReceivingHistory.objects.create(
+                                receiving_order=receiving_order,
+                                product=current_receiving_item.product,
+                                location=current_location,
+                                quantity_received=delta,
+                                scanned_by=request.user
+                            )
+
+                        received_order_completed = False
+                        if receiving_order.status == 'pending':
+                            receiving_order.status = 'in_progress'
+                            receiving_order.started_at = timezone.now()
+                            receiving_order.save(update_fields=['status', 'started_at'])
+
+                        receiving_order.refresh_from_db()
+
+                        if receiving_order.received_items == receiving_order.total_items and receiving_order.total_items > 0:
+                            receiving_order.status = 'completed'
+                            receiving_order.completed_at = timezone.now()
+                            receiving_order.save(update_fields=['status', 'completed_at'])
+                            create_warehouse_document(receiving_order)
+                            received_order_completed = True
+
+                    completed = received_order_completed
+                else:
+                    completed = _apply_receiving_intake(
+                        receiving_order,
+                        current_receiving_item,
+                        current_location,
+                        quantity,
+                        request.user
+                    )
+
+                current_receiving_item.refresh_from_db()
+
+                feedback_message = (
+                    f'Przyjęto {quantity} szt. {current_receiving_item.product.name} '
+                    f'w {current_location.name}.'
+                )
+                feedback_type = 'success'
+
+                request.session[_receiving_session_key(receiving_id, f'quantity_{current_receiving_item.id}')] = str(quantity)
+                request.session.modified = True
+
+                if mode == 'overwrite':
+                    feedback_message = (
+                        f'Uaktualniono pozycję {current_receiving_item.product.name} '
+                        f'na {quantity} szt. w {current_location.name}.'
+                    )
+                    feedback_type = 'success'
+
+                if completed:
+                    feedback_message += ' Regalacja została zakończona.'
+                    _clear_current_receiving_item(request, receiving_id)
+                    _clear_current_location(request, receiving_id)
+
+    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+
+    html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
+
+    response = HttpResponse(html, status=200)
+    triggers = {}
+
+    if feedback_message:
+        triggers['toastMessage'] = {
+            'value': feedback_message,
+            'type': feedback_type
+        }
+
+    triggers['receiving-fast-refresh'] = {
+        'value': 'receiving-fast-refresh'
+    }
+
+    response['HX-Trigger'] = json.dumps(triggers)
+    return response
+
+
+@login_required
+def htmx_receiving_table(request, receiving_id):
+    if request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+
+    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+
+    html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
+    return HttpResponse(html, status=200)
+
+
+@login_required
+def htmx_receiving_remove_item(request, receiving_id, item_id):
+    if request.method != 'POST' or request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    receiving_item = get_object_or_404(ReceivingItem, id=item_id, receiving_order=receiving_order)
+
+    if receiving_item.quantity_received <= 0:
+        feedback_message = 'Ta pozycja nie posiada przyjętej ilości.'
+        feedback_type = 'info'
+    else:
+        quantity = receiving_item.quantity_received
+        location = receiving_item.location
+
+        with transaction.atomic():
+            supplier_item = receiving_item.supplier_order_item
+            supplier_item.quantity_received = max(Decimal('0'), supplier_item.quantity_received - quantity)
+            supplier_item.save(update_fields=['quantity_received'])
+
+            receiving_item.quantity_received = Decimal('0')
+            receiving_item.location = None
+            receiving_item.save(update_fields=['quantity_received', 'location'])
+
+            if location:
+                stock = Stock.objects.filter(product=receiving_item.product, location=location).first()
+                if stock:
+                    stock.quantity = max(Decimal('0'), stock.quantity - quantity)
+                    stock.save(update_fields=['quantity'])
+
+            # Update receiving order status if needed
+            remaining_received = receiving_order.items.filter(quantity_received__gt=0).exists()
+            if not remaining_received:
+                receiving_order.status = 'pending'
+                receiving_order.completed_at = None
+                receiving_order.started_at = None
+                receiving_order.save(update_fields=['status', 'completed_at', 'started_at'])
+            else:
+                if receiving_order.status == 'completed':
+                    receiving_order.status = 'in_progress'
+                    receiving_order.completed_at = None
+                    receiving_order.save(update_fields=['status', 'completed_at'])
+
+        _clear_item_quantity_cache(request, receiving_id, item_id)
+        current_item = _get_current_receiving_item(request, receiving_id)
+        if current_item and current_item.id == item_id:
+            _clear_current_receiving_item(request, receiving_id)
+
+        feedback_message = f'Cofnięto przyjęcie pozycji {receiving_item.product.name}.'
+        feedback_type = 'success'
+
+    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+    html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
+
+    response = HttpResponse(html, status=200)
+    response['HX-Trigger'] = json.dumps({
+        'toastMessage': {
+            'value': feedback_message,
+            'type': feedback_type
+        },
+        'receiving-fast-refresh': {
+            'value': 'receiving-fast-refresh'
+        }
+    })
+    return response
 
 
 @login_required
@@ -2851,6 +3343,8 @@ def htmx_product_groups_autocomplete(request):
 def htmx_locations_autocomplete(request):
     """HTMX endpoint for locations autocomplete"""
     query = request.GET.get('location', '').strip()
+    if not query:
+        query = request.GET.get('location_code', '').strip()
     picking_id = request.GET.get('picking_id', '').strip()
     receiving_id = request.GET.get('receiving_id', '').strip()
     
@@ -2887,9 +3381,95 @@ def htmx_locations_autocomplete(request):
     # Create HTML divs for the autocomplete dropdown
     options_html = ''
     for location in locations:
-        options_html += f'<div class="autocomplete-item" data-location-id="{location.id}" data-location-barcode="{location.barcode}" data-location-name="{location.name}">{location.name} ({location.barcode})</div>'
-    
+        barcode = location.barcode or ''
+        name = location.name or barcode or 'Lokalizacja'
+        barcode_display = barcode if barcode else 'Brak kodu'
+        options_html += (
+            '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
+            f'data-location-id="{location.id}" '
+            f'data-location-barcode="{barcode}" '
+            f'data-location-name="{name}">' 
+            f'<span class="d-block fw-semibold">{name}</span>'
+            f'<small class="d-block text-muted">{barcode_display}</small>'
+            '</button>'
+        )
+
     return HttpResponse(options_html)
+
+
+@login_required
+def htmx_receiving_product_autocomplete(request, receiving_id):
+    query = request.GET.get('product', '').strip()
+    if not query:
+        query = request.GET.get('product_code', '').strip()
+    if not query:
+        return HttpResponse('')
+
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+
+    items = receiving_order.items.select_related('product').prefetch_related('product__codes')
+
+    query_lower = query.lower()
+    matched = {}
+
+    for item in items:
+        product = item.product
+        if not product:
+            continue
+
+        name = (product.name or '').strip()
+        codes = [code.code for code in getattr(product, 'codes').all()] if hasattr(product, 'codes') else []
+
+        match = False
+        if name and query_lower in name.lower():
+            match = True
+        else:
+            for code_value in codes:
+                if code_value and query_lower in code_value.lower():
+                    match = True
+                    break
+
+        if match and product.id not in matched:
+            primary_code = codes[0] if codes else ''
+            matched[product.id] = {
+                'name': name or primary_code or 'Produkt',
+                'code': primary_code,
+                'ordered': item.quantity_ordered,
+                'received': item.quantity_received,
+                'remaining': max(Decimal('0'), item.quantity_ordered - item.quantity_received),
+            }
+
+        if len(matched) >= 10:
+            break
+
+    if not matched:
+        return HttpResponse('')
+
+    options = []
+    for product_id, data in matched.items():
+        display_name = data['name']
+        code_display = data['code'] or 'Brak kodu'
+        code_value = data['code'] or ''
+        ordered = data['ordered']
+        received_qty = data['received']
+        remaining = data['remaining']
+        if remaining <= 0:
+            details = f'Przyjęto {received_qty:.2f} (100%)'
+        else:
+            details = f'Przyjęto {received_qty:.2f} / {ordered:.2f} (pozostało {remaining:.2f})'
+
+        options.append(
+            '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
+            f'data-product-id="{product_id}" '
+            f'data-product-code="{code_value}" '
+            f'data-product-name="{display_name}">' 
+            f'<span class="d-block fw-semibold">{display_name}</span>'
+            f'<small class="d-block text-muted">{code_display}</small>'
+            f'<small class="d-block text-muted">{details}</small>'
+            '</button>'
+        )
+
+    return HttpResponse(''.join(options))
 
 
 

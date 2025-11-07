@@ -1,0 +1,284 @@
+<div id="receiving-table-wrapper" data-focus-target="{{ focus_target }}">
+    <div class="mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-barcode me-2"></i>Skanowanie i wprowadzanie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Aktualna lokalizacja</div>
+                        {% if current_location %}
+                        <div class="fw-semibold">{{ current_location.name }}</div>
+                        <div class="text-muted small">{{ current_location.barcode }}</div>
+                        {% else %}
+                        <div class="text-muted fst-italic">Nie wybrano</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Aktualny produkt</div>
+                        {% if current_receiving_item %}
+                        <div class="fw-semibold">{{ current_receiving_item.product.name }}</div>
+                        <div class="text-muted small">
+                            {% with code=current_receiving_item.product.codes.first %}
+                                {% if code %}
+                                {{ code.code }}
+                                {% else %}
+                                Brak kodu kreskowego
+                                {% endif %}
+                            {% endwith %}
+                        </div>
+                        {% else %}
+                        <div class="text-muted fst-italic">Nie wybrano</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4 d-flex align-items-start justify-content-md-end gap-2">
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                                hx-target="#receiving-table-wrapper"
+                                hx-swap="outerHTML"
+                                hx-vals='{"action": "clear_selection"}'>
+                            <i class="fas fa-undo me-2"></i>Wyczyść wybory
+                        </button>
+                    </div>
+                </div>
+
+                <form
+                    hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                    hx-target="#receiving-table-wrapper"
+                    hx-swap="outerHTML"
+                    class="row g-3 mt-3">
+                    {% csrf_token %}
+                    <div class="col-lg-4">
+                        <label for="locationInput" class="form-label">Lokalizacja</label>
+                        <div class="position-relative">
+                            <input type="text" name="location_code" id="locationInput" class="form-control"
+                                   placeholder="Skanuj lub wpisz kod"
+                                   value="{{ form_location_value|default:'' }}"
+                                   data-focus-key="location_code"
+                                   hx-get="{% url 'wms:htmx_locations_autocomplete' %}"
+                                   hx-trigger="input changed delay:200ms"
+                                   hx-target="#location-suggestions"
+                                   hx-swap="innerHTML"
+                                   hx-vals='{"receiving_id": "{{ receiving_order.id }}"}'
+                                   autocomplete="off"
+                                   hx-indicator="#location-loading">
+                            <div id="location-loading" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
+                                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+                            </div>
+                            <div id="location-suggestions" class="dropdown-menu w-100 shadow mt-2" style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0, 0, 0, 0.08); background-color: #fff;"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label for="productInput" class="form-label">Produkt</label>
+                        <div class="position-relative">
+                            <input type="text" name="product_code" id="productInput" class="form-control"
+                                   placeholder="Skanuj lub wpisz kod lub nazwę"
+                                   value="{{ form_product_value|default:'' }}"
+                                   data-focus-key="product_code"
+                                   hx-get="{% url 'wms:htmx_receiving_product_autocomplete' receiving_order.id %}"
+                                   hx-trigger="input changed delay:200ms"
+                                   hx-target="#product-suggestions"
+                                   hx-swap="innerHTML"
+                                   hx-vals='{"receiving_id": "{{ receiving_order.id }}"}'
+                                   autocomplete="off"
+                                   hx-indicator="#product-loading">
+                            <div id="product-loading" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
+                                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+                            </div>
+                            <div id="product-suggestions" class="dropdown-menu w-100 shadow mt-2" style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0, 0, 0, 0.08); background-color: #fff;"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label for="quantityInput" class="form-label">Ilość</label>
+                        <input type="number" name="quantity" id="quantityInput" class="form-control"
+                               placeholder="Podaj ilość"
+                               step="0.01"
+                               min="0.01"
+                               value="{{ form_quantity_value|default:'' }}"
+                               data-focus-key="quantity">
+                    </div>
+                    <input type="hidden" name="mode" value="{{ form_mode }}">
+                    <div class="col-12 d-flex flex-column flex-md-row gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
+                            <i class="fas fa-save me-2"></i>Zapisz
+                        </button>
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                                hx-target="#receiving-table-wrapper"
+                                hx-swap="outerHTML"
+                                hx-vals='{"action": "clear_selection"}'>
+                            <i class="fas fa-undo me-2"></i>Wyczyść formularz
+                        </button>
+                    </div>
+                    <div class="col-12">
+                        {% if form_mode == 'overwrite' %}
+                        <small class="text-muted">Tryb zapisu: aktualizacja istniejącej pozycji</small>
+                        {% else %}
+                        <small class="text-muted">Tryb zapisu: dodawanie do pozycji</small>
+                        {% endif %}
+                    </div>
+                </form>
+
+                {% if received_items %}
+                <hr class="my-4">
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0 text-uppercase text-muted">Przyjęte pozycje</h6>
+                        <span class="badge bg-success">{{ received_items|length }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Produkt</th>
+                                    <th class="text-center">Przyjęte</th>
+                                    <th class="text-center">Pozostało</th>
+                                    <th>Lokalizacja</th>
+                                    <th class="text-end">Akcja</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in received_items %}
+                                <tr hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                                    hx-trigger="click"
+                                    hx-target="#receiving-table-wrapper"
+                                    hx-swap="outerHTML"
+                                    hx-vals='{"receiving_item_id": "{{ item.id }}"}'
+                                    class="{% if current_receiving_item and current_receiving_item.id == item.id %}table-primary{% endif %}"
+                                    style="cursor: pointer;">
+                                    <td>
+                                        <div class="fw-semibold">{{ item.product.name }}</div>
+                                        <div class="text-muted small">
+                                            {% with code=item.product.codes.first %}
+                                                {% if code %}
+                                                <i class="fas fa-barcode me-1"></i>{{ code.code }}
+                                                {% else %}
+                                                <span class="fst-italic">Brak kodu</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                    <td class="text-center text-success fw-semibold">{{ item.quantity_received|floatformat:2 }}</td>
+                                    <td class="text-center">
+                                        {% if item.remaining_quantity <= 0 %}
+                                            <span class="badge bg-success">0.00</span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">{{ item.remaining_quantity|floatformat:2 }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.location %}
+                                            <div>{{ item.location.name }}</div>
+                                            <div class="text-muted small">{{ item.location.barcode }}</div>
+                                        {% else %}
+                                            <span class="text-muted">Brak</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                    type="button"
+                                                    data-bs-toggle="dropdown"
+                                                    data-bs-popper-config='{"strategy":"fixed"}'
+                                                    aria-expanded="false"
+                                                    onclick="event.stopPropagation();">
+                                                <i class="fas fa-ellipsis-h"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <button class="dropdown-item"
+                                                            hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                                                            hx-target="#receiving-table-wrapper"
+                                                            hx-swap="outerHTML"
+                                                            hx-vals='{"receiving_item_id": "{{ item.id }}"}'
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-pen me-2"></i>Edytuj
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <button class="dropdown-item text-danger"
+                                                            hx-post="{% url 'wms:htmx_receiving_remove_item' receiving_order.id item.id %}"
+                                                            hx-target="#receiving-table-wrapper"
+                                                            hx-swap="outerHTML"
+                                                            hx-confirm="Czy na pewno usunąć przyjęcie tej pozycji?"
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-list-ul me-2"></i>Pozostałe pozycje
+            </h5>
+            <span class="badge bg-primary">{{ pending_items|length }}</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">Produkt</th>
+                        <th class="text-center">Zamówione</th>
+                        <th class="text-center">Przyjęte</th>
+                        <th class="text-center">Pozostało</th>
+                        <th>Lokalizacja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if not pending_items %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">Brak pozycji oczekujących.</td>
+                    </tr>
+                    {% else %}
+                        {% for item in pending_items %}
+                        <tr hx-post="{% url 'wms:htmx_receiving_submit' receiving_order.id %}"
+                            hx-trigger="click"
+                            hx-target="#receiving-table-wrapper"
+                            hx-swap="outerHTML"
+                            hx-vals='{"receiving_item_id": "{{ item.id }}"}'
+                            class="{% if current_receiving_item and current_receiving_item.id == item.id %}table-primary{% endif %}"
+                            style="cursor: pointer;">
+                            <td>
+                                <div class="fw-semibold">{{ item.product.name }}</div>
+                                <div class="text-muted small">
+                                    {% with code=item.product.codes.first %}
+                                        {% if code %}
+                                        <i class="fas fa-barcode me-1"></i>{{ code.code }}
+                                        {% else %}
+                                        <span class="fst-italic">Brak kodu</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </div>
+                            </td>
+                            <td class="text-center">{{ item.quantity_ordered|floatformat:2 }}</td>
+                            <td class="text-center text-muted">{{ item.quantity_received|floatformat:2 }}</td>
+                            <td class="text-center"><span class="badge bg-warning text-dark">{{ item.remaining_quantity|floatformat:2 }}</span></td>
+                            <td><span class="text-muted">Oczekuje</span></td>
+                        </tr>
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+

@@ -1,0 +1,255 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Szybkie przyjęcie - {{ receiving_order.order_number }}{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+    (function() {
+        let wrapper;
+
+        const autocompleteConfigs = [
+            {
+                inputId: 'locationInput',
+                suggestionsId: 'location-suggestions',
+                requestMatch: 'locations-autocomplete',
+                select: function(item, input) {
+                    const barcode = item.dataset.locationBarcode || '';
+                    const name = item.dataset.locationName || '';
+                    input.value = barcode || name || item.textContent.trim();
+                }
+            },
+            {
+                inputId: 'productInput',
+                suggestionsId: 'product-suggestions',
+                requestMatch: 'product-autocomplete',
+                select: function(item, input) {
+                    const code = item.dataset.productCode || '';
+                    const name = item.dataset.productName || '';
+                    input.value = code || name || item.textContent.trim();
+                }
+            }
+        ];
+
+        function updateProgressBars() {
+            document.querySelectorAll('[data-progress-value]').forEach(function(bar) {
+                const value = parseFloat(bar.dataset.progressValue || '0') || 0;
+                bar.style.width = value + '%';
+                bar.setAttribute('aria-valuenow', value);
+            });
+        }
+
+        function cacheWrapper() {
+            wrapper = document.getElementById('receiving-table-wrapper');
+        }
+
+        function focusReceivingInputs() {
+            if (!wrapper) {
+                return;
+            }
+            const targetKey = wrapper.dataset.focusTarget;
+            if (!targetKey) {
+                return;
+            }
+            const input = wrapper.querySelector('[data-focus-key="' + targetKey + '"]');
+            if (input) {
+                input.focus();
+                if (typeof input.select === 'function') {
+                    input.select();
+                }
+            }
+        }
+
+        function hideSuggestions(config) {
+            if (!config.container) {
+                return;
+            }
+            config.container.classList.remove('show');
+            config.container.style.display = 'none';
+        }
+
+        function showSuggestions(config, html) {
+            if (!config.container) {
+                return;
+            }
+            config.container.innerHTML = html;
+            const hasItems = html && html.trim().length > 0;
+            if (hasItems) {
+                config.container.classList.add('show');
+                config.container.style.display = 'block';
+            } else {
+                hideSuggestions(config);
+            }
+        }
+
+        function selectSuggestion(config, item) {
+            if (!config.input) {
+                return;
+            }
+            if (typeof config.select === 'function') {
+                config.select(item, config.input);
+            } else {
+                config.input.value = item.textContent.trim();
+            }
+            config.input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function bindConfig(config) {
+            config.wrapper = wrapper;
+            config.input = wrapper ? wrapper.querySelector('#' + config.inputId) : null;
+            config.container = wrapper ? wrapper.querySelector('#' + config.suggestionsId) : null;
+
+            if (config.input && !config.input.dataset.autocompleteBound) {
+                config.input.dataset.autocompleteBound = '1';
+                config.input.addEventListener('input', function(event) {
+                    if (!event.target.value.trim()) {
+                        hideSuggestions(config);
+                    }
+                });
+            }
+
+            if (config.container && !config.container.dataset.autocompleteBound) {
+                config.container.dataset.autocompleteBound = '1';
+                config.container.addEventListener('click', function(event) {
+                    const item = event.target.closest('.autocomplete-item');
+                    if (!item || !config.container.contains(item)) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    selectSuggestion(config, item);
+                    hideSuggestions(config);
+                });
+            }
+        }
+
+        function bindGlobalListeners() {
+            if (!document.body.dataset.receivingFastBound) {
+                document.body.dataset.receivingFastBound = '1';
+                document.body.addEventListener('click', function(event) {
+                    autocompleteConfigs.forEach(function(config) {
+                        if (!config.input || !config.container) {
+                            return;
+                        }
+                        if (event.target === config.input || config.container.contains(event.target)) {
+                            return;
+                        }
+                        hideSuggestions(config);
+                    });
+                });
+            }
+        }
+
+        function initAutocompletes() {
+            cacheWrapper();
+            autocompleteConfigs.forEach(function(config) {
+                bindConfig(config);
+            });
+            bindGlobalListeners();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.addEventListener('htmx:afterSwap', function(event) {
+                if (event.target && event.target.id === 'receiving-table-wrapper') {
+                    initAutocompletes();
+                    focusReceivingInputs();
+                    updateProgressBars();
+                }
+            });
+
+            document.body.addEventListener('htmx:afterRequest', function(event) {
+                if (!event.detail || !event.detail.xhr) {
+                    return;
+                }
+                const url = event.detail.xhr.responseURL || '';
+                autocompleteConfigs.forEach(function(config) {
+                    if (url.includes(config.requestMatch)) {
+                        initAutocompletes();
+                        showSuggestions(config, event.detail.xhr.responseText || '');
+                    }
+                });
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initAutocompletes();
+            focusReceivingInputs();
+            updateProgressBars();
+        });
+    })();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h1 class="h3 mb-0">
+            <i class="fas fa-truck-loading me-2"></i>Szybkie przyjęcie
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'wms:receiving_order_detail' receiving_order.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót
+            </a>
+            <form method="post" action="{% url 'wms:complete_receiving' receiving_order.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success"
+                        onclick="return confirm('Czy na pewno zakończyć regalację?');">
+                    <i class="fas fa-check me-2"></i>Zakończ regalację
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Regalacja</div>
+                        <div class="fw-semibold">{{ receiving_order.order_number }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">ZD</div>
+                        <div class="fw-semibold">{{ receiving_order.supplier_order.order_number }}</div>
+                        <div class="text-muted small">{{ receiving_order.supplier_order.supplier_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Postęp</div>
+                        <div class="fw-semibold">{{ received_items|length }}/{{ receiving_order.total_items }}</div>
+                        <div class="progress mt-1" style="height: 6px;">
+                            {% with received_count=received_items|length total=receiving_order.total_items %}
+                            {% if total > 0 %}
+                            {% widthratio received_count total 100 as progress_value %}
+                            <div class="progress-bar" role="progressbar" data-progress-value="{{ progress_value }}" aria-valuemin="0" aria-valuemax="100"></div>
+                            {% else %}
+                            <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
+                            {% endif %}
+                            {% endwith %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="text-muted text-uppercase small">Aktualny operator</div>
+                        <div class="fw-semibold">{{ request.user.get_full_name|default:request.user.username }}</div>
+                    </div>
+                    <span class="badge bg-info text-uppercase">{{ receiving_order.get_status_display }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="receiving-fast-container">
+    {% include 'wms/partials/_receiving_fast_table.html' %}
+</div>
+{% endblock %}
+
