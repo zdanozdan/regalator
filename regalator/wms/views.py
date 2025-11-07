@@ -1558,10 +1558,38 @@ def _build_receiving_fast_context(request, receiving_order, receiving_id):
     form_mode = 'append'
     form_quantity_value = ''
     form_product_value = ''
+    form_product_display_value = ''
     form_location_value = ''
+    form_location_display_value = ''
+
+    def _format_location_display(location):
+        if not location:
+            return ''
+        name = getattr(location, 'name', '') or getattr(location, 'barcode', '') or ''
+        location_type_display = ''
+        if hasattr(location, 'get_location_type_display'):
+            try:
+                location_type_display = location.get_location_type_display() or ''
+            except Exception:
+                location_type_display = ''
+        if location_type_display:
+            return f"{name} / {location_type_display}"
+        return name
+
+    def _format_product_display(product, code_value=''):
+        if not product:
+            return code_value
+        name = getattr(product, 'name', '') or ''
+        if name:
+            return name
+        sku = getattr(product, 'sku', '') or ''
+        if sku:
+            return sku
+        return code_value
 
     if current_location:
-        form_location_value = current_location.barcode or current_location.name or ''
+        form_location_value = current_location.barcode or ''
+        form_location_display_value = _format_location_display(current_location)
 
     if current_receiving_item:
         if current_receiving_item.quantity_received > 0:
@@ -1579,16 +1607,54 @@ def _build_receiving_fast_context(request, receiving_order, receiving_id):
             form_product_value = product_codes[0].code
         else:
             form_product_value = getattr(current_receiving_item.product, 'sku', '') or ''
+        form_product_display_value = _format_product_display(current_receiving_item.product, form_product_value)
 
         if current_receiving_item.location:
-            form_location_value = current_receiving_item.location.barcode or current_receiving_item.location.name or ''
             current_location = current_receiving_item.location
+            form_location_value = current_location.barcode or ''
+            form_location_display_value = _format_location_display(current_location)
+
+    if not form_product_display_value:
+        form_product_display_value = form_product_value
 
     focus_target = 'location_code'
     if current_location:
         focus_target = 'product_code'
     if current_receiving_item and current_location:
         focus_target = 'quantity'
+
+    recent_locations = []
+    seen_location_ids = set()
+
+    def _append_location(loc):
+        if not loc:
+            return
+        location_id = getattr(loc, 'id', None)
+        if not location_id:
+            return
+        if location_id in seen_location_ids:
+            return
+        recent_locations.append(loc)
+        seen_location_ids.add(location_id)
+
+    if current_location and getattr(current_location, 'id', None):
+        _append_location(current_location)
+
+    for item in received_items:
+        _append_location(getattr(item, 'location', None))
+
+    history_entries = (
+        receiving_order.history
+        .filter(location__isnull=False)
+        .select_related('location')
+        .only('location__id', 'location__name', 'location__barcode')
+        [:50]
+    )
+
+    for entry in history_entries:
+        if not entry.location_id:
+            continue
+        _append_location(entry.location)
 
     return {
         'receiving_order': receiving_order,
@@ -1601,7 +1667,10 @@ def _build_receiving_fast_context(request, receiving_order, receiving_id):
         'form_mode': form_mode,
         'form_quantity_value': form_quantity_value,
         'form_product_value': form_product_value,
+        'form_product_display_value': form_product_display_value,
         'form_location_value': form_location_value,
+        'form_location_display_value': form_location_display_value,
+        'recent_locations': recent_locations,
     }
 
 
@@ -2063,7 +2132,9 @@ def htmx_edit_product_codes(request, product_id, code_id=None):
                     'type': 'success'
                 },
                 'barcodes-list-updated': {
-                    'value': 'barcodes-list-updated'
+                    'value': 'barcodes-list-updated',
+                    'code': code.code,
+                    'product_id': product.id
                 }
             })
 
@@ -3200,14 +3271,22 @@ def htmx_locations_autocomplete(request):
     for location in locations:
         barcode = location.barcode or ''
         name = location.name or barcode or 'Lokalizacja'
+        location_type_display = ''
+        if hasattr(location, 'get_location_type_display'):
+            try:
+                location_type_display = location.get_location_type_display() or ''
+            except Exception:
+                location_type_display = ''
         barcode_display = barcode if barcode else 'Brak kodu'
+        supplemental_text = location_type_display or barcode_display
         options_html += (
             '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
             f'data-location-id="{location.id}" '
             f'data-location-barcode="{barcode}" '
-            f'data-location-name="{name}">' 
+            f'data-location-name="{name}" '
+            f'data-location-type="{location_type_display}">' 
             f'<span class="d-block fw-semibold">{name}</span>'
-            f'<small class="d-block text-muted">{barcode_display}</small>'
+            f'<small class="d-block text-muted">{supplemental_text}</small>'
             '</button>'
         )
 
@@ -3262,6 +3341,14 @@ def htmx_receiving_product_autocomplete(request, receiving_id):
     if not matched:
         return HttpResponse('')
 
+    def _format_quantity(value):
+        if value is None:
+            return ''
+        quant_str = format(value, 'f')
+        if '.' in quant_str:
+            quant_str = quant_str.rstrip('0').rstrip('.')
+        return quant_str or '0'
+
     options = []
     for product_id, data in matched.items():
         display_name = data['name']
@@ -3270,6 +3357,7 @@ def htmx_receiving_product_autocomplete(request, receiving_id):
         ordered = data['ordered']
         received_qty = data['received']
         remaining = data['remaining']
+        default_quantity = _format_quantity(remaining) if remaining > 0 else ''
         if remaining <= 0:
             details = f'Przyjęto {received_qty:.2f} (100%)'
         else:
@@ -3279,7 +3367,8 @@ def htmx_receiving_product_autocomplete(request, receiving_id):
             '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
             f'data-product-id="{product_id}" '
             f'data-product-code="{code_value}" '
-            f'data-product-name="{display_name}">' 
+            f'data-product-name="{display_name}" '
+            f'data-product-default-quantity="{default_quantity}">' 
             f'<span class="d-block fw-semibold">{display_name}</span>'
             f'<small class="d-block text-muted">{code_display}</small>'
             f'<small class="d-block text-muted">{details}</small>'

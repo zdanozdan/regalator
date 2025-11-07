@@ -2,9 +2,102 @@
 
 {% block title %}Szybkie przyjęcie - {{ receiving_order.order_number }}{% endblock %}
 
+{% block extra_css %}
+{{ block.super }}
+{% endblock %}
+
 {% block extra_js %}
 {{ block.super }}
 <script>
+    window.setReceivingLocation = function(code, label) {
+        const wrapper = document.getElementById('receiving-table-wrapper');
+        if (!wrapper) {
+            return;
+        }
+        const input = wrapper.querySelector('#locationInput');
+        if (!input) {
+            return;
+        }
+        const hiddenInput = wrapper.querySelector('#locationCodeHidden');
+
+        const displayValue = label || code || '';
+        input.value = displayValue;
+        if (hiddenInput) {
+            hiddenInput.value = code || '';
+        }
+        input.dataset.lastLocationCode = code || '';
+        input.focus();
+
+        try {
+            const changeEvent = new Event('change', { bubbles: true });
+            input.dispatchEvent(changeEvent);
+        } catch (error) {
+            const changeEvent = document.createEvent('Event');
+            changeEvent.initEvent('change', true, true);
+            input.dispatchEvent(changeEvent);
+        }
+
+        const suggestions = wrapper.querySelector('#location-suggestions');
+        if (suggestions) {
+            suggestions.classList.remove('show');
+            suggestions.style.display = 'none';
+        }
+    };
+
+    window.setReceivingProduct = function(code, label, quantity) {
+        const wrapper = document.getElementById('receiving-table-wrapper');
+        if (!wrapper) {
+            return;
+        }
+        const input = wrapper.querySelector('#productInput');
+        if (!input) {
+            return;
+        }
+        const hiddenInput = wrapper.querySelector('#productCodeHidden');
+
+        const displayValue = label || code || '';
+        input.value = displayValue;
+        if (hiddenInput) {
+            hiddenInput.value = code || '';
+        }
+        input.dataset.lastProductCode = code || '';
+        const quantityInput = wrapper.querySelector('#quantityInput');
+        if (quantityInput) {
+            const normalizedQuantity = typeof quantity === 'string' ? quantity : (typeof quantity === 'number' ? quantity.toString() : '');
+            if (normalizedQuantity) {
+                quantityInput.value = normalizedQuantity;
+                quantityInput.dataset.lastQuantity = normalizedQuantity;
+            }
+        }
+        input.focus();
+
+        try {
+            const changeEvent = new Event('change', { bubbles: true });
+            input.dispatchEvent(changeEvent);
+        } catch (error) {
+            const changeEvent = document.createEvent('Event');
+            changeEvent.initEvent('change', true, true);
+            input.dispatchEvent(changeEvent);
+        }
+
+        if (quantityInput && quantityInput.value) {
+            try {
+                const quantityChange = new Event('change', { bubbles: true });
+                quantityInput.dispatchEvent(quantityChange);
+            } catch (error) {
+                const quantityChange = document.createEvent('Event');
+                quantityChange.initEvent('change', true, true);
+                quantityInput.dispatchEvent(quantityChange);
+            }
+        }
+
+        const suggestions = wrapper.querySelector('#product-suggestions');
+        if (suggestions) {
+            suggestions.classList.remove('show');
+            suggestions.style.display = 'none';
+        }
+    };
+
     (function() {
         let wrapper;
 
@@ -16,7 +109,16 @@
                 select: function(item, input) {
                     const barcode = item.dataset.locationBarcode || '';
                     const name = item.dataset.locationName || '';
-                    input.value = barcode || name || item.textContent.trim();
+                    const typeDisplay = item.dataset.locationType || '';
+                    const labelParts = [];
+                    if (name) {
+                        labelParts.push(name);
+                    }
+                    if (typeDisplay) {
+                        labelParts.push(typeDisplay);
+                    }
+                    const label = labelParts.join(' / ') || barcode;
+                    window.setReceivingLocation(barcode, label);
                 }
             },
             {
@@ -26,7 +128,9 @@
                 select: function(item, input) {
                     const code = item.dataset.productCode || '';
                     const name = item.dataset.productName || '';
-                    input.value = code || name || item.textContent.trim();
+                    const defaultQuantity = item.dataset.productDefaultQuantity || '';
+                    const label = name || code || item.textContent.trim();
+                    window.setReceivingProduct(code, label, defaultQuantity);
                 }
             }
         ];
@@ -41,6 +145,23 @@
 
         function cacheWrapper() {
             wrapper = document.getElementById('receiving-table-wrapper');
+        }
+
+        function bindQuantityInput() {
+            if (!wrapper) {
+                return;
+            }
+            const quantityInput = wrapper.querySelector('#quantityInput');
+            if (!quantityInput || quantityInput.dataset.quantityBound) {
+                return;
+            }
+            quantityInput.dataset.quantityBound = '1';
+            quantityInput.addEventListener('input', function(event) {
+                quantityInput.dataset.lastQuantity = event.target.value;
+            });
+            quantityInput.addEventListener('change', function(event) {
+                quantityInput.dataset.lastQuantity = event.target.value;
+            });
         }
 
         function focusReceivingInputs() {
@@ -99,11 +220,57 @@
             config.input = wrapper ? wrapper.querySelector('#' + config.inputId) : null;
             config.container = wrapper ? wrapper.querySelector('#' + config.suggestionsId) : null;
 
+        if (config.input && config.input.id === 'locationInput') {
+            const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+            if (hiddenField) {
+                config.input.dataset.lastLocationCode = hiddenField.value || '';
+            }
+        } else if (config.input && config.input.id === 'productInput') {
+            const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+            if (hiddenField) {
+                config.input.dataset.lastProductCode = hiddenField.value || '';
+            }
+        }
+
             if (config.input && !config.input.dataset.autocompleteBound) {
                 config.input.dataset.autocompleteBound = '1';
                 config.input.addEventListener('input', function(event) {
                     if (!event.target.value.trim()) {
                         hideSuggestions(config);
+                    }
+                    if (config.input.id === 'locationInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+                        if (hiddenField) {
+                            hiddenField.value = event.target.value;
+                            config.input.dataset.lastLocationCode = event.target.value;
+                        }
+                } else if (config.input.id === 'productInput') {
+                    const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+                    if (hiddenField) {
+                        hiddenField.value = '';
+                        config.input.dataset.lastProductCode = '';
+                    }
+                    }
+                });
+                config.input.addEventListener('change', function() {
+                    if (config.input.id === 'locationInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+                        if (hiddenField) {
+                            const lastCode = config.input.dataset.lastLocationCode;
+                            if (typeof lastCode === 'string' && lastCode.length > 0) {
+                                hiddenField.value = lastCode;
+                            }
+                        }
+                } else if (config.input.id === 'productInput') {
+                    const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+                    if (hiddenField) {
+                        const lastCode = config.input.dataset.lastProductCode;
+                        if (typeof lastCode === 'string' && lastCode.length > 0) {
+                            hiddenField.value = lastCode;
+                        } else {
+                            hiddenField.value = '';
+                        }
+                    }
                     }
                 });
             }
@@ -145,6 +312,7 @@
             autocompleteConfigs.forEach(function(config) {
                 bindConfig(config);
             });
+            bindQuantityInput();
             bindGlobalListeners();
         }
 
@@ -168,6 +336,20 @@
                         showSuggestions(config, event.detail.xhr.responseText || '');
                     }
                 });
+            });
+
+            htmx.on('barcodes-list-updated', function (event) {
+                console.log(event);
+                const savedCode = (event.detail && event.detail.code) ? event.detail.code : '';
+                const productId = (event.detail && event.detail.product_id) ? event.detail.product_id : '';
+
+                if (savedCode && productId) {
+                    const targetElements = document.querySelectorAll(`[data-product-id="${productId}"]`);
+                    targetElements.forEach(function(element) {
+                        element.innerHTML = `<i class="fas fa-barcode me-1"></i>${savedCode}`;
+                        element.classList.add('text-success', 'fw-bold');                       
+                    });
+                }
             });
         });
 
