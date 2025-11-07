@@ -14,11 +14,11 @@
                     <i class="fas fa-arrow-left me-2"></i>Powrót
                 </a>
                 {% if receiving_order.status == 'pending' %}
-                    <a href="{% url 'wms:scan_receiving_location' receiving_order.id %}" class="btn btn-success">
+                    <a href="{% url 'wms:receiving_order_fast' receiving_order.id %}" class="btn btn-success">
                         <i class="fas fa-play me-2"></i>Rozpocznij przyjęcie
                     </a>
                 {% elif receiving_order.status == 'in_progress' %}
-                    <a href="{% url 'wms:scan_receiving_location' receiving_order.id %}" class="btn btn-info">
+                    <a href="{% url 'wms:receiving_order_fast' receiving_order.id %}" class="btn btn-info">
                         <i class="fas fa-arrow-right me-2"></i>Kontynuuj przyjęcie
                     </a>
                 {% endif %}
