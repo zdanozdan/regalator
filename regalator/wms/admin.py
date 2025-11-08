@@ -1,4 +1,8 @@
 from django.contrib import admin
+from django.contrib.auth.models import User
+from django.contrib.auth.admin import UserAdmin
+from django.db import connections
+from django.utils.text import slugify
 from .models import (
     Product, Location, Stock, CustomerOrder, OrderItem,
     PickingOrder, PickingItem, PickingHistory,
@@ -21,9 +25,85 @@ class ProductImageInline(admin.TabularInline):
     ordering = ['is_primary', 'order', 'created_at']
 
 
+
+def _normalize_name(value):
+    value = (value or '').strip()
+    if not value:
+        return ''
+    return value.capitalize()
+
+
+def _build_username(first_name, last_name, uz_id):
+    first_ascii = slugify(first_name or '', allow_unicode=False).replace('-', '')
+    last_ascii = slugify(last_name or '', allow_unicode=False).replace('-', '')
+
+    if first_ascii:
+        username = first_ascii.capitalize()
+        if last_ascii:
+            username += last_ascii[0].upper()
+    elif last_ascii:
+        username = last_ascii.capitalize()
+    else:
+        username = f"gt{uz_id}"
+
+    return username
+
+
+def sync_users_from_gt(modeladmin, request, queryset):
+    """Import users from Subiekt GT database."""
+    if 'subiekt' not in connections.databases:
+        modeladmin.message_user(request, "Brak konfiguracji bazy 'subiekt' w ustawieniach.", level='ERROR')
+        return
+
+    try:
+        with connections['subiekt'].cursor() as cursor:
+            cursor.execute("""
+                SELECT uz_Id, uz_Nazwisko, uz_Imie
+                FROM [dbo].[pd_Uzytkownik]
+                WHERE uz_Status > 0
+            """)
+            rows = cursor.fetchall()
+    except Exception as exc:
+        modeladmin.message_user(request, f"Błąd połączenia z Subiektem: {exc}", level='ERROR')
+        return
+
+    created = 0
+    for uz_id, last_name, first_name in rows:
+        if UserProfile.objects.filter(gt_user_id=uz_id).exists():
+            continue
+
+        username = _build_username(first_name, last_name, uz_id)
+        base_username = username
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}{counter}"
+            counter += 1
+
+        user = User(
+            username=username,
+            first_name=_normalize_name(first_name),
+            last_name=_normalize_name(last_name)
+        )
+        user.set_password('')
+        user.save()
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.gt_user_id = uz_id
+        profile.password_changed = False
+        profile.save(update_fields=['gt_user_id', 'password_changed'])
+        created += 1
+
+    if created:
+        modeladmin.message_user(request, f'Utworzono {created} nowych użytkowników na podstawie Subiekta GT.', level='SUCCESS')
+    else:
+        modeladmin.message_user(request, 'Nie znaleziono nowych użytkowników do utworzenia.', level='INFO')
+
+
+sync_users_from_gt.short_description = "Pobierz użytkowników z Subiekta GT"
+
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'display_name', 'department', 'position', 'phone']
+    list_display = ['user', 'display_name', 'gt_user_id', 'department', 'position', 'phone']
     list_filter = ['department', 'position']
     search_fields = ['user__username', 'user__first_name', 'user__last_name', 'department', 'position']
     readonly_fields = ['created_at', 'updated_at']
@@ -31,6 +111,14 @@ class UserProfileAdmin(admin.ModelAdmin):
     def display_name(self, obj):
         return obj.display_name
     display_name.short_description = 'Nazwa wyświetlana'
+
+
+admin.site.unregister(User)
+
+
+@admin.register(User)
+class CustomUserAdmin(UserAdmin):
+    actions = UserAdmin.actions + (sync_users_from_gt,)
 
 
 @admin.register(ProductCode)

@@ -36,6 +36,7 @@ class UserProfile(models.Model):
     department = models.CharField(max_length=100, blank=True, verbose_name="Dział")
     position = models.CharField(max_length=100, blank=True, verbose_name="Stanowisko")
     password_changed = models.BooleanField(default=False, verbose_name="Hasło zmienione")
+    gt_user_id = models.PositiveIntegerField(blank=True, null=True, unique=True, verbose_name="ID użytkownika GT")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
     
