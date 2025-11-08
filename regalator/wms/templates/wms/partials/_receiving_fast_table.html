@@ -1,4 +1,9 @@
-<div id="receiving-table-wrapper" data-focus-target="{{ focus_target }}">
+<div id="receiving-table-wrapper"
+     data-focus-target="{{ focus_target }}"
+     hx-get="{% url 'wms:htmx_receiving_table' receiving_order.id %}"
+     hx-trigger="location-list-updated from:body"
+     hx-target="#receiving-table-wrapper"
+     hx-swap="outerHTML">
     <div class="mb-4">
         <div class="card">
             <div class="card-header">
