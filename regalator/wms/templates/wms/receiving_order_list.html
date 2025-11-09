@@ -21,13 +21,13 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <form method="get" class="row g-3">
-                    <div class="col-md-6">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-5">
                         <label for="search" class="form-label">Wyszukaj</label>
                         <input type="text" class="form-control" id="search" name="search" 
                                value="{{ search_query }}" placeholder="Numer Regalacji, ZD lub dostawca">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label for="status" class="form-label">Status</label>
                         <select class="form-select" id="status" name="status">
                             <option value="">Wszystkie statusy</option>
@@ -38,13 +38,22 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">&nbsp;</label>
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-search me-2"></i>Szukaj
-                            </button>
-                        </div>
+                    <div class="col-md-3">
+                        <label for="assigned" class="form-label">Przypisane do</label>
+                        <select class="form-select" id="assigned" name="assigned">
+                            <option value="">Wszyscy operatorzy</option>
+                            <option value="unassigned" {% if assigned_filter == 'unassigned' %}selected{% endif %}>Nieprzypisane</option>
+                            {% for assigned_user in assigned_users %}
+                                <option value="{{ assigned_user.id }}" {% if assigned_filter == assigned_user.id|stringformat:"s" %}selected{% endif %}>
+                                    {{ assigned_user.get_full_name|default:assigned_user.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-1 d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-2"></i>Szukaj
+                        </button>
                     </div>
                 </form>
             </div>

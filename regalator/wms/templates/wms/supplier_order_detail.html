@@ -13,14 +13,15 @@
                 <a href="{% url 'wms:supplier_order_list' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-2"></i>Powrót
                 </a>
-                {% if supplier_order.status in 'pending,confirmed,in_transit' %}
-                    <form method="post" action="{% url 'wms:create_receiving_order' supplier_order.id %}" class="d-inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-clipboard-check me-2"></i>Utwórz Regalację
-                        </button>
-                    </form>
-                {% endif %}
+                <form method="post" action="{% url 'wms:create_receiving_order' supplier_order.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="btn btn-success {% if supplier_order.has_any_receiving %}disabled{% endif %}"
+                            {% if supplier_order.has_any_receiving %}disabled title="Regalacja została już utworzona"{% endif %}>
+                        <i class="fas fa-clipboard-check me-2"></i>
+                        {% if supplier_order.has_any_receiving %}Regalacja już utworzona{% else %}Utwórz Regalację{% endif %}
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -66,21 +67,39 @@
                     
                     <dt class="col-sm-4">Status:</dt>
                     <dd class="col-sm-8">
-                        <span class="badge status-{{ supplier_order.status }}">
-                            {% if supplier_order.status == 'pending' %}
-                                <i class="fas fa-clock me-1"></i>Oczekujące
-                            {% elif supplier_order.status == 'confirmed' %}
-                                <i class="fas fa-check me-1"></i>Potwierdzone
-                            {% elif supplier_order.status == 'in_transit' %}
-                                <i class="fas fa-shipping-fast me-1"></i>W transporcie
-                            {% elif supplier_order.status == 'received' %}
+                        {% if supplier_order.has_active_receiving %}
+                            <span class="badge bg-primary text-white">
+                                <i class="fas fa-people-carry me-1"></i>W regalacji
+                            </span>
+                        {% elif supplier_order.status == 'received' %}
+                            <span class="badge bg-success text-white">
                                 <i class="fas fa-box-open me-1"></i>Przyjęte
-                            {% elif supplier_order.status == 'partially_received' %}
+                            </span>
+                        {% elif supplier_order.status == 'partially_received' %}
+                            <span class="badge bg-warning text-dark">
                                 <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
-                            {% elif supplier_order.status == 'cancelled' %}
+                            </span>
+                        {% elif supplier_order.status == 'pending' %}
+                            <span class="badge bg-secondary text-white">
+                                <i class="fas fa-clock me-1"></i>Oczekujące
+                            </span>
+                        {% elif supplier_order.status == 'confirmed' %}
+                            <span class="badge bg-primary text-white">
+                                <i class="fas fa-check me-1"></i>Potwierdzone
+                            </span>
+                        {% elif supplier_order.status == 'in_transit' %}
+                            <span class="badge bg-info text-white">
+                                <i class="fas fa-shipping-fast me-1"></i>W transporcie
+                            </span>
+                        {% elif supplier_order.status == 'cancelled' %}
+                            <span class="badge bg-danger text-white">
                                 <i class="fas fa-times me-1"></i>Anulowane
-                            {% endif %}
-                        </span>
+                            </span>
+                        {% else %}
+                            <span class="badge bg-light text-dark">
+                                <i class="fas fa-question-circle me-1"></i>{{ supplier_order.get_status_display }}
+                            </span>
+                        {% endif %}
                     </dd>
                 </dl>
                 
@@ -136,7 +155,7 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>Pozycje zamówienia xxx
+                    <i class="fas fa-list me-2"></i>Pozycje zamówienia {{ supplier_order.order_number }}
                 </h5>
             </div>
             <div class="card-body">

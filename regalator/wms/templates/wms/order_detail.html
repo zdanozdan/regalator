@@ -5,14 +5,36 @@
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
             <h1>
                 <i class="fas fa-shopping-cart me-2"></i>Zamówienie {{ order.order_number }}
             </h1>
-            <div>
+            <div class="d-flex align-items-center gap-2">
                 <a href="{% url 'wms:order_list' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-1"></i>Powrót
                 </a>
+                {% if latest_picking %}
+                    {% if latest_picking.status == 'completed' %}
+                        <button class="btn btn-success" disabled>
+                            <i class="fas fa-check-double me-1"></i>Terminacja zakończona
+                        </button>
+                    {% else %}
+                        <a href="{% url 'wms:start_or_continue_picking' latest_picking.id %}" class="btn btn-success">
+                            {% if latest_picking.status == 'in_progress' %}
+                                <i class="fas fa-play me-1"></i>Kontynuuj terminację
+                            {% else %}
+                                <i class="fas fa-play me-1"></i>Rozpocznij terminację
+                            {% endif %}
+                        </a>
+                    {% endif %}
+                {% else %}
+                    <form method="post" action="{% url 'wms:create_picking_order' order.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-clipboard-list me-1"></i>Rozpocznij terminację
+                        </button>
+                    </form>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -20,7 +42,7 @@
 
 <!-- Informacje o zamówieniu -->
 <div class="row mb-4">
-    <div class="col-md-8">
+    <div class="col-12 col-lg-6">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
@@ -28,46 +50,37 @@
                 </h5>
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <dl class="row">
-                            <dt class="col-sm-4">Numer ZK:</dt>
-                            <dd class="col-sm-8"><strong>{{ order.order_number }}</strong></dd>
-                            
-                            <dt class="col-sm-4">Klient:</dt>
-                            <dd class="col-sm-8">{{ order.customer_name }}</dd>
-                            
-                            <dt class="col-sm-4">Adres:</dt>
-                            <dd class="col-sm-8">{{ order.customer_address }}</dd>
-                        </dl>
-                    </div>
-                    <div class="col-md-6">
-                        <dl class="row">
-                            <dt class="col-sm-4">Data zamówienia:</dt>
-                            <dd class="col-sm-8">{{ order.order_date|date:"d.m.Y H:i" }}</dd>
-                            
-                            <dt class="col-sm-4">Status:</dt>
-                            <dd class="col-sm-8">
-                                <span class="badge status-{{ order.status }}">
-                                    {% if order.status == 'pending' %}
-                                        <i class="fas fa-clock me-1"></i>Oczekujące
-                                    {% elif order.status == 'in_progress' %}
-                                        <i class="fas fa-cogs me-1"></i>W kompletacji
-                                    {% elif order.status == 'completed' %}
-                                        <i class="fas fa-check me-1"></i>Zrealizowane
-                                    {% elif order.status == 'partially_completed' %}
-                                        <i class="fas fa-exclamation-triangle me-1"></i>Częściowo zrealizowane
-                                    {% elif order.status == 'cancelled' %}
-                                        <i class="fas fa-times me-1"></i>Anulowane
-                                    {% endif %}
-                                </span>
-                            </dd>
-                            
-                            <dt class="col-sm-4">Wartość:</dt>
-                            <dd class="col-sm-8"><strong>{{ order.total_value|floatformat:2 }} zł</strong></dd>
-                        </dl>
-                    </div>
-                </div>
+                <dl class="row">
+                    <dt class="col-sm-4">Numer ZK:</dt>
+                    <dd class="col-sm-8"><strong>{{ order.order_number }}</strong></dd>
+                    
+                    <dt class="col-sm-4">Klient:</dt>
+                    <dd class="col-sm-8">{{ order.customer_name }}</dd>
+                    
+                    <dt class="col-sm-4">Adres:</dt>
+                    <dd class="col-sm-8">{{ order.customer_address }}</dd>
+                    
+                    <dt class="col-sm-4">Data zamówienia:</dt>
+                    <dd class="col-sm-8">{{ order.order_date|date:"d.m.Y H:i" }}</dd>
+                    
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge status-{{ order.status }}">
+                            {% if order.status == 'pending' %}
+                                <i class="fas fa-clock me-1"></i>Oczekujące
+                            {% elif order.status == 'in_progress' %}
+                                <i class="fas fa-cogs me-1"></i>W kompletacji
+                            {% elif order.status == 'completed' %}
+                                <i class="fas fa-check me-1"></i>Zrealizowane
+                            {% elif order.status == 'partially_completed' %}
+                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo zrealizowane
+                            {% elif order.status == 'cancelled' %}
+                                <i class="fas fa-times me-1"></i>Anulowane
+                            {% endif %}
+                        </span>
+                    </dd>
+                    
+                </dl>
                 
                 {% if order.notes %}
                     <div class="mt-3">
@@ -79,110 +92,73 @@
         </div>
     </div>
     
-    <div class="col-md-4">
+    <div class="col-12 col-lg-6 mt-4 mt-lg-0">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="fas fa-tools me-2"></i>Akcje
+                    <i class="fas fa-chart-line me-2"></i>Statystyki kompletacji
                 </h5>
             </div>
             <div class="card-body">
-                {% if order.status == 'pending' or order.status == 'in_progress' and not order.pickingorder_set.exists %}
-                    <form method="post" action="{% url 'wms:create_picking_order' order.id %}" class="mb-3">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-success w-100">
-                            <i class="fas fa-clipboard-list me-2"></i>Utwórz Terminację
-                        </button>
-                    </form>
+                {% if has_quantities %}
+                    <div class="d-flex justify-content-between text-muted mb-2">
+                        <span>Postęp realizacji</span>
+                        <strong>
+                            {{ completed_quantity|floatformat:0 }}/{{ total_quantity|floatformat:0 }}{% if primary_unit %} {{ primary_unit }}{% endif %}
+                        </strong>
+                    </div>
+                    <div class="progress mb-4" style="height: 0.75rem;">
+                        <div class="progress-bar bg-success"
+                             role="progressbar"
+                             style="width: {{ picking_progress|floatformat:0 }}%;"
+                             aria-valuenow="{{ picking_progress|floatformat:0 }}"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                            {{ picking_progress|floatformat:0 }}%
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="text-muted text-center mb-4">
+                        Brak pozycji do kompletacji
+                    </div>
                 {% endif %}
-                
-                <div class="d-grid gap-2">
-                    <a href="{% url 'wms:order_list' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-list me-2"></i>Lista zamówień
-                    </a>
+
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="fw-bold">{{ total_items }}</div>
+                        <div class="text-muted small">Pozycje</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold text-success">{{ completed_items }}</div>
+                        <div class="text-muted small">Zrealizowane</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold text-warning">{{ partial_items }}</div>
+                        <div class="text-muted small">Częściowe</div>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="d-flex justify-content-between text-muted small">
+                    <span>Oczekujące pozycje</span>
+                    <span>{{ pending_items }}</span>
+                </div>
+                <div class="d-flex justify-content-between text-muted small">
+                    <span>Aktywne terminacje</span>
+                    <span>{{ picking_active|yesno:"Tak,Nie" }}</span>
+                </div>
+                <div class="d-flex justify-content-between text-muted small">
+                    <span>Zakończone terminacje</span>
+                    <span>{{ picking_completed_count }}</span>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Pozycje zamówienia -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>Pozycje zamówienia
-                    <span class="badge bg-secondary ms-2">{{ order.items.count }}</span>
-                </h5>
-            </div>
-            <div class="card-body">
-                {% if order.items.all %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Produkt</th>
-                                    <th>Kod</th>
-                                    <th>Ilość zamówiona</th>
-                                    <th>Ilość zrealizowana</th>
-                                    <th>Wartość</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in order.items.all %}
-                                <tr>
-                                    <td>
-                                        <div>{{ item.product.name }}</div>
-                                        <small class="text-muted">{{ item.product.description|truncatechars:50 }}</small>
-                                    </td>
-                                    <td>
-                                        <code>{{ item.product.code }}</code>
-                                    </td>
-                                    <td>{{ item.quantity }} {{ item.product.unit }}</td>
-                                    <td>
-                                        {% if item.completed_quantity > 0 %}
-                                            <span class="text-success">{{ item.completed_quantity }} {{ item.product.unit }}</span>
-                                        {% else %}
-                                            <span class="text-muted">0 {{ item.product.unit }}</span>
-                                        {% endif %}
-                                    </td>
-
-                                    <td>{{ item.total_price|floatformat:2 }} zł</td>
-                                    <td>
-                                        {% if item.completed_quantity == item.quantity %}
-                                            <span class="badge bg-success">
-                                                <i class="fas fa-check me-1"></i>Zrealizowane
-                                            </span>
-                                        {% elif item.completed_quantity > 0 %}
-                                            <span class="badge bg-warning">
-                                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">
-                                                <i class="fas fa-clock me-1"></i>Oczekujące
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center py-4">
-                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                        <p class="text-muted">Brak pozycji w zamówieniu</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Zlecenia kompletacji -->
-<div class="row">
+<div class="row mb-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -233,9 +209,9 @@
                                     </td>
                                     <td>
                                         {% if picking.assigned_to %}
-                                            {{ picking.assigned_to.username }}
+                                            {{ picking.assigned_to.get_full_name|default:picking.assigned_to.username }}
                                         {% else %}
-                                            <span class="text-muted">Nie przypisane</span>
+                                            <span class="text-muted">Nieprzypisane</span>
                                         {% endif %}
                                     </td>
                                     <td>{{ picking.created_at|date:"d.m.Y H:i" }}</td>
@@ -265,7 +241,7 @@
                                                     <i class="fas fa-play"></i>
                                                 </a>
                                             {% elif picking.status == 'in_progress' %}
-                                                <a href="{% url 'wms:scan_location' picking.id %}" 
+                                                <a href="{% url 'wms:picking_fast' picking.id %}"
                                                    class="btn btn-sm btn-outline-info" title="Kontynuuj">
                                                     <i class="fas fa-barcode"></i>
                                                 </a>
@@ -281,6 +257,95 @@
                     <div class="text-center py-4">
                         <i class="fas fa-clipboard fa-3x text-muted mb-3"></i>
                         <p class="text-muted">Brak zleceń kompletacji dla tego zamówienia</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pozycje zamówienia -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Pozycje zamówienia
+                    <span class="badge bg-secondary ms-2">{{ order.items.count }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if order.items.all %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Produkt</th>
+                                    <th>Ilość zamówiona</th>
+                                    <th>Ilość zrealizowana</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in order.items.all %}
+                                <tr>
+                                    <td>
+                                        <button type="button"
+                                                class="btn btn-link p-0 text-start text-reset fw-semibold"
+                                                hx-get="{% url 'wms:htmx_edit_product_codes' item.product.id %}"
+                                                hx-target="#modalBody"
+                                                hx-swap="innerHTML"
+                                                hx-trigger="click"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#mainModal"
+                                                onmouseover="this.style.textDecoration='underline'"
+                                                onmouseout="this.style.textDecoration='none'">
+                                            {{ item.product.name }}
+                                        </button>
+                                        <div class="text-muted small">ID produktu: {{ item.product.subiekt_id|default:'brak' }}</div>
+                                        <div class="text-muted small">
+                                            <i class="fas fa-barcode me-1"></i>
+                                            {% with barcode=item.product.primary_barcode %}
+                                                {% if barcode %}
+                                                    {{ barcode.code }}
+                                                {% else %}
+                                                    <span class="fst-italic">Brak kodu</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                    <td>{{ item.quantity }} {{ item.product.unit }}</td>
+                                    <td>
+                                        {% if item.completed_quantity > 0 %}
+                                            <span class="text-success">{{ item.completed_quantity }} {{ item.product.unit }}</span>
+                                        {% else %}
+                                            <span class="text-muted">0 {{ item.product.unit }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.completed_quantity == item.quantity %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Zrealizowane
+                                            </span>
+                                        {% elif item.completed_quantity > 0 %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Częściowo
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-clock me-1"></i>Oczekujące
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Brak pozycji w zamówieniu</p>
                     </div>
                 {% endif %}
             </div>

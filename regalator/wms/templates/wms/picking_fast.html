@@ -1,0 +1,439 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Szybka kompletacja - {{ picking_order.order_number }}{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+    window.setPickingLocation = function(code, label) {
+        const wrapper = document.getElementById('picking-table-wrapper');
+        if (!wrapper) {
+            return;
+        }
+        const input = wrapper.querySelector('#locationInput');
+        if (!input) {
+            return;
+        }
+        const hiddenInput = wrapper.querySelector('#locationCodeHidden');
+
+        const displayValue = label || code || '';
+        input.value = displayValue;
+        if (hiddenInput) {
+            hiddenInput.value = code || '';
+        }
+        input.dataset.lastLocationCode = code || '';
+        input.focus();
+
+        try {
+            const changeEvent = new Event('change', { bubbles: true });
+            input.dispatchEvent(changeEvent);
+        } catch (error) {
+            const changeEvent = document.createEvent('Event');
+            changeEvent.initEvent('change', true, true);
+            input.dispatchEvent(changeEvent);
+        }
+
+        const suggestions = wrapper.querySelector('#location-suggestions');
+        if (suggestions) {
+            suggestions.classList.remove('show');
+            suggestions.style.display = 'none';
+        }
+    };
+
+    window.setPickingProduct = function(code, label, quantity, pickingItemId) {
+        const wrapper = document.getElementById('picking-table-wrapper');
+        if (!wrapper) {
+            return;
+        }
+        const input = wrapper.querySelector('#productInput');
+        if (!input) {
+            return;
+        }
+        const hiddenInput = wrapper.querySelector('#productCodeHidden');
+        const itemHiddenInput = wrapper.querySelector('#pickingItemHidden');
+
+        const displayValue = label || code || '';
+        input.value = displayValue;
+        if (hiddenInput) {
+            hiddenInput.value = code || '';
+        }
+        if (itemHiddenInput) {
+            itemHiddenInput.value = pickingItemId || '';
+        }
+        input.dataset.lastProductCode = code || '';
+
+        const quantityInput = wrapper.querySelector('#quantityInput');
+        if (quantityInput) {
+            const normalizedQuantity = typeof quantity === 'string' ? quantity : (typeof quantity === 'number' ? quantity.toString() : '');
+            if (normalizedQuantity) {
+                quantityInput.value = normalizedQuantity;
+                quantityInput.dataset.lastQuantity = normalizedQuantity;
+            }
+        }
+        input.focus();
+
+        try {
+            const changeEvent = new Event('change', { bubbles: true });
+            input.dispatchEvent(changeEvent);
+        } catch (error) {
+            const changeEvent = document.createEvent('Event');
+            changeEvent.initEvent('change', true, true);
+            input.dispatchEvent(changeEvent);
+        }
+
+        if (quantityInput && quantityInput.value) {
+            try {
+                const quantityChange = new Event('change', { bubbles: true });
+                quantityInput.dispatchEvent(quantityChange);
+            } catch (error) {
+                const quantityChange = document.createEvent('Event');
+                quantityChange.initEvent('change', true, true);
+                quantityInput.dispatchEvent(quantityChange);
+            }
+        }
+
+        const suggestions = wrapper.querySelector('#product-suggestions');
+        if (suggestions) {
+            suggestions.classList.remove('show');
+            suggestions.style.display = 'none';
+        }
+    };
+
+    (function() {
+        let wrapper;
+
+        const autocompleteConfigs = [
+            {
+                inputId: 'locationInput',
+                suggestionsId: 'location-suggestions',
+                requestMatch: 'locations-autocomplete',
+                select: function(item) {
+                    const barcode = item.dataset.locationBarcode || '';
+                    const name = item.dataset.locationName || '';
+                    const typeDisplay = item.dataset.locationType || '';
+                    const labelParts = [];
+                    if (name) {
+                        labelParts.push(name);
+                    }
+                    if (typeDisplay) {
+                        labelParts.push(typeDisplay);
+                    }
+                    const label = labelParts.join(' / ') || barcode;
+                    window.setPickingLocation(barcode, label);
+                }
+            },
+            {
+                inputId: 'productInput',
+                suggestionsId: 'product-suggestions',
+                requestMatch: 'product-autocomplete',
+                select: function(item) {
+                    const code = item.dataset.productCode || '';
+                    const name = item.dataset.productName || '';
+                    const defaultQuantity = item.dataset.productDefaultQuantity || '';
+                    const pickingItemId = item.dataset.pickingItemId || '';
+                    const label = name || code || item.textContent.trim();
+                    window.setPickingProduct(code, label, defaultQuantity, pickingItemId);
+                }
+            }
+        ];
+
+        function updateProgressBars() {
+            document.querySelectorAll('[data-progress-value]').forEach(function(bar) {
+                const value = parseFloat(bar.dataset.progressValue || '0') || 0;
+                bar.style.width = value + '%';
+                bar.setAttribute('aria-valuenow', value);
+            });
+        }
+
+        function cacheWrapper() {
+            wrapper = document.getElementById('picking-table-wrapper');
+        }
+
+        function bindQuantityInput() {
+            if (!wrapper) {
+                return;
+            }
+            const quantityInput = wrapper.querySelector('#quantityInput');
+            if (!quantityInput || quantityInput.dataset.quantityBound) {
+                return;
+            }
+            quantityInput.dataset.quantityBound = '1';
+            quantityInput.addEventListener('input', function(event) {
+                quantityInput.dataset.lastQuantity = event.target.value;
+            });
+            quantityInput.addEventListener('change', function(event) {
+                quantityInput.dataset.lastQuantity = event.target.value;
+            });
+        }
+
+        function focusPickingInputs() {
+            if (!wrapper) {
+                return;
+            }
+            const targetKey = wrapper.dataset.focusTarget;
+            if (!targetKey) {
+                return;
+            }
+            const input = wrapper.querySelector('[data-focus-key="' + targetKey + '"]');
+            if (input) {
+                input.focus();
+                if (typeof input.select === 'function') {
+                    input.select();
+                }
+            }
+        }
+
+        function hideSuggestions(config) {
+            if (!config.container) {
+                return;
+            }
+            config.container.classList.remove('show');
+            config.container.style.display = 'none';
+        }
+
+        function showSuggestions(config, html) {
+            if (!config.container) {
+                return;
+            }
+            config.container.innerHTML = html;
+            const hasItems = html && html.trim().length > 0;
+            if (hasItems) {
+                config.container.classList.add('show');
+                config.container.style.display = 'block';
+            } else {
+                hideSuggestions(config);
+            }
+        }
+
+        function selectSuggestion(config, item) {
+            if (!config.input) {
+                return;
+            }
+            if (typeof config.select === 'function') {
+                config.select(item, config.input);
+            } else {
+                config.input.value = item.textContent.trim();
+            }
+            config.input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function bindConfig(config) {
+            config.wrapper = wrapper;
+            config.input = wrapper ? wrapper.querySelector('#' + config.inputId) : null;
+            config.container = wrapper ? wrapper.querySelector('#' + config.suggestionsId) : null;
+
+            if (config.input && config.input.id === 'locationInput') {
+                const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+                if (hiddenField) {
+                    config.input.dataset.lastLocationCode = hiddenField.value || '';
+                }
+            } else if (config.input && config.input.id === 'productInput') {
+                const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+                if (hiddenField) {
+                    config.input.dataset.lastProductCode = hiddenField.value || '';
+                }
+            }
+
+            if (config.input && !config.input.dataset.autocompleteBound) {
+                config.input.dataset.autocompleteBound = '1';
+                config.input.addEventListener('input', function(event) {
+                    if (!event.target.value.trim()) {
+                        hideSuggestions(config);
+                    }
+                    if (config.input.id === 'locationInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+                        if (hiddenField) {
+                            hiddenField.value = event.target.value;
+                            config.input.dataset.lastLocationCode = event.target.value;
+                        }
+                    } else if (config.input.id === 'productInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+                        if (hiddenField) {
+                            hiddenField.value = '';
+                            config.input.dataset.lastProductCode = '';
+                        }
+                        const itemHidden = wrapper ? wrapper.querySelector('#pickingItemHidden') : null;
+                        if (itemHidden) {
+                            itemHidden.value = '';
+                        }
+                    }
+                });
+                config.input.addEventListener('change', function() {
+                    if (config.input.id === 'locationInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#locationCodeHidden') : null;
+                        if (hiddenField) {
+                            const lastCode = config.input.dataset.lastLocationCode;
+                            if (typeof lastCode === 'string' && lastCode.length > 0) {
+                                hiddenField.value = lastCode;
+                            }
+                        }
+                    } else if (config.input.id === 'productInput') {
+                        const hiddenField = wrapper ? wrapper.querySelector('#productCodeHidden') : null;
+                        if (hiddenField) {
+                            const lastCode = config.input.dataset.lastProductCode;
+                            hiddenField.value = typeof lastCode === 'string' && lastCode.length > 0 ? lastCode : '';
+                        }
+                    }
+                });
+            }
+
+            if (config.container && !config.container.dataset.autocompleteBound) {
+                config.container.dataset.autocompleteBound = '1';
+                config.container.addEventListener('click', function(event) {
+                    const item = event.target.closest('.autocomplete-item');
+                    if (!item || !config.container.contains(item)) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    selectSuggestion(config, item);
+                    hideSuggestions(config);
+                });
+            }
+        }
+
+        function bindGlobalListeners() {
+            if (!document.body.dataset.pickingFastBound) {
+                document.body.dataset.pickingFastBound = '1';
+                document.body.addEventListener('click', function(event) {
+                    autocompleteConfigs.forEach(function(config) {
+                        if (!config.input || !config.container) {
+                            return;
+                        }
+                        if (event.target === config.input || config.container.contains(event.target)) {
+                            return;
+                        }
+                        hideSuggestions(config);
+                    });
+                });
+            }
+        }
+
+        function initAutocompletes() {
+            cacheWrapper();
+            autocompleteConfigs.forEach(function(config) {
+                bindConfig(config);
+            });
+            bindQuantityInput();
+            bindGlobalListeners();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.addEventListener('htmx:afterSwap', function(event) {
+                if (event.target && event.target.id === 'picking-table-wrapper') {
+                    initAutocompletes();
+                    focusPickingInputs();
+                    updateProgressBars();
+                }
+            });
+
+            document.body.addEventListener('htmx:afterRequest', function(event) {
+                if (!event.detail || !event.detail.xhr) {
+                    return;
+                }
+                const url = event.detail.xhr.responseURL || '';
+                autocompleteConfigs.forEach(function(config) {
+                    if (url.includes(config.requestMatch)) {
+                        initAutocompletes();
+                        showSuggestions(config, event.detail.xhr.responseText || '');
+                    }
+                });
+            });
+
+            htmx.on('barcodes-list-updated', function (event) {
+                const savedCode = (event.detail && event.detail.code) ? event.detail.code : '';
+                const productId = (event.detail && event.detail.product_id) ? event.detail.product_id : '';
+
+                if (savedCode && productId) {
+                    const targetElements = document.querySelectorAll('[data-product-id="' + productId + '"]');
+                    targetElements.forEach(function(element) {
+                        element.innerHTML = '<i class="fas fa-barcode me-1"></i>' + savedCode;
+                        element.classList.add('text-success', 'fw-bold');
+                        element.classList.remove('text-muted');
+                    });
+                }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initAutocompletes();
+            focusPickingInputs();
+            updateProgressBars();
+        });
+    })();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h1 class="h3 mb-0">
+            <i class="fas fa-dolly me-2"></i>Szybka kompletacja
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'wms:picking_detail' picking_order.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Powrót
+            </a>
+            <form method="post" action="{% url 'wms:complete_picking' picking_order.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success"
+                        onclick="return confirm('Czy na pewno zakończyć kompletację?');">
+                    <i class="fas fa-check me-2"></i>Zakończ kompletację
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Terminacja</div>
+                        <div class="fw-semibold">{{ picking_order.order_number }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Zamówienie</div>
+                        <div class="fw-semibold">{{ picking_order.customer_order.order_number }}</div>
+                        <div class="text-muted small">{{ picking_order.customer_order.customer_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Postęp</div>
+                        {% with completed=picking_order.completed_items_count total=picking_order.total_items_count %}
+                        <div class="fw-semibold">{{ completed }}/{{ total }}</div>
+                        <div class="progress mt-1" style="height: 6px;">
+                            {% if total > 0 %}
+                            {% widthratio completed total 100 as progress_value %}
+                            <div class="progress-bar" role="progressbar" data-progress-value="{{ progress_value }}" aria-valuemin="0" aria-valuemax="100"></div>
+                            {% else %}
+                            <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
+                            {% endif %}
+                        </div>
+                        {% endwith %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="text-muted text-uppercase small">Aktualny operator</div>
+                        <div class="fw-semibold">{{ request.user.get_full_name|default:request.user.username }}</div>
+                    </div>
+                    <span class="badge bg-info text-uppercase">{{ picking_order.get_status_display }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="picking-fast-container">
+    {% include 'wms/partials/_picking_fast_table.html' %}
+</div>
+{% endblock %}
+

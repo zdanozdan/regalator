@@ -1,0 +1,379 @@
+<div id="picking-table-wrapper"
+     data-focus-target="{{ focus_target }}"
+     hx-get="{% url 'wms:htmx_picking_table' picking_order.id %}"
+     hx-trigger="location-list-updated from:body"
+     hx-target="#picking-table-wrapper"
+     hx-swap="outerHTML">
+    <div class="mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-barcode me-2"></i>Skanowanie i pobieranie
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Aktualna lokalizacja</div>
+                        {% if current_location %}
+                        <button type="button"
+                                class="fw-semibold btn btn-link p-0 text-start text-reset"
+                                hx-get="{% url 'wms:htmx_location_edit' current_location.id %}"
+                                hx-target="#modalBody"
+                                hx-swap="innerHTML"
+                                hx-trigger="click"
+                                data-bs-toggle="modal"
+                                data-bs-target="#mainModal"
+                                style="text-decoration: none;"
+                                onmouseover="this.style.textDecoration='underline'"
+                                onmouseout="this.style.textDecoration='none'">
+                            <i class="fas fa-map-marker-alt me-2 text-muted"></i>{{ current_location.name }}
+                        </button>
+                        <div class="small">
+                            <i class="fas fa-tag me-1 text-muted"></i>
+                            {% if current_location.location_type %}
+                                {{ current_location.get_location_type_display }}
+                            {% else %}
+                                {{ current_location.barcode }}
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div class="text-muted fst-italic">Nie wybrano</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted text-uppercase small">Aktualny produkt</div>
+                        {% if current_picking_item %}
+                        <button type="button"
+                                class="fw-semibold btn btn-link p-0 text-start text-reset"
+                                hx-get="{% url 'wms:htmx_edit_product_codes' current_picking_item.product.id %}"
+                                hx-target="#modalBody"
+                                hx-swap="innerHTML"
+                                hx-trigger="click"
+                                data-bs-toggle="modal"
+                                data-bs-target="#mainModal"
+                                style="text-decoration: none;"
+                                onmouseover="this.style.textDecoration='underline'"
+                                onmouseout="this.style.textDecoration='none'">
+                            {{ current_picking_item.product.name }}
+                        </button>
+                        <div class="small" data-product-id="{{ current_picking_item.product.id }}">
+                            {% with code=current_picking_item.product.codes.first %}
+                                {% if code %}
+                                <i class="fas fa-barcode me-1 text-muted"></i>{{ code.code }}
+                                {% else %}
+                                <span class="fst-italic">Brak kodu</span>
+                                {% endif %}
+                            {% endwith %}
+                        </div>
+                        {% else %}
+                        <div class="text-muted fst-italic">Nie wybrano</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4 d-flex align-items-start justify-content-md-end gap-2">
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                                hx-target="#picking-table-wrapper"
+                                hx-swap="outerHTML"
+                                hx-vals='{"action": "clear_selection"}'>
+                            <i class="fas fa-undo me-2"></i>Wyczyść wybory
+                        </button>
+                    </div>
+                </div>
+
+                <form
+                    hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                    hx-target="#picking-table-wrapper"
+                    hx-swap="outerHTML"
+                    class="row g-3 mt-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="picking_item_id" id="pickingItemHidden" value="{{ form_picking_item_id|default:'' }}">
+                    <div class="col-lg-4">
+                        <label for="locationInput" class="form-label">Lokalizacja</label>
+                        <div class="position-relative">
+                            <input type="hidden" name="location_code" id="locationCodeHidden" value="{{ form_location_value|default:'' }}">
+                            <input type="text" name="location" id="locationInput" class="form-control"
+                                   placeholder="Skanuj lub wpisz kod"
+                                   value="{{ form_location_display_value|default:'' }}"
+                                   data-focus-key="location_code"
+                                   hx-get="{% url 'wms:htmx_locations_autocomplete' %}"
+                                   hx-trigger="input changed delay:200ms"
+                                   hx-target="#location-suggestions"
+                                   hx-swap="innerHTML"
+                                   hx-vals='{"picking_id": "{{ picking_order.id }}"}'
+                                   autocomplete="off"
+                                   hx-indicator="#location-loading">
+                            <div id="location-loading" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
+                                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+                            </div>
+                            <div id="location-suggestions" class="dropdown-menu w-100 shadow mt-2" style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0, 0, 0, 0.08); background-color: #fff;"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label for="productInput" class="form-label">Produkt</label>
+                        <div class="position-relative">
+                            <input type="hidden" name="product_code" id="productCodeHidden" value="{{ form_product_value|default:'' }}">
+                            <input type="text" name="product" id="productInput" class="form-control"
+                                   placeholder="Skanuj lub wpisz kod lub nazwę"
+                                   value="{{ form_product_display_value|default:'' }}"
+                                   data-focus-key="product_code"
+                                   hx-get="{% url 'wms:htmx_picking_product_autocomplete' picking_order.id %}"
+                                   hx-trigger="input changed delay:200ms"
+                                   hx-target="#product-suggestions"
+                                   hx-swap="innerHTML"
+                                   autocomplete="off"
+                                   hx-indicator="#product-loading">
+                            <div id="product-loading" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
+                                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+                            </div>
+                            <div id="product-suggestions" class="dropdown-menu w-100 shadow mt-2" style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0, 0, 0, 0.08); background-color: #fff;"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label for="quantityInput" class="form-label">Ilość</label>
+                        <input type="number" name="quantity" id="quantityInput" class="form-control"
+                               placeholder="Podaj ilość"
+                               step="0.01"
+                               min="0.01"
+                               value="{{ form_quantity_value|default:'' }}"
+                               data-focus-key="quantity">
+                    </div>
+                    <input type="hidden" name="mode" value="{{ form_mode }}">
+                    <div class="col-12 d-flex flex-column flex-md-row gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
+                            <i class="fas fa-save me-2"></i>Zapisz
+                        </button>
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                                hx-target="#picking-table-wrapper"
+                                hx-swap="outerHTML"
+                                hx-vals='{"action": "clear_selection"}'>
+                            <i class="fas fa-undo me-2"></i>Wyczyść formularz
+                        </button>
+                    </div>
+                    {% if recent_locations %}
+                    <div class="col-12">
+                        <div class="d-flex flex-wrap align-items-stretch gap-2">
+                            {% for location in recent_locations %}
+                            <button type="button"
+                                    class="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                                    data-location-code="{{ location.barcode|escape }}"
+                                    data-location-label="{{ location.name }}{% if location.location_type %} / {{ location.get_location_type_display }}{% endif %}"
+                                    onclick="setPickingLocation(this.dataset.locationCode, this.dataset.locationLabel);">
+                                <i class="fas fa-map-marker-alt me-2 text-muted"></i>
+                                <div class="d-flex flex-column text-start">
+                                    <span class="fw-semibold">{{ location.name }}</span>
+                                    {% if location.location_type %}
+                                    <small class="text-muted">{{ location.get_location_type_display }}</small>
+                                    {% else %}
+                                    <small class="text-muted">{{ location.barcode }}</small>
+                                    {% endif %}
+                                </div>
+                            </button>
+                            {% endfor %}
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm d-flex align-items-center"
+                                    hx-get="{% url 'wms:htmx_location_create' %}"
+                                    hx-target="#modalBody"
+                                    hx-swap="innerHTML"
+                                    hx-trigger="click"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#mainModal">
+                                <i class="fas fa-plus me-2"></i>
+                                <span>Nowa lokalizacja</span>
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="col-12">
+                        {% if form_mode == 'overwrite' %}
+                        <small class="text-muted">Tryb zapisu: aktualizacja istniejącej pozycji</small>
+                        {% else %}
+                        <small class="text-muted">Tryb zapisu: dodawanie do pozycji</small>
+                        {% endif %}
+                    </div>
+                </form>
+
+                {% if picked_items %}
+                <hr class="my-4">
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0 text-uppercase text-muted">Pobrane pozycje</h6>
+                        <span class="badge bg-success">{{ picked_items|length }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Produkt</th>
+                                    <th class="text-center">Pobrano</th>
+                                    <th class="text-center">Pozostało</th>
+                                    <th>Lokalizacja</th>
+                                    <th class="text-end">Akcja</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in picked_items %}
+                                <tr hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                                    hx-trigger="click"
+                                    hx-target="#picking-table-wrapper"
+                                    hx-swap="outerHTML"
+                                    hx-vals='{"picking_item_id": "{{ item.id }}"}'
+                                    class="{% if current_picking_item and current_picking_item.id == item.id %}table-primary{% endif %}"
+                                    style="cursor: pointer;">
+                                    <td>
+                                        <div class="fw-semibold">{{ item.product.name }}</div>
+                                        <div class="small" data-product-id="{{ item.product.id }}">
+                                            {% with code=item.product.codes.first %}
+                                                {% if code %}
+                                                <i class="fas fa-barcode me-1"></i>{{ code.code }}
+                                                {% else %}
+                                                <span class="fst-italic">Brak kodu</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                    <td class="text-center text-success fw-semibold">{{ item.quantity_picked|floatformat:2 }}</td>
+                                    <td class="text-center">
+                                        {% if item.remaining_quantity <= 0 %}
+                                            <span class="badge bg-success">0.00</span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">{{ item.remaining_quantity|floatformat:2 }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.location %}
+                                            <div>{{ item.location.name }}</div>
+                                            <div class="text-muted small">
+                                                <i class="fas fa-barcode me-1"></i>{{ item.location.barcode }}
+                                            </div>
+                                        {% else %}
+                                            <span class="text-muted">Brak</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                    type="button"
+                                                    data-bs-toggle="dropdown"
+                                                    data-bs-popper-config='{"strategy":"fixed"}'
+                                                    aria-expanded="false"
+                                                    onclick="event.stopPropagation();">
+                                                <i class="fas fa-ellipsis-h"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <button class="dropdown-item"
+                                                            hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                                                            hx-target="#picking-table-wrapper"
+                                                            hx-swap="outerHTML"
+                                                            hx-vals='{"picking_item_id": "{{ item.id }}"}'
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-pen me-2"></i>Edytuj
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <button class="dropdown-item text-danger"
+                                                            hx-post="{% url 'wms:htmx_picking_remove_item' picking_order.id item.id %}"
+                                                            hx-target="#picking-table-wrapper"
+                                                            hx-swap="outerHTML"
+                                                            hx-confirm="Czy na pewno usunąć pobraną ilość dla tej pozycji?"
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-trash me-2"></i>Usuń
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-list-ul me-2"></i>Pozostałe pozycje
+            </h5>
+            <span class="badge bg-primary">{{ pending_items|length }}</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">Produkt</th>
+                        <th class="text-center">Do pobrania</th>
+                        <th class="text-center">Pobrano</th>
+                        <th class="text-center">Pozostało</th>
+                        <th>Lokalizacja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if not pending_items %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">Brak pozycji oczekujących.</td>
+                    </tr>
+                    {% else %}
+                        {% for item in pending_items %}
+                        <tr hx-post="{% url 'wms:htmx_picking_submit' picking_order.id %}"
+                            hx-trigger="click"
+                            hx-target="#picking-table-wrapper"
+                            hx-swap="outerHTML"
+                            hx-vals='{"picking_item_id": "{{ item.id }}"}'
+                            class="{% if current_picking_item and current_picking_item.id == item.id %}table-primary{% endif %}"
+                            style="cursor: pointer;">
+                            <td>
+                                <div class="fw-semibold">{{ item.product.name }}</div>
+                                <div class="small" data-product-id="{{ item.product.id }}">
+                                    {% with code=item.product.codes.first %}
+                                        {% if code %}
+                                        <i class="fas fa-barcode me-1"></i>{{ code.code }}
+                                        {% else %}
+                                        <span class="fst-italic">Brak kodu</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </div>
+                            </td>
+                            <td class="text-center">{{ item.quantity_to_pick|floatformat:2 }}</td>
+                            <td class="text-center">
+                                {% if item.quantity_picked > 0 %}
+                                    <span class="text-success">{{ item.quantity_picked|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="text-muted">0.00</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if item.remaining_quantity <= 0 %}
+                                    <span class="badge bg-success">0.00</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">{{ item.remaining_quantity|floatformat:2 }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.location %}
+                                    <div>{{ item.location.name }}</div>
+                                    <div class="text-muted small">
+                                        <i class="fas fa-barcode me-1"></i>{{ item.location.barcode }}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">Brak</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+

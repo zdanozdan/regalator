@@ -278,11 +278,26 @@
         htmx.on('toastMessage', function (event) {
             const toastContainer = document.getElementById('toast-container');
 
-            // Determine background class based on event.detail.type
-            let bgClass = event.detail.type;
-            if (!bgClass) {
-                bgClass = 'success';
-            }
+        // Determine background class based on event.detail.type
+        const type = (event.detail.type || '').toLowerCase();
+        let bgClass;
+        switch (type) {
+            case 'error':
+                bgClass = 'danger';
+                break;
+            case 'warning':
+                bgClass = 'warning';
+                break;
+            case 'info':
+                bgClass = 'info';
+                break;
+            case 'success':
+            case 'danger':
+                bgClass = type;
+                break;
+            default:
+                bgClass = 'primary';
+        }
 
             // Create new toast element
             const newToast = document.createElement('div');

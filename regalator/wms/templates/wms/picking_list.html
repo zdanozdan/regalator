@@ -18,7 +18,7 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <form method="get" class="row g-3">
+                <form method="get" class="row g-3 align-items-end">
                     <div class="col-md-4">
                         <label for="search" class="form-label">Wyszukaj</label>
                         <input type="text" class="form-control" id="search" name="search" 
@@ -36,15 +36,21 @@
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">&nbsp;</label>
-                        <div>
-                            <button type="submit" class="btn btn-primary me-2">
-                                <i class="fas fa-search me-1"></i>Szukaj
-                            </button>
-                            <a href="{% url 'wms:picking_list' %}" class="btn btn-outline-secondary">
-                                <i class="fas fa-times me-1"></i>Wyczyść
-                            </a>
-                        </div>
+                        <label for="assigned" class="form-label">Przypisane do</label>
+                        <select class="form-select" id="assigned" name="assigned">
+                            <option value="">Wszyscy</option>
+                            <option value="unassigned" {% if assigned_filter == 'unassigned' %}selected{% endif %}>Nieprzypisane</option>
+                            {% for user in assigned_users %}
+                                <option value="{{ user.id }}" {% if assigned_filter|stringformat:'s' == user.id|stringformat:'s' %}selected{% endif %}>
+                                    {{ user.get_full_name|default:user.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-search me-1"></i>Szukaj
+                        </button>
                     </div>
                 </form>
             </div>
@@ -136,7 +142,7 @@
                                                     <i class="fas fa-play"></i>
                                                 </a>
                                             {% elif picking.status == 'in_progress' %}
-                                                <a href="{% url 'wms:scan_location' picking.id %}" 
+                                                <a href="{% url 'wms:picking_fast' picking.id %}"
                                                    class="btn btn-sm btn-outline-info" title="Kontynuuj">
                                                     <i class="fas fa-barcode"></i>
                                                 </a>

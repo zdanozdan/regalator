@@ -18,15 +18,20 @@ urlpatterns = [
     path('orders/', views.order_list, name='order_list'),
     path('orders/<int:order_id>/', views.order_detail, name='order_detail'),
     path('orders/<int:order_id>/create-picking/', views.create_picking_order, name='create_picking_order'),
+    path('sync-zk-orders/', views.sync_zk_orders, name='sync_zk_orders'),
+    path('picking/<int:picking_id>/start-or-continue/', views.start_or_continue_picking, name='start_or_continue_picking'),
+    path('picking/<int:picking_id>/change-status/', views.picking_order_change_status, name='picking_order_change_status'),
     
     # Zlecenia kompletacji (Terminacja)
     path('picking/', views.picking_list, name='picking_list'),
     path('picking/<int:picking_id>/', views.picking_detail, name='picking_detail'),
     path('picking/<int:picking_id>/start/', views.start_picking, name='start_picking'),
-    path('picking/<int:picking_id>/scan-location/', views.scan_location, name='scan_location'),
-    path('picking/<int:picking_id>/scan-product/', views.scan_product, name='scan_product'),
-    path('picking/<int:picking_id>/enter-quantity/<int:item_id>/', views.enter_quantity, name='enter_quantity'),
+    path('picking/<int:picking_id>/fast/', views.picking_fast, name='picking_fast'),
     path('picking/<int:picking_id>/complete/', views.complete_picking, name='complete_picking'),
+    path('picking/<int:picking_id>/htmx/submit/', views.htmx_picking_submit, name='htmx_picking_submit'),
+    path('picking/<int:picking_id>/htmx/table/', views.htmx_picking_table, name='htmx_picking_table'),
+    path('picking/<int:picking_id>/htmx/remove-item/<int:item_id>/', views.htmx_picking_remove_item, name='htmx_picking_remove_item'),
+    path('picking/<int:picking_id>/htmx/product-autocomplete/', views.htmx_picking_product_autocomplete, name='htmx_picking_product_autocomplete'),
     
     # Zamówienia do dostawców (ZD)
     path('supplier-orders/', views.supplier_order_list, name='supplier_order_list'),
@@ -40,6 +45,7 @@ urlpatterns = [
     path('receiving/<int:receiving_id>/', views.receiving_order_detail, name='receiving_order_detail'),
     path('receiving/<int:receiving_id>/fast/', views.receiving_order_fast, name='receiving_order_fast'),
     path('receiving/<int:receiving_id>/complete/', views.complete_receiving, name='complete_receiving'),
+    path('receiving/<int:receiving_id>/change-status/', views.receiving_order_change_status, name='receiving_order_change_status'),
     path('receiving/<int:receiving_id>/htmx/submit/', views.htmx_receiving_submit, name='htmx_receiving_submit'),
     path('receiving/<int:receiving_id>/htmx/table/', views.htmx_receiving_table, name='htmx_receiving_table'),
     path('receiving/<int:receiving_id>/htmx/remove-item/<int:item_id>/', views.htmx_receiving_remove_item, name='htmx_receiving_remove_item'),

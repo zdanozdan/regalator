@@ -5,7 +5,8 @@ from django.http import JsonResponse, HttpResponse
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
-from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F
+from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F, Value
+from django.db.models.functions import Lower
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.contrib.auth.models import User
@@ -19,6 +20,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.db import IntegrityError
 from .signals import product_updated
+from datetime import datetime
 
 # Import subiekt models
 from subiekt.models import tw_Towar
@@ -155,8 +157,14 @@ def order_list(request):
     """Lista zamówień klientów"""
     status_filter = request.GET.get('status', '')
     search_query = request.GET.get('search', '')
+    assigned_filter = request.GET.get('assigned', '')
     
-    orders = CustomerOrder.objects.all()
+    orders = CustomerOrder.objects.all().prefetch_related(
+        Prefetch(
+            'pickingorder_set',
+            queryset=PickingOrder.objects.select_related('assigned_to')
+        )
+    )
     
     if status_filter:
         orders = orders.filter(status=status_filter)
@@ -166,6 +174,17 @@ def order_list(request):
             Q(order_number__icontains=search_query) |
             Q(customer_name__icontains=search_query)
         )
+
+    if assigned_filter:
+        if assigned_filter == 'unassigned':
+            orders = orders.filter(pickingorder__assigned_to__isnull=True)
+        else:
+            try:
+                assigned_user_id = int(assigned_filter)
+            except (TypeError, ValueError):
+                assigned_user_id = None
+            if assigned_user_id:
+                orders = orders.filter(pickingorder__assigned_to_id=assigned_user_id)
     
     orders = orders.order_by('-created_at')
     
@@ -173,11 +192,15 @@ def order_list(request):
     paginator = Paginator(orders, 20)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
+
+    assigned_users = User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct()
     
     context = {
         'page_obj': page_obj,
         'status_filter': status_filter,
         'search_query': search_query,
+        'assigned_filter': assigned_filter,
+        'assigned_users': assigned_users,
         'status_choices': CustomerOrder.ORDER_STATUS,
     }
     return render(request, 'wms/order_list.html', context)
@@ -187,13 +210,295 @@ def order_list(request):
 def order_detail(request, order_id):
     """Szczegóły zamówienia klienta"""
     order = get_object_or_404(CustomerOrder, id=order_id)
-    picking_orders = PickingOrder.objects.filter(customer_order=order)
+    picking_orders = (
+        PickingOrder.objects.filter(customer_order=order)
+        .select_related('assigned_to')
+        .prefetch_related('items__product', 'items__order_item')
+    )
+
+    order_items = list(order.items.select_related('product'))
+    picking_items = []
+    for picking_order in picking_orders:
+        picking_items.extend(list(picking_order.items.all()))
+
+    completed_items = 0
+    partial_items = 0
+    total_items = 0
+    completed_quantity = Decimal('0')
+    total_quantity = Decimal('0')
+
+    if picking_items:
+        total_items = len(picking_items)
+        for p_item in picking_items:
+            qty_to_pick = p_item.quantity_to_pick or Decimal('0')
+            qty_picked = p_item.quantity_picked or Decimal('0')
+
+            total_quantity += qty_to_pick
+            completed_quantity += min(qty_picked, qty_to_pick)
+
+            if qty_to_pick > 0:
+                if qty_picked >= qty_to_pick:
+                    completed_items += 1
+                elif qty_picked > 0:
+                    partial_items += 1
+    else:
+        total_items = len(order_items)
+        for item in order_items:
+            item_quantity = item.quantity or Decimal('0')
+            item_completed = item.completed_quantity or Decimal('0')
+
+            total_quantity += item_quantity
+            completed_quantity += min(item_completed, item_quantity)
+
+            if item_quantity > 0:
+                if item_completed >= item_quantity:
+                    completed_items += 1
+                elif item_completed > 0:
+                    partial_items += 1
+
+    pending_items = max(total_items - completed_items - partial_items, 0)
+    picking_progress = 0.0
+    if total_quantity > 0:
+        picking_progress = float((completed_quantity / total_quantity) * 100)
+        picking_progress = min(picking_progress, 100.0)
+
+    latest_picking = picking_orders.order_by('-created_at').first()
+    picking_active = picking_orders.filter(status='in_progress').exists()
+    picking_completed = picking_orders.filter(status='completed').count()
+    primary_unit = ''
+    if picking_items:
+        first_product = next((p.product for p in picking_items if getattr(p.product, 'unit', None)), None)
+        if first_product:
+            primary_unit = first_product.unit
+    elif order_items:
+        first_product = order_items[0].product
+        if first_product and getattr(first_product, 'unit', None):
+            primary_unit = first_product.unit
     
     context = {
         'order': order,
         'picking_orders': picking_orders,
+        'total_items': total_items,
+        'completed_items': completed_items,
+        'partial_items': partial_items,
+        'pending_items': pending_items,
+        'total_quantity': total_quantity,
+        'completed_quantity': completed_quantity,
+        'picking_progress': picking_progress,
+        'latest_picking': latest_picking,
+        'picking_active': picking_active,
+        'picking_completed_count': picking_completed,
+        'primary_unit': primary_unit,
+        'has_quantities': total_quantity > 0,
     }
     return render(request, 'wms/order_detail.html', context)
+
+
+@login_required
+def start_or_continue_picking(request, picking_id):
+    """Rozpoczyna lub kontynuuje kompletację i przekierowuje do procesu fast."""
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+
+    if picking_order.status == 'created':
+        with transaction.atomic():
+            picking_order.status = 'in_progress'
+            picking_order.started_at = timezone.now()
+            picking_order.assigned_to = picking_order.assigned_to or request.user
+            picking_order.save(update_fields=['status', 'started_at', 'assigned_to'])
+        messages.success(request, f'Rozpoczęto kompletację {picking_order.order_number}.')
+    elif picking_order.status == 'in_progress':
+        messages.info(request, f'Kontynuujesz kompletację {picking_order.order_number}.')
+    elif picking_order.status == 'completed':
+        messages.warning(request, f'Zlecenie {picking_order.order_number} jest już zakończone.')
+        return redirect('wms:picking_detail', picking_id=picking_id)
+    else:
+        messages.warning(request, f'Zlecenie {picking_order.order_number} ma status {picking_order.get_status_display()} – brak możliwości kontynuacji.')
+        return redirect('wms:picking_detail', picking_id=picking_id)
+
+    return redirect('wms:picking_fast', picking_id=picking_id)
+
+
+@login_required
+def picking_order_change_status(request, picking_id):
+    """Zmiana statusu kompletacji (np. ponowne otwarcie zakończonej)."""
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+    new_status = request.POST.get('status')
+    allowed_statuses = {'created', 'in_progress'}
+
+    if new_status not in allowed_statuses:
+        messages.error(request, 'Wybrano nieprawidłowy status.')
+        return redirect('wms:picking_detail', picking_id=picking_id)
+
+    if new_status == picking_order.status:
+        messages.info(request, 'Status kompletacji pozostał bez zmian.')
+        return redirect('wms:picking_detail', picking_id=picking_id)
+
+    updates = ['status']
+    picking_order.status = new_status
+
+    if new_status == 'created':
+        if picking_order.started_at is not None:
+            picking_order.started_at = None
+            updates.append('started_at')
+        if picking_order.completed_at is not None:
+            picking_order.completed_at = None
+            updates.append('completed_at')
+    elif new_status == 'in_progress':
+        if not picking_order.started_at:
+            picking_order.started_at = timezone.now()
+            updates.append('started_at')
+        if picking_order.completed_at is not None:
+            picking_order.completed_at = None
+            updates.append('completed_at')
+
+    picking_order.save(update_fields=updates)
+
+    if new_status == 'in_progress':
+        messages.success(request, 'Status zaktualizowany. Kontynuuj kompletację.')
+        return redirect('wms:picking_fast', picking_id=picking_id)
+
+    messages.success(request, 'Status kompletacji został zaktualizowany.')
+    return redirect('wms:picking_detail', picking_id=picking_id)
+
+
+@login_required
+def sync_zk_orders(request):
+    """Synchronizuje zamówienia klientów (ZK) z Subiekta"""
+    if request.method != 'POST':
+        messages.error(request, 'Nieprawidłowa metoda żądania')
+        return redirect('wms:order_list')
+
+    try:
+        from subiekt.models import dok_Dokument
+        from wms.utils import get_or_create_product_from_subiekt
+
+        subiekt_zk_documents = dok_Dokument.dokument_objects.get_zk(limit=20)
+
+        if not subiekt_zk_documents:
+            messages.info(request, 'Brak zamówień ZK do synchronizacji')
+            return redirect('wms:order_list')
+
+        new_orders = []
+        updated_orders = []
+
+        for zk_doc in subiekt_zk_documents:
+            try:
+                order_number = zk_doc.dok_NrPelny
+                customer_name = zk_doc.adr_Nazwa or zk_doc.adr_NazwaPelna or 'Nieznany klient'
+                address_candidates = [
+                    zk_doc.adr_Adres,
+                    zk_doc.adr_Ulica,
+                    ' '.join(filter(None, [zk_doc.adr_Kod, zk_doc.adr_Miejscowosc])),
+                    zk_doc.adr_Poczta,
+                ]
+                customer_address = ', '.join([part.strip() for part in address_candidates if part])
+
+                order_date_value = zk_doc.dok_DataWyst or timezone.now().date()
+                order_datetime = datetime.combine(order_date_value, datetime.min.time())
+                if timezone.is_naive(order_datetime):
+                    order_datetime = timezone.make_aware(order_datetime, timezone.get_current_timezone())
+
+                defaults = {
+                    'customer_name': customer_name,
+                    'customer_address': customer_address,
+                    'order_date': order_datetime,
+                    'status': 'pending',
+                    'total_value': Decimal('0'),
+                    'notes': f'ZK z Subiekta: {order_number}',
+                }
+
+                order, created = CustomerOrder.objects.get_or_create(
+                    order_number=order_number,
+                    defaults=defaults
+                )
+
+                items_updated = False
+
+                if not created:
+                    updated = False
+                    if order.customer_name != customer_name:
+                        order.customer_name = customer_name
+                        updated = True
+                    if order.customer_address != customer_address:
+                        order.customer_address = customer_address
+                        updated = True
+                    if order.notes != defaults['notes']:
+                        order.notes = defaults['notes']
+                        updated = True
+                    if order.status == 'pending' and defaults['status'] != 'pending':
+                        order.status = defaults['status']
+                        updated = True
+
+                    if updated:
+                        order.save(update_fields=['customer_name', 'customer_address', 'notes'])
+                        updated_orders.append(order.order_number)
+                else:
+                    new_orders.append(order.order_number)
+
+                total_value = Decimal('0')
+
+                try:
+                    zk_positions = dok_Dokument.dokument_objects.get_zk_pozycje(zk_doc.dok_Id)
+                except Exception:
+                    zk_positions = []
+
+                if zk_positions:
+                    for position in zk_positions:
+                        product = get_or_create_product_from_subiekt(position.get('tw_Id'))
+                        if not product:
+                            continue
+
+                        quantity = Decimal(str(position.get('ob_Ilosc') or 0))
+                        order_item_defaults = {
+                            'quantity': quantity,
+                            'total_price': Decimal('0'),
+                        }
+                        order_item, item_created = OrderItem.objects.update_or_create(
+                            order=order,
+                            product=product,
+                            defaults=order_item_defaults
+                        )
+
+                        if not item_created and (
+                            order_item.quantity != quantity or order_item.total_price != Decimal('0')
+                        ):
+                            order_item.quantity = quantity
+                            order_item.total_price = Decimal('0')
+                            order_item.save(update_fields=['quantity', 'total_price'])
+                        items_updated = items_updated or item_created
+
+                order.total_value = total_value
+                order.save(update_fields=['total_value'])
+
+                if not created and items_updated and order.order_number not in updated_orders:
+                    updated_orders.append(order.order_number)
+
+            except Exception:
+                continue
+
+        if new_orders:
+            messages.success(
+                request,
+                f'Załadowano {len(new_orders)} nowych zamówień ZK: {", ".join(new_orders)}'
+            )
+
+        if updated_orders:
+            messages.info(
+                request,
+                f'Zaktualizowano {len(updated_orders)} istniejących zamówień ZK'
+            )
+
+        if not new_orders and not updated_orders:
+            messages.warning(request, 'Brak nowych zamówień ZK do załadowania')
+
+        return redirect('wms:order_list')
+
+    except Exception as e:
+        messages.error(request, f'Błąd podczas synchronizacji ZK: {str(e)}')
+        return redirect('wms:order_list')
 
 
 @login_required
@@ -254,6 +559,7 @@ def picking_list(request):
     """Lista zleceń kompletacji"""
     status_filter = request.GET.get('status', '')
     search_query = request.GET.get('search', '')
+    assigned_filter = request.GET.get('assigned', '')
     
     picking_orders = PickingOrder.objects.all()
     
@@ -265,6 +571,17 @@ def picking_list(request):
             Q(order_number__icontains=search_query) |
             Q(customer_order__customer_name__icontains=search_query)
         )
+
+    if assigned_filter:
+        if assigned_filter == 'unassigned':
+            picking_orders = picking_orders.filter(assigned_to__isnull=True)
+        else:
+            try:
+                assigned_user_id = int(assigned_filter)
+            except (TypeError, ValueError):
+                assigned_user_id = None
+            if assigned_user_id:
+                picking_orders = picking_orders.filter(assigned_to_id=assigned_user_id)
     
     picking_orders = picking_orders.order_by('-created_at')
     
@@ -277,6 +594,8 @@ def picking_list(request):
         'page_obj': page_obj,
         'status_filter': status_filter,
         'search_query': search_query,
+        'assigned_filter': assigned_filter,
+        'assigned_users': User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct(),
         'status_choices': PickingOrder.PICKING_STATUS,
     }
     return render(request, 'wms/picking_list.html', context)
@@ -285,10 +604,27 @@ def picking_list(request):
 @login_required
 def picking_detail(request, picking_id):
     """Szczegóły zlecenia kompletacji"""
-    picking_order = get_object_or_404(PickingOrder, id=picking_id)
-    
+    picking_order = (
+        PickingOrder.objects
+        .select_related('customer_order')
+        .prefetch_related(
+            Prefetch(
+                'items',
+                queryset=PickingItem.objects.select_related('product', 'location').prefetch_related('product__codes')
+            )
+        )
+        .get(id=picking_id)
+    )
+    picking_items = list(picking_order.items.all())
+    picking_history = (
+        PickingHistory.objects.filter(picking_item__picking_order=picking_order)
+        .select_related('user', 'product_scanned', 'location_scanned')
+        .order_by('-scanned_at')
+    )
     context = {
         'picking_order': picking_order,
+        'picking_items': picking_items,
+        'picking_history': picking_history,
     }
     return render(request, 'wms/picking_detail.html', context)
 
@@ -303,196 +639,659 @@ def start_picking(request, picking_id):
         picking_order.started_at = timezone.now()
         picking_order.save()
         
+        _clear_current_picking_item(request, picking_id)
+        _clear_current_picking_location(request, picking_id)
         messages.success(request, f'Rozpoczęto kompletację {picking_order.order_number}')
-        return redirect('wms:scan_location', picking_id=picking_id)
+        return redirect('wms:picking_fast', picking_id=picking_id)
     else:
         messages.warning(request, f'Zlecenie {picking_order.order_number} nie może być rozpoczęte (status: {picking_order.get_status_display()})')
     
     return redirect('wms:picking_detail', picking_id=picking_id)
 
 
-@login_required
-def scan_location(request, picking_id):
-    picking_order = get_object_or_404(PickingOrder, id=picking_id)
-    
-    if request.method == 'POST':
-        barcode = request.POST.get('barcode', '').strip()
-        
-        if barcode:
-            # Sprawdź czy lokalizacja istnieje (używając barcode)
-            location = Location.objects.filter(barcode=barcode).first()
-            
-            if location:
-                # Sprawdź czy w tej lokalizacji są produkty z tego zlecenia
-                picking_items = PickingItem.objects.filter(
-                    picking_order=picking_order,
-                    location=location
-                ).distinct()
-                
-                if picking_items.exists():
-                    # Zapisz location_id w sesji
-                    request.session['picking_location_id'] = location.id
-                    # Przejdź do skanowania produktów
-                    return redirect('wms:scan_product', picking_id=picking_id)
-                else:
-                    messages.warning(request, f'W lokalizacji {barcode} nie ma produktów do kompletacji.')
-            else:
-                messages.error(request, f'Lokalizacja {barcode} nie istnieje.')
-        else:
-            messages.error(request, 'Proszę wprowadzić kod lokalizacji.')
-    
-    # Get unique locations that have pending items for this picking order
-    locations_with_items = Location.objects.filter(
-        pickingitem__picking_order=picking_order,
-        pickingitem__quantity_picked__lt=F('pickingitem__quantity_to_pick'),
-        is_active=True
-    ).distinct().order_by('name')[:10]
-    
-    return render(request, 'wms/scan_location.html', {
-        'picking_order': picking_order,
-        'pending_items': PickingItem.objects.filter(picking_order=picking_order, quantity_picked=0),
-        'picked_items': PickingItem.objects.filter(picking_order=picking_order, quantity_picked__gt=0),
-        'available_locations': locations_with_items
-    })
+def _picking_session_key(picking_id, suffix):
+    return f'picking_{picking_id}_{suffix}'
 
 
-@login_required
-def scan_product(request, picking_id):
-    """Skanowanie produktu"""
-    picking_order = get_object_or_404(PickingOrder, id=picking_id)
-
-    # Pobierz location_id z sesji
-    location_id = request.session.get('picking_location_id')
+def _get_current_picking_location(request, picking_id):
+    location_id = request.session.get(_picking_session_key(picking_id, 'location_id'))
     if not location_id:
-        messages.error(request, "Najpierw zeskanuj lokalizację!")
-        return redirect('wms:scan_location', picking_id=picking_id)
-
+        return None
     try:
-        location = Location.objects.get(id=location_id)
+        return Location.objects.get(id=location_id)
     except Location.DoesNotExist:
-        messages.error(request, "Nieprawidłowa lokalizacja!")
-        return redirect('wms:scan_location', picking_id=picking_id)
+        request.session.pop(_picking_session_key(picking_id, 'location_id'), None)
+        return None
 
-    if request.method == 'POST':
-        scanned_code = request.POST.get('barcode', '').strip()
-        
-        if scanned_code:
-            # Znajdź produkt po dowolnym kodzie (barcode, QR, etc.)
-            product = Product.find_by_code(scanned_code)
-            
-            if product:
-                # Znajdź pozycję kompletacji dla tego produktu w tej lokalizacji
-                picking_item = PickingItem.objects.filter(
-                    picking_order=picking_order,
-                    product=product,
-                    location=location,
-                    is_completed=False
-                ).first()
-                
-                if picking_item:
-                    # Sprawdź stan magazynowy
-                    stock = Stock.objects.filter(
-                        product=product,
-                        location=location
-                    ).first()
-                    
-                    if stock and stock.quantity >= picking_item.quantity_to_pick:
-                        # Przekieruj do enter_quantity z item_id
-                        return redirect('wms:enter_quantity', picking_id=picking_id, item_id=picking_item.id)
-                    else:
-                        messages.error(request, f'Niewystarczający stan magazynowy. Dostępne: {stock.quantity if stock else 0}')
-                else:
-                    messages.error(request, f'Produkt {product.name} nie jest w tej lokalizacji lub już został skompletowany.')
-            else:
-                messages.error(request, f'Produkt o kodzie {scanned_code} nie istnieje.')
+
+def _set_current_picking_location(request, picking_id, location):
+    if location:
+        request.session[_picking_session_key(picking_id, 'location_id')] = location.id
+        request.session.modified = True
+
+
+def _clear_current_picking_location(request, picking_id):
+    key = _picking_session_key(picking_id, 'location_id')
+    if key in request.session:
+        request.session.pop(key, None)
+        request.session.modified = True
+
+
+def _get_current_picking_item(request, picking_id):
+    item_id = request.session.get(_picking_session_key(picking_id, 'item_id'))
+    if not item_id:
+        return None
+    try:
+        return PickingItem.objects.get(id=item_id, picking_order_id=picking_id)
+    except PickingItem.DoesNotExist:
+        request.session.pop(_picking_session_key(picking_id, 'item_id'), None)
+        return None
+
+
+def _set_current_picking_item(request, picking_id, picking_item):
+    if picking_item:
+        request.session[_picking_session_key(picking_id, 'item_id')] = picking_item.id
+        request.session.modified = True
+
+
+def _clear_current_picking_item(request, picking_id):
+    item_key = _picking_session_key(picking_id, 'item_id')
+    item_id = request.session.pop(item_key, None)
+    if item_id:
+        quantity_key = _picking_session_key(picking_id, f'quantity_{item_id}')
+        request.session.pop(quantity_key, None)
+    request.session.modified = True
+
+
+def _clear_picking_quantity_cache(request, picking_id, item_id):
+    key = _picking_session_key(picking_id, f'quantity_{item_id}')
+    if key in request.session:
+        request.session.pop(key, None)
+        request.session.modified = True
+
+
+def _decimal_to_input(value):
+    if value is None:
+        return ''
+    try:
+        decimal_value = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return ''
+    text = format(decimal_value, 'f')
+    if '.' in text:
+        text = text.rstrip('0').rstrip('.')
+    return text
+
+
+def _set_picking_item_default_quantity(request, picking_id, picking_item):
+    remaining = picking_item.quantity_to_pick - picking_item.quantity_picked
+    key = _picking_session_key(picking_id, f'quantity_{picking_item.id}')
+
+    if remaining > 0:
+        request.session[key] = _decimal_to_input(remaining)
+        request.session.modified = True
+    elif picking_item.quantity_picked > 0:
+        request.session[key] = _decimal_to_input(picking_item.quantity_picked)
+        request.session.modified = True
+    else:
+        if key in request.session:
+            request.session.pop(key, None)
+            request.session.modified = True
+
+
+def _apply_picking_operation(picking_order, picking_item, location, quantity, user, mode):
+    with transaction.atomic():
+        picking_item.refresh_from_db()
+        previous_quantity = picking_item.quantity_picked
+
+        if mode == 'overwrite':
+            delta = quantity - previous_quantity
+            new_total = quantity
         else:
-            messages.error(request, 'Proszę wprowadzić kod produktu.')
-    
-    return render(request, 'wms/scan_product.html', {
-        'picking_order': picking_order,
-        'location': location,
-        'current_item': picking_order.next_item,
-        'pending_items': PickingItem.objects.filter(
-            picking_order=picking_order, 
-            location=location,
-            is_completed=False
-        ),
-        'picked_items': PickingItem.objects.filter(
-            picking_order=picking_order,
-            quantity_picked__gt=0
+            delta = quantity
+            new_total = previous_quantity + quantity
+
+        if new_total < 0:
+            raise ValueError('Nieprawidłowa ilość – wynik poniżej zera.')
+        if new_total > picking_item.quantity_to_pick:
+            raise ValueError('Nie można przekroczyć ilości do pobrania.')
+
+        stock = Stock.objects.select_for_update().filter(
+            product=picking_item.product,
+            location=location
+        ).first()
+
+        if stock and delta > 0 and stock.quantity < delta:
+            raise ValueError(
+                f'Niewystarczający stan magazynowy. Dostępne: {stock.quantity}'
+            )
+
+        # Aktualizacja pozycji kompletacji
+        picking_item.quantity_picked = new_total
+        picking_item.is_completed = new_total >= picking_item.quantity_to_pick
+        picking_item.location = location
+        picking_item.save(update_fields=['quantity_picked', 'is_completed', 'location'])
+
+        # Aktualizacja stanu magazynowego
+        if stock and delta != 0:
+            stock.quantity -= delta
+            stock.save(update_fields=['quantity'])
+
+        # Aktualizacja pozycji zamówienia
+        order_item = picking_item.order_item
+        order_item.completed_quantity = max(
+            Decimal('0'),
+            order_item.completed_quantity + delta
         )
-    })
+        order_item.save(update_fields=['completed_quantity'])
+
+        # Zapis historii tylko dla dodatnich zmian
+        if delta > 0:
+            PickingHistory.objects.create(
+                picking_item=picking_item,
+                user=user,
+                location_scanned=location,
+                product_scanned=picking_item.product,
+                quantity_picked=delta
+            )
+
+        if picking_order.status == 'created':
+            picking_order.status = 'in_progress'
+            picking_order.started_at = timezone.now()
+            picking_order.save(update_fields=['status', 'started_at'])
+
+        # Jeżeli wszystkie pozycje skompletowane, oznacz zlecenie jako completed (bez generowania WZ)
+        if picking_order.items.filter(is_completed=False).exists():
+            if picking_order.status == 'completed':
+                picking_order.status = 'in_progress'
+                picking_order.completed_at = None
+                picking_order.save(update_fields=['status', 'completed_at'])
+            return False
+
+        picking_order.status = 'completed'
+        picking_order.completed_at = timezone.now()
+        picking_order.save(update_fields=['status', 'completed_at'])
+        return True
+
+
+def _generate_wz_number(customer_order):
+    """Generuje unikalny numer dokumentu WZ dla zamówienia klienta."""
+    timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+    base_number = f"WZ-{customer_order.order_number}-{timestamp}"
+    document_number = base_number
+    counter = 1
+
+    while WarehouseDocument.objects.filter(document_number=document_number).exists():
+        counter += 1
+        document_number = f"{base_number}-{counter}"
+
+    return document_number
+
+
+def _build_picking_fast_context(request, picking_order, picking_id):
+    current_location = _get_current_picking_location(request, picking_id)
+    current_picking_item = _get_current_picking_item(request, picking_id)
+
+    picking_items = list(
+        picking_order.items.select_related('product', 'location')
+        .prefetch_related('product__codes')
+        .order_by('sequence')
+    )
+
+    pending_items = []
+    picked_items = []
+
+    for item in picking_items:
+        item.remaining_quantity = item.quantity_to_pick - item.quantity_picked
+        item.last_quantity_input = request.session.get(
+            _picking_session_key(picking_id, f'quantity_{item.id}')
+        )
+        if item.quantity_picked > 0:
+            picked_items.append(item)
+        if not item.is_completed:
+            pending_items.append(item)
+
+    selected_item = None
+    if current_picking_item:
+        for item in picking_items:
+            if item.id == current_picking_item.id:
+                selected_item = item
+                break
+        if selected_item:
+            current_picking_item = selected_item
+
+    form_mode = 'append'
+    form_quantity_value = ''
+    form_product_value = ''
+    form_product_display_value = ''
+    form_location_value = ''
+    form_location_display_value = ''
+    form_picking_item_id = ''
+
+    def _format_location_display(location):
+        if not location:
+            return ''
+        name = getattr(location, 'name', '') or ''
+        location_type_display = ''
+        if hasattr(location, 'get_location_type_display'):
+            try:
+                location_type_display = location.get_location_type_display() or ''
+            except Exception:
+                location_type_display = ''
+        if location_type_display:
+            return f"{name} / {location_type_display}" if name else location_type_display
+        return name or (location.barcode or '')
+
+    def _format_product_display(product, fallback=''):
+        if not product:
+            return fallback
+        name = getattr(product, 'name', '') or ''
+        if name:
+            return name
+        sku = getattr(product, 'sku', '') or ''
+        if sku:
+            return sku
+        code = getattr(product, 'code', '') or ''
+        if code:
+            return code
+        return fallback
+
+    if current_location:
+        form_location_value = current_location.barcode or ''
+        form_location_display_value = _format_location_display(current_location)
+
+    if current_picking_item:
+        form_picking_item_id = str(current_picking_item.id)
+        if current_picking_item.quantity_picked > 0:
+            form_mode = 'overwrite'
+
+        if current_picking_item.last_quantity_input:
+            form_quantity_value = current_picking_item.last_quantity_input
+        elif current_picking_item.quantity_picked > 0:
+            form_quantity_value = _decimal_to_input(current_picking_item.quantity_picked)
+        elif current_picking_item.remaining_quantity > 0:
+            form_quantity_value = _decimal_to_input(current_picking_item.remaining_quantity)
+
+        product_codes = list(current_picking_item.product.codes.all()) if hasattr(current_picking_item.product, 'codes') else []
+        if product_codes:
+            form_product_value = product_codes[0].code
+        else:
+            form_product_value = getattr(current_picking_item.product, 'code', '') or ''
+
+        form_product_display_value = _format_product_display(
+            current_picking_item.product,
+            form_product_value
+        )
+
+        if current_picking_item.location:
+            current_location = current_picking_item.location
+            form_location_value = current_location.barcode or ''
+            form_location_display_value = _format_location_display(current_location)
+
+    if not form_product_display_value:
+        form_product_display_value = form_product_value
+
+    focus_target = 'location_code'
+    if current_location:
+        focus_target = 'product_code'
+    if current_picking_item and current_location:
+        focus_target = 'quantity'
+
+    recent_locations = []
+    seen_location_ids = set()
+
+    def _append_location(loc):
+        if not loc:
+            return
+        location_id = getattr(loc, 'id', None)
+        if not location_id or location_id in seen_location_ids:
+            return
+        recent_locations.append(loc)
+        seen_location_ids.add(location_id)
+
+    if current_location and getattr(current_location, 'id', None):
+        _append_location(current_location)
+
+    for item in picking_items:
+        _append_location(getattr(item, 'location', None))
+
+    history_entries = (
+        PickingHistory.objects
+        .filter(picking_item__picking_order=picking_order, location_scanned__isnull=False)
+        .select_related('location_scanned')
+        .order_by('-scanned_at')[:50]
+    )
+
+    for entry in history_entries:
+        _append_location(entry.location_scanned)
+
+    return {
+        'picking_order': picking_order,
+        'pending_items': pending_items,
+        'picked_items': picked_items,
+        'current_location': current_location,
+        'current_picking_item': current_picking_item,
+        'focus_target': focus_target,
+        'form_mode': form_mode,
+        'form_quantity_value': form_quantity_value,
+        'form_product_value': form_product_value,
+        'form_product_display_value': form_product_display_value,
+        'form_location_value': form_location_value,
+        'form_location_display_value': form_location_display_value,
+        'form_picking_item_id': form_picking_item_id,
+        'recent_locations': recent_locations,
+    }
 
 
 @login_required
-def enter_quantity(request, picking_id, item_id):
-    """Wprowadzenie ilości pobranej"""
+def picking_fast(request, picking_id):
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+
+    if picking_order.status == 'created':
+        picking_order.status = 'in_progress'
+        picking_order.started_at = timezone.now()
+        picking_order.save(update_fields=['status', 'started_at'])
+
+    context = _build_picking_fast_context(request, picking_order, picking_id)
+    return render(request, 'wms/picking_fast.html', context)
+
+
+@login_required
+def htmx_picking_submit(request, picking_id):
+    if request.method != 'POST' or request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+
+    location_code = request.POST.get('location_code', '').strip()
+    product_code = request.POST.get('product_code', '').strip()
+    quantity_text = request.POST.get('quantity', '').strip()
+    picking_item_id = request.POST.get('picking_item_id', '').strip()
+    action = request.POST.get('action', '').strip()
+    mode = request.POST.get('mode', 'append').strip()
+
+    feedback_message = None
+    feedback_type = 'info'
+
+    current_location = _get_current_picking_location(request, picking_id)
+    current_picking_item = _get_current_picking_item(request, picking_id)
+
+    if action == 'clear_selection':
+        _clear_current_picking_item(request, picking_id)
+        _clear_current_picking_location(request, picking_id)
+        current_location = None
+        current_picking_item = None
+        feedback_message = 'Wyczyszczono bieżące wybory.'
+        feedback_type = 'success'
+
+    if picking_item_id and feedback_type != 'error':
+        try:
+            picking_item = PickingItem.objects.select_related('location', 'product').get(
+                id=picking_item_id,
+                picking_order=picking_order
+            )
+        except PickingItem.DoesNotExist:
+            feedback_message = 'Wybrana pozycja kompletacji nie istnieje.'
+            feedback_type = 'error'
+        else:
+            _set_current_picking_item(request, picking_id, picking_item)
+            current_picking_item = picking_item
+            _set_picking_item_default_quantity(request, picking_id, picking_item)
+            if picking_item.location:
+                _set_current_picking_location(request, picking_id, picking_item.location)
+                current_location = picking_item.location
+            feedback_message = f'Wybrano produkt {picking_item.product.name}.'
+            feedback_type = 'success'
+
+    if location_code and feedback_type != 'error':
+        location = Location.objects.filter(barcode=location_code).first()
+        if not location:
+            location = Location.objects.filter(name__iexact=location_code).first()
+
+        if location:
+            _set_current_picking_location(request, picking_id, location)
+            current_location = location
+            feedback_message = f'Ustawiono lokalizację {location.name}.'
+            feedback_type = 'success'
+        else:
+            feedback_message = f'Lokalizacja {location_code} nie istnieje.'
+            feedback_type = 'error'
+
+    if product_code and feedback_type != 'error':
+        product = Product.find_by_code(product_code)
+        if product:
+            items_qs = PickingItem.objects.filter(
+                picking_order=picking_order,
+                product=product
+            ).select_related('location', 'product').order_by('is_completed', 'sequence')
+            if current_location:
+                items_qs = items_qs.filter(location=current_location)
+
+            picking_item = items_qs.first()
+            if picking_item:
+                _set_current_picking_item(request, picking_id, picking_item)
+                current_picking_item = picking_item
+                _set_picking_item_default_quantity(request, picking_id, picking_item)
+                if picking_item.location:
+                    _set_current_picking_location(request, picking_id, picking_item.location)
+                    current_location = picking_item.location
+                feedback_message = f'Wybrano produkt {picking_item.product.name}.'
+                feedback_type = 'success'
+            else:
+                feedback_message = f'Produkt {product.name} nie występuje w tej kompletacji dla wybranej lokalizacji.'
+                feedback_type = 'error'
+        else:
+            feedback_message = f'Nie znaleziono produktu dla kodu {product_code}.'
+            feedback_type = 'error'
+
+    completed_order = False
+
+    if quantity_text and feedback_type != 'error':
+        if not current_picking_item:
+            feedback_message = 'Najpierw wybierz pozycję kompletacji.'
+            feedback_type = 'error'
+        elif not current_location:
+            feedback_message = 'Najpierw wybierz lokalizację.'
+            feedback_type = 'error'
+        elif current_picking_item.location and current_picking_item.location != current_location:
+            feedback_message = f'Ta pozycja przypisana jest do lokalizacji {current_picking_item.location.name}.'
+            feedback_type = 'error'
+        else:
+            try:
+                quantity = Decimal(quantity_text.replace(',', '.'))
+                if quantity <= 0:
+                    raise ValueError
+            except (InvalidOperation, ValueError, TypeError):
+                feedback_message = 'Nieprawidłowa ilość. Wprowadź liczbę dodatnią.'
+                feedback_type = 'error'
+            else:
+                try:
+                    completed_order = _apply_picking_operation(
+                        picking_order,
+                        current_picking_item,
+                        current_location,
+                        quantity,
+                        request.user,
+                        mode
+                    )
+                except ValueError as exc:
+                    feedback_message = str(exc)
+                    feedback_type = 'error'
+                else:
+                    _set_picking_item_default_quantity(request, picking_id, current_picking_item)
+
+                    action_suffix = 'zaktualizowano' if mode == 'overwrite' else 'pobrano'
+                    feedback_message = (
+                        f'Pomyślnie {action_suffix} {quantity_text} szt. '
+                        f'{current_picking_item.product.name} z {current_location.name}.'
+                    )
+                    feedback_type = 'success'
+
+                    if completed_order:
+                        feedback_message += ' Kompletacja została zakończona.'
+                        _clear_current_picking_item(request, picking_id)
+                        _clear_current_picking_location(request, picking_id)
+                        current_picking_item = None
+                        current_location = None
+
+    context = _build_picking_fast_context(request, picking_order, picking_id)
+    html = render_to_string('wms/partials/_picking_fast_table.html', context, request=request)
+
+    response = HttpResponse(html, status=200)
+    triggers = {
+        'picking-fast-refresh': {'value': 'picking-fast-refresh'},
+    }
+
+    print(feedback_message, feedback_type)
+
+    if feedback_message:
+        triggers['toastMessage'] = {
+            'value': feedback_message,
+            'type': feedback_type
+        }
+
+    response['HX-Trigger'] = json.dumps(triggers)
+    return response
+
+
+@login_required
+def htmx_picking_table(request, picking_id):
+    if request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+    context = _build_picking_fast_context(request, picking_order, picking_id)
+    html = render_to_string('wms/partials/_picking_fast_table.html', context, request=request)
+    return HttpResponse(html, status=200)
+
+
+@login_required
+def htmx_picking_remove_item(request, picking_id, item_id):
+    if request.method != 'POST' or request.headers.get('HX-Request') != 'true':
+        return HttpResponse(status=405)
+
     picking_order = get_object_or_404(PickingOrder, id=picking_id)
     picking_item = get_object_or_404(PickingItem, id=item_id, picking_order=picking_order)
-    
-    if request.method == 'POST':
-        quantity_picked = request.POST.get('quantity_picked')
-        
+
+    if picking_item.quantity_picked <= 0:
+        feedback_message = 'Ta pozycja nie posiada pobranej ilości.'
+        feedback_type = 'info'
+    else:
+        quantity = picking_item.quantity_picked
+        location = picking_item.location
+
         try:
-            quantity_picked = Decimal(quantity_picked)
-            
-            if quantity_picked > 0 and quantity_picked <= picking_item.quantity_to_pick:
-                with transaction.atomic():
-                    # Zapisz historię kompletacji
-                    PickingHistory.objects.create(
-                        picking_item=picking_item,
-                        user=request.user,
-                        location_scanned=picking_item.location,
-                        product_scanned=picking_item.product,
-                        quantity_picked=quantity_picked
-                    )
-                    
-                    # Zaktualizuj pozycję kompletacji
-                    picking_item.quantity_picked = quantity_picked
-                    picking_item.is_completed = True
-                    picking_item.save()
-                    
-                    # Zmniejsz stan magazynowy
-                    stock = Stock.objects.get(
+            with transaction.atomic():
+                picking_item.quantity_picked = Decimal('0')
+                picking_item.is_completed = False
+                picking_item.save(update_fields=['quantity_picked', 'is_completed'])
+
+                order_item = picking_item.order_item
+                order_item.completed_quantity = max(
+                    Decimal('0'),
+                    order_item.completed_quantity - quantity
+                )
+                order_item.save(update_fields=['completed_quantity'])
+
+                if location:
+                    stock = Stock.objects.select_for_update().filter(
                         product=picking_item.product,
-                        location=picking_item.location
-                    )
-                    stock.quantity -= quantity_picked
-                    stock.save()
-                    
-                    # Zaktualizuj pozycję zamówienia
-                    order_item = picking_item.order_item
-                    order_item.completed_quantity += quantity_picked
-                    order_item.save()
-                    
-                    messages.success(request, f'Pobrano {quantity_picked} {picking_item.product.name}')
-                    
-                    # Sprawdź czy to ostatnia pozycja
-                    remaining_items = picking_order.items.filter(is_completed=False)
-                    if not remaining_items.exists():
-                        return redirect('wms:complete_picking', picking_id=picking_id)
-                    else:
-                        return redirect('wms:scan_location', picking_id=picking_id)
-                        
-            else:
-                messages.error(request, 'Nieprawidłowa ilość.')
-                
-        except ValueError:
-            messages.error(request, 'Nieprawidłowa wartość ilości.')
-    
-    # Renderuj szablon z danymi
-    context = {
-        'picking_order': picking_order,
-        'current_item': picking_item,
-        'product': picking_item.product,
-        'stock': Stock.objects.filter(
-            product=picking_item.product,
-            location=picking_item.location
-        ).first(),
-        'location': picking_item.location,
-        'scan_type': 'quantity',
+                        location=location
+                    ).first()
+                    if stock:
+                        stock.quantity += quantity
+                        stock.save(update_fields=['quantity'])
+
+                _clear_picking_quantity_cache(request, picking_id, picking_item.id)
+
+                if picking_order.status == 'completed':
+                    picking_order.status = 'in_progress'
+                    picking_order.completed_at = None
+                    picking_order.save(update_fields=['status', 'completed_at'])
+
+            feedback_message = (
+                f'Usunięto pobraną ilość {quantity} szt. dla {picking_item.product.name}.'
+            )
+            feedback_type = 'success'
+        except Exception as exc:
+            feedback_message = f'Nie udało się usunąć pozycji: {exc}'
+            feedback_type = 'error'
+
+    context = _build_picking_fast_context(request, picking_order, picking_id)
+    html = render_to_string('wms/partials/_picking_fast_table.html', context, request=request)
+
+    response = HttpResponse(html, status=200)
+    triggers = {
+        'picking-fast-refresh': {'value': 'picking-fast-refresh'},
+        'toastMessage': {
+            'value': feedback_message,
+            'type': feedback_type
+        }
     }
-    return render(request, 'wms/enter_quantity.html', context)
+
+    response['HX-Trigger'] = json.dumps(triggers)
+    return response
+
+
+@login_required
+def htmx_picking_product_autocomplete(request, picking_id):
+    query = request.GET.get('product', '').strip()
+    if not query:
+        query = request.GET.get('product_code', '').strip()
+    if not query:
+        return HttpResponse('')
+
+    picking_order = get_object_or_404(PickingOrder, id=picking_id)
+    items = picking_order.items.select_related('product', 'location').prefetch_related('product__codes')
+
+    query_lower = query.lower()
+    options_html = ''
+
+    for item in items:
+        product = item.product
+        if not product:
+            continue
+
+        name = (product.name or '').strip()
+        codes = [code.code for code in getattr(product, 'codes').all()] if hasattr(product, 'codes') else []
+
+        match = False
+        if name and query_lower in name.lower():
+            match = True
+        if not match:
+            for code_value in codes:
+                if query_lower in code_value.lower():
+                    match = True
+                    break
+        if not match:
+            fallback_code = getattr(product, 'code', '') or getattr(product, 'sku', '')
+            if fallback_code and query_lower in fallback_code.lower():
+                match = True
+
+        if not match:
+            continue
+
+        primary_code = codes[0] if codes else (product.code or product.sku or '')
+        remaining = item.quantity_to_pick - item.quantity_picked
+        default_quantity = remaining if remaining > 0 else item.quantity_to_pick
+
+        location_name = item.location.name if item.location else 'Brak lokalizacji'
+        supplemental = f'Lokalizacja: {location_name}'
+        if remaining > 0:
+            supplemental += f' · Pozostało: {format(remaining, "f").rstrip("0").rstrip(".") if "." in format(remaining, "f") else format(remaining, "f")}'
+
+        options_html += (
+            '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
+            f'data-product-code="{primary_code}" '
+            f'data-product-name="{name or primary_code}" '
+            f'data-product-default-quantity="{_decimal_to_input(default_quantity)}" '
+            f'data-picking-item-id="{item.id}">'
+            f'<span class="d-block fw-semibold">{name or primary_code}</span>'
+            f'<small class="d-block text-muted">{supplemental}</small>'
+            '</button>'
+        )
+
+    return HttpResponse(options_html)
 
 
 @login_required
@@ -506,43 +1305,30 @@ def complete_picking(request, picking_id):
             picking_order.status = 'completed'
             picking_order.completed_at = timezone.now()
             picking_order.save()
-            
-            # Sprawdź czy wszystkie pozycje zamówienia zostały zrealizowane
+
             customer_order = picking_order.customer_order
-            all_completed = True
-            partially_completed = False
-            
-            for order_item in customer_order.items.all():
-                if order_item.completed_quantity < order_item.quantity:
-                    all_completed = False
-                    if order_item.completed_quantity > 0:
-                        partially_completed = True
-            
-            # Zaktualizuj status zamówienia
-            if all_completed:
-                customer_order.status = 'completed'
-            elif partially_completed:
-                customer_order.status = 'partially_completed'
-            customer_order.save()
-            
-            # Utwórz dokument magazynowy (WZ)
-            warehouse_doc = WarehouseDocument.objects.create(
-                document_number=f"WZ-{customer_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
-                document_type='WZ',
-                customer_order=customer_order
-            )
-            
-            # Utwórz pozycje dokumentu
-            for picking_item in picking_order.items.all():
-                if picking_item.quantity_picked > 0:
+            picked_items = [item for item in picking_order.items.all() if item.quantity_picked > 0]
+
+            if picked_items:
+                document_number = _generate_wz_number(customer_order)
+                warehouse_doc = WarehouseDocument.objects.create(
+                    document_number=document_number,
+                    document_type='WZ',
+                    customer_order=customer_order
+                )
+
+                for picking_item in picked_items:
                     DocumentItem.objects.create(
                         document=warehouse_doc,
                         product=picking_item.product,
                         location=picking_item.location,
                         quantity=picking_item.quantity_picked
                     )
-            
-            messages.success(request, f'Zakończono kompletację. Utworzono dokument WZ {warehouse_doc.document_number}')
+
+                messages.success(request, f'Zakończono kompletację. Utworzono dokument WZ {warehouse_doc.document_number}')
+            else:
+                messages.info(request, 'Zakończono kompletację. Brak pozycji do utworzenia dokumentu WZ.')
+
             return redirect('wms:order_detail', order_id=customer_order.id)
     
     context = {
@@ -1114,6 +1900,7 @@ def supplier_order_list(request):
     """Lista zamówień do dostawców (ZD)"""
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
+    assigned_filter = request.GET.get('assigned', '')
     
     supplier_orders = SupplierOrder.objects.all()
     
@@ -1125,12 +1912,40 @@ def supplier_order_list(request):
         )
     
     if status_filter:
-        supplier_orders = supplier_orders.filter(status=status_filter)
+        if status_filter == 'in_receiving':
+            supplier_orders = supplier_orders.filter(
+                Q(status='in_receiving') |
+                Q(receiving_orders__status__in=['pending', 'in_progress'])
+            ).distinct()
+        else:
+            supplier_orders = supplier_orders.filter(status=status_filter)
+
+    if assigned_filter:
+        if assigned_filter == 'unassigned':
+            supplier_orders = supplier_orders.filter(
+                Q(receiving_orders__isnull=True) |
+                Q(receiving_orders__assigned_to__isnull=True)
+            ).distinct()
+        else:
+            try:
+                assigned_user_id = int(assigned_filter)
+            except (TypeError, ValueError):
+                assigned_user_id = None
+
+            if assigned_user_id:
+                supplier_orders = supplier_orders.filter(
+                    receiving_orders__assigned_to_id=assigned_user_id,
+                    receiving_orders__status__in=['pending', 'in_progress']
+                ).distinct()
+
+    assigned_users = User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct()
     
     context = {
         'supplier_orders': supplier_orders,
         'search_query': search_query,
         'status_filter': status_filter,
+        'assigned_filter': assigned_filter,
+        'assigned_users': assigned_users,
         'status_choices': SupplierOrder.SUPPLIER_STATUS_CHOICES,
     }
     return render(request, 'wms/supplier_order_list.html', context)
@@ -1366,10 +2181,58 @@ def create_receiving_order(request, supplier_order_id):
 
 
 @login_required
+def receiving_order_change_status(request, receiving_id):
+    """Zmiana statusu regalacji (np. ponowne otwarcie zakończonej)."""
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+
+    receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    new_status = request.POST.get('status')
+    allowed_statuses = {'pending', 'in_progress'}
+
+    if new_status not in allowed_statuses:
+        messages.error(request, 'Wybrano nieprawidłowy status.')
+        return redirect('wms:receiving_order_detail', receiving_id=receiving_id)
+
+    if new_status == receiving_order.status:
+        messages.info(request, 'Status regalacji pozostał bez zmian.')
+        return redirect('wms:receiving_order_detail', receiving_id=receiving_id)
+
+    updates = ['status']
+    receiving_order.status = new_status
+
+    if new_status == 'pending':
+        if receiving_order.started_at is not None:
+            receiving_order.started_at = None
+            updates.append('started_at')
+        if receiving_order.completed_at is not None:
+            receiving_order.completed_at = None
+            updates.append('completed_at')
+    elif new_status == 'in_progress':
+        if not receiving_order.started_at:
+            receiving_order.started_at = timezone.now()
+            updates.append('started_at')
+        if receiving_order.completed_at is not None:
+            receiving_order.completed_at = None
+            updates.append('completed_at')
+
+    receiving_order.save(update_fields=updates)
+
+    _update_supplier_order_status(receiving_order.supplier_order)
+
+    messages.success(request, 'Status regalacji został zaktualizowany.')
+
+    if new_status == 'in_progress':
+        return redirect('wms:receiving_order_fast', receiving_id=receiving_id)
+    return redirect('wms:receiving_order_detail', receiving_id=receiving_id)
+
+
+@login_required
 def receiving_order_list(request):
     """Lista rejestrów przyjęć (Regalacja)"""
     search_query = request.GET.get('search', '')
     status_filter = request.GET.get('status', '')
+    assigned_filter = request.GET.get('assigned', '')
     
     receiving_orders = ReceivingOrder.objects.all()
     
@@ -1382,11 +2245,26 @@ def receiving_order_list(request):
     
     if status_filter:
         receiving_orders = receiving_orders.filter(status=status_filter)
+
+    if assigned_filter:
+        if assigned_filter == 'unassigned':
+            receiving_orders = receiving_orders.filter(assigned_to__isnull=True)
+        else:
+            try:
+                assigned_user_id = int(assigned_filter)
+            except (TypeError, ValueError):
+                assigned_user_id = None
+            if assigned_user_id:
+                receiving_orders = receiving_orders.filter(assigned_to_id=assigned_user_id)
     
+    assigned_users = User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct()
+
     context = {
         'receiving_orders': receiving_orders,
         'search_query': search_query,
         'status_filter': status_filter,
+        'assigned_filter': assigned_filter,
+        'assigned_users': assigned_users,
         'status_choices': ReceivingOrder.RECEIVING_STATUS_CHOICES,
     }
     return render(request, 'wms/receiving_order_list.html', context)
@@ -1482,6 +2360,58 @@ def _set_item_default_quantity(request, receiving_id, receiving_item):
             request.session.modified = True
 
 
+def _update_supplier_order_status(supplier_order):
+    """Aktualizuje status ZD bazując na postępie regalacji."""
+    if not supplier_order:
+        return
+
+    items = supplier_order.items.all()
+    if not items.exists():
+        return
+
+    active_receiving_exists = supplier_order.receiving_orders.filter(
+        status__in=['pending', 'in_progress']
+    ).exists()
+
+    aggregates = items.aggregate(
+        total_ordered=Sum('quantity_ordered'),
+        total_received=Sum('quantity_received'),
+    )
+
+    total_ordered = aggregates.get('total_ordered') or Decimal('0')
+    total_received = aggregates.get('total_received') or Decimal('0')
+    any_received = total_received > 0
+    all_fully_received = not items.filter(quantity_received__lt=F('quantity_ordered')).exists()
+
+    new_status = supplier_order.status
+    new_delivery_date = supplier_order.actual_delivery_date
+
+    if active_receiving_exists:
+        new_status = 'in_receiving'
+    elif total_ordered > 0 and all_fully_received and total_received >= total_ordered:
+        new_status = 'received'
+        new_delivery_date = timezone.now().date()
+    elif any_received or supplier_order.receiving_orders.exists():
+        new_status = 'partially_received'
+        if not new_delivery_date:
+            new_delivery_date = timezone.now().date()
+    else:
+        if supplier_order.status in ('received', 'partially_received'):
+            new_status = 'confirmed'
+            new_delivery_date = None
+
+    updates = []
+    if new_status != supplier_order.status:
+        supplier_order.status = new_status
+        updates.append('status')
+    if new_delivery_date != supplier_order.actual_delivery_date:
+        supplier_order.actual_delivery_date = new_delivery_date
+        updates.append('actual_delivery_date')
+
+    if updates:
+        supplier_order.save(update_fields=updates)
+
+
 def _apply_receiving_intake(receiving_order, receiving_item, location, quantity, user):
     with transaction.atomic():
         receiving_item.quantity_received += quantity
@@ -1491,6 +2421,8 @@ def _apply_receiving_intake(receiving_order, receiving_item, location, quantity,
         supplier_item = receiving_item.supplier_order_item
         supplier_item.quantity_received += quantity
         supplier_item.save()
+
+        _update_supplier_order_status(receiving_order.supplier_order)
 
         ReceivingHistory.objects.create(
             receiving_order=receiving_order,
@@ -1515,14 +2447,7 @@ def _apply_receiving_intake(receiving_order, receiving_item, location, quantity,
 
         receiving_order.refresh_from_db()
 
-        if receiving_order.received_items == receiving_order.total_items and receiving_order.total_items > 0:
-            receiving_order.status = 'completed'
-            receiving_order.completed_at = timezone.now()
-            receiving_order.save(update_fields=['status', 'completed_at'])
-            create_warehouse_document(receiving_order)
-            return True
-
-    return False
+    return receiving_order.status == 'completed'
 
 
 def _build_receiving_fast_context(request, receiving_order, receiving_id):
@@ -1930,6 +2855,8 @@ def htmx_receiving_remove_item(request, receiving_id, item_id):
                     stock.quantity = max(Decimal('0'), stock.quantity - quantity)
                     stock.save(update_fields=['quantity'])
 
+            _update_supplier_order_status(receiving_order.supplier_order)
+
             # Update receiving order status if needed
             remaining_received = receiving_order.items.filter(quantity_received__gt=0).exists()
             if not remaining_received:
@@ -1942,6 +2869,9 @@ def htmx_receiving_remove_item(request, receiving_id, item_id):
                     receiving_order.status = 'in_progress'
                     receiving_order.completed_at = None
                     receiving_order.save(update_fields=['status', 'completed_at'])
+
+        _update_supplier_order_status(receiving_order.supplier_order)
+        receiving_order.supplier_order.refresh_from_db()
 
         _clear_item_quantity_cache(request, receiving_id, item_id)
         current_item = _get_current_receiving_item(request, receiving_id)
@@ -1990,13 +2920,7 @@ def create_warehouse_document(receiving_order):
             quantity=receiving_item.quantity_received
         )
     
-    # Zaktualizuj status ZD
-    if supplier_order.is_fully_received:
-        supplier_order.status = 'received'
-    else:
-        supplier_order.status = 'partially_received'
-    supplier_order.actual_delivery_date = timezone.now().date()
-    supplier_order.save()
+    _update_supplier_order_status(supplier_order)
 
 
 @login_required

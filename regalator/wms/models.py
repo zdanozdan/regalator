@@ -159,6 +159,11 @@ class Product(models.Model):
         return self.codes.filter(code_type='qr', is_active=True)
     
     @property
+    def primary_barcode(self):
+        """Zwraca domyślny kod kreskowy (aktywny)"""
+        return self.codes.filter(code_type='barcode', is_active=True).first()
+    
+    @property
     def total_stock(self):
         """Łączny stan magazynowy we wszystkich lokalizacjach (włącznie z produktami potomnymi)"""
         # Get all child products
@@ -182,12 +187,31 @@ class Product(models.Model):
         return abs(self.stock_difference) > 0.01  # Tolerancja 0.01
     
     @classmethod
-    def find_by_code(cls, code):
-        """Znajduje produkt po kodzie (barcode, QR, etc.)"""
-        try:
-            return cls.objects.get(codes__code=code, codes__is_active=True)
-        except cls.DoesNotExist:
+    def find_by_code(cls, value):
+        """
+        Znajduje produkt po kodzie kreskowym / QR, kodzie systemowym
+        lub nazwie (dokładne dopasowanie, ignorując wielkość liter).
+        """
+        if not value:
             return None
+
+        value = value.strip()
+        if not value:
+            return None
+
+        # 1. Sprawdź aktywne kody w tabeli ProductCode
+        match = cls.objects.filter(codes__code=value, codes__is_active=True).first()
+        if match:
+            return match
+
+        # 2. Sprawdź kody systemowe (np. symbol z Subiekta)
+        try:
+            return cls.objects.get(code__iexact=value)
+        except cls.DoesNotExist:
+            pass
+
+        # 3. Sprawdź po nazwie produktu
+        return cls.objects.filter(name__iexact=value).first()
     
     @classmethod
     def find_by_any_code(cls, code):
@@ -452,6 +476,7 @@ class SupplierOrder(models.Model):
         ('pending', 'Oczekujące'),
         ('confirmed', 'Potwierdzone'),
         ('in_transit', 'W transporcie'),
+        ('in_receiving', 'W regalacji'),
         ('received', 'Przyjęte'),
         ('partially_received', 'Częściowo przyjęte'),
         ('cancelled', 'Anulowane'),
@@ -488,6 +513,36 @@ class SupplierOrder(models.Model):
     @property
     def is_fully_received(self):
         return self.received_items == self.total_items and self.total_items > 0
+
+    @property
+    def has_active_receiving(self):
+        """Czy istnieją regalacje w trakcie realizacji."""
+        return self.receiving_orders.filter(status__in=['pending', 'in_progress']).exists()
+
+    @property
+    def has_any_receiving(self):
+        """Czy istnieje jakakolwiek regalacja powiązana z tym ZD."""
+        return self.receiving_orders.exists()
+
+    @property
+    def active_receiving_assignment(self):
+        """Zwraca użytkownika przypisanego do aktywnej regalacji (pending/in_progress)."""
+        active_order = self.receiving_orders.filter(
+            status__in=['pending', 'in_progress']
+        ).select_related('assigned_to').first()
+        if active_order and active_order.assigned_to:
+            return active_order.assigned_to
+        return None
+
+    @property
+    def active_receiving(self):
+        """Zwraca aktywną regalację (pending/in_progress) lub None."""
+        return self.receiving_orders.filter(status__in=['pending', 'in_progress']).order_by('id').first()
+
+    @property
+    def last_receiving(self):
+        """Zwraca ostatnią regalację powiązaną z ZD (dowolny status) lub None."""
+        return self.receiving_orders.order_by('-created_at').first()
 
 
 class SupplierOrderItem(models.Model):
