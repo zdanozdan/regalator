@@ -4,6 +4,8 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.core.signals import Signal
 from django.contrib.auth.models import User
+from django.db.models import Count, Q
+from django.utils import timezone
 
 from .models import (
     Product,
@@ -11,6 +13,9 @@ from .models import (
     PickingOrder,
     PickingItem,
     OrderItem,
+    SupplierOrder,
+    ReceivingOrder,
+    ReceivingItem,
 )
 
 # Custom signal for product updates
@@ -37,42 +42,92 @@ def _sync_customer_order_status(customer_order):
         completed_quantity += capped_completed
 
     statuses = [order.status for order in picking_orders if order.status != 'cancelled']
-    has_in_progress = any(status == 'in_progress' for status in statuses)
-    has_created = any(status == 'created' for status in statuses)
-    has_completed = any(status == 'completed' for status in statuses)
-    has_non_cancelled = bool(statuses)
-
-    any_picking_items = any(hasattr(order, 'items') and order.items.exists() for order in picking_orders)
-    all_pickings_completed = bool(statuses) and all(status == 'completed' for status in statuses)
+    has_in_progress = 'in_progress' in statuses
+    all_created_status = statuses and all(status == 'created' for status in statuses)
+    all_completed_status = statuses and all(status == 'completed' for status in statuses)
 
     new_status = customer_order.status
 
-    if total_quantity > 0:
-        if completed_quantity >= total_quantity:
-            new_status = 'completed'
-        elif completed_quantity >= 0:
-            new_status = 'partially_completed'
-        elif has_in_progress or has_created:
+    if statuses:
+        if has_in_progress:
             new_status = 'in_progress'
-        elif has_non_cancelled:
-            new_status = 'pending'
+        elif all_created_status:
+            new_status = 'created'
+        elif all_completed_status:
+            if total_quantity > 0:
+                if completed_quantity >= total_quantity:
+                    new_status = 'completed'
+                elif completed_quantity > 0:
+                    new_status = 'partially_completed'
+                else:
+                    new_status = 'partially_completed'
+            else:
+                new_status = 'completed'
         else:
-            new_status = 'pending'
+            if total_quantity > 0:
+                if completed_quantity >= total_quantity:
+                    new_status = 'completed'
+                elif completed_quantity > 0:
+                    new_status = 'partially_completed'
+                else:
+                    new_status = 'pending'
+            else:
+                new_status = 'pending'
     else:
-        if has_in_progress or has_created:
-            new_status = 'in_progress'
-        elif not any_picking_items and all_pickings_completed:
-            new_status = 'completed'
-        elif has_completed and not has_in_progress and not has_created:
-            new_status = 'completed'
-        elif has_non_cancelled:
-            new_status = 'pending'
+        if total_quantity > 0:
+            if completed_quantity >= total_quantity:
+                new_status = 'completed'
+            elif completed_quantity > 0:
+                new_status = 'partially_completed'
+            else:
+                new_status = 'pending'
         else:
             new_status = 'pending'
 
     if new_status != customer_order.status:
         customer_order.status = new_status
         customer_order.save(update_fields=['status'])
+
+
+def _sync_supplier_order_status(supplier_order):
+    if not supplier_order:
+        return
+
+    receiving_orders = supplier_order.receiving_orders.all()
+    items = supplier_order.items.all()
+
+    if receiving_orders.exists():
+        active_exists = receiving_orders.filter(status__in=['pending', 'in_progress']).exists()
+        completed_exists = receiving_orders.filter(status='completed').exists()
+
+        total_items = items.aggregate(total=Count('id'))['total'] or 0
+        completed_items = items.filter(quantity_received__gte=1).count()
+
+        new_status = supplier_order.status
+
+        if active_exists:
+            new_status = 'in_receiving'
+        elif total_items > 0 and completed_items >= total_items:
+            new_status = 'received'
+        elif completed_items > 0:
+            new_status = 'partially_received'
+        elif completed_exists:
+            new_status = 'partially_received'
+        else:
+            new_status = supplier_order.status
+
+        if new_status != supplier_order.status:
+            supplier_order.status = new_status
+            supplier_order.save(update_fields=['status'])
+
+        if new_status in ['received', 'partially_received'] and not supplier_order.actual_delivery_date:
+            supplier_order.actual_delivery_date = timezone.now().date()
+            supplier_order.save(update_fields=['actual_delivery_date'])
+    else:
+        if supplier_order.status in ['received', 'partially_received']:
+            supplier_order.status = 'confirmed'
+            supplier_order.actual_delivery_date = None
+            supplier_order.save(update_fields=['status', 'actual_delivery_date'])
 
 
 @receiver(product_updated)
@@ -137,3 +192,35 @@ def sync_order_on_order_item_save(sender, instance, created, update_fields=None,
 
     if should_sync:
         _sync_customer_order_status(customer_order)
+
+
+@receiver(post_save, sender=ReceivingOrder)
+def sync_supplier_on_receiving_order_save(sender, instance, created, update_fields=None, **kwargs):
+    if instance.supplier_order_id:
+        relevant_fields = {'status', 'completed_at', 'started_at'}
+        should_sync = created or update_fields is None or bool(relevant_fields.intersection(update_fields))
+        if should_sync:
+            _sync_supplier_order_status(instance.supplier_order)
+
+
+@receiver(post_delete, sender=ReceivingOrder)
+def sync_supplier_on_receiving_order_delete(sender, instance, **kwargs):
+    if instance.supplier_order_id:
+        _sync_supplier_order_status(instance.supplier_order)
+
+
+@receiver(post_save, sender=ReceivingItem)
+def sync_supplier_on_receiving_item_save(sender, instance, created, update_fields=None, **kwargs):
+    receiving_order = instance.receiving_order
+    if receiving_order and receiving_order.supplier_order_id:
+        relevant_fields = {'quantity_received'}
+        should_sync = created or update_fields is None or bool(relevant_fields.intersection(update_fields))
+        if should_sync:
+            _sync_supplier_order_status(receiving_order.supplier_order)
+
+
+@receiver(post_delete, sender=ReceivingItem)
+def sync_supplier_on_receiving_item_delete(sender, instance, **kwargs):
+    receiving_order = getattr(instance, 'receiving_order', None)
+    if receiving_order and receiving_order.supplier_order_id:
+        _sync_supplier_order_status(receiving_order.supplier_order)

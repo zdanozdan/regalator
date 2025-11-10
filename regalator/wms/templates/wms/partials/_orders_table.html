@@ -1,0 +1,172 @@
+{% load static %}
+
+{% if orders|length %}
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Numer ZK</th>
+                <th>Klient</th>
+                <th>Data zamówienia</th>
+                <th>Status</th>
+                <th>Przypisane</th>
+                <th>Pozycje</th>
+                <th>Akcje</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td>
+                    <strong>{{ order.order_number }}</strong>
+                </td>
+                <td>
+                    <div>{{ order.customer_name }}</div>
+                    <small class="text-muted">{{ order.customer_address|truncatechars:50 }}</small>
+                </td>
+                <td>{{ order.order_date|date:"d.m.Y H:i" }}</td>
+                <td>
+                    <span class="badge status-{{ order.status }}">
+                        {% if order.status == 'pending' %}
+                            <i class="fas fa-clock me-1"></i>Oczekujące
+                        {% elif order.status == 'created' %}
+                            <i class="fas fa-play me-1"></i>Utworzona kompletacja
+                        {% elif order.status == 'in_progress' %}
+                            <i class="fas fa-cogs me-1"></i>W kompletacji
+                        {% elif order.status == 'completed' %}
+                            <i class="fas fa-check me-1"></i>Zrealizowane
+                        {% elif order.status == 'partially_completed' %}
+                            <i class="fas fa-exclamation-triangle me-1"></i>Częściowo zrealizowane
+                        {% elif order.status == 'cancelled' %}
+                            <i class="fas fa-times me-1"></i>Anulowane
+                        {% endif %}
+                    </span>
+                </td>
+                <td>
+                    {% if order.assigned_operator %}
+                        {{ order.assigned_operator.get_full_name|default:order.assigned_operator.username }}
+                    {% elif order.first_picking %}
+                        <span class="text-muted">Nieprzypisane</span>
+                    {% else %}
+                        <span class="text-muted">Brak kompletacji</span>
+                    {% endif %}
+                </td>
+                <td>{{ order.completed_items_count }}/{{ order.total_items_count }}</td>
+                <td>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'wms:order_detail' order.id %}">
+                                    <i class="fas fa-eye me-2"></i>Szczegóły
+                                </a>
+                            </li>
+                            {% if order.picking_completed and order.completed_picking_order %}
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'wms:picking_detail' order.completed_picking_order.id %}">
+                                        <i class="fas fa-check me-2"></i>Kompletacja zakończona
+                                    </a>
+                                </li>
+                            {% elif order.first_picking %}
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'wms:start_or_continue_picking' order.first_picking.id %}">
+                                        <i class="fas fa-dolly me-2"></i>Kompletuj
+                                    </a>
+                                </li>
+                            {% elif order.can_start_picking %}
+                                <li>
+                                    <a class="dropdown-item"
+                                       href="#"
+                                       onclick="event.preventDefault(); this.closest('tr').querySelector('.start-picking-form').submit();">
+                                        <i class="fas fa-play me-2"></i>Kompletuj
+                                    </a>
+                                </li>
+                            {% else %}
+                                <li>
+                                    <span class="dropdown-item text-muted">
+                                        <i class="fas fa-ban me-2"></i>Brak kompletacji
+                                    </span>
+                                </li>
+                            {% endif %}
+                            <li>
+                                <button type="button"
+                                        class="dropdown-item text-danger"
+                                        onclick="alert('Usuwanie zamówień będzie dostępne wkrótce.');">
+                                    <i class="fas fa-trash me-2"></i>Usuń
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                    {% if not order.first_picking %}
+                        <form method="post"
+                              action="{% url 'wms:create_picking_order' order.id %}"
+                              class="start-picking-form">
+                            {% csrf_token %}
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+    <h5 class="text-muted">Brak zamówień</h5>
+    <p class="text-muted">
+        {% if search_query or status_filter or assigned_filter %}
+            Nie znaleziono zamówień spełniających kryteria wyszukiwania.
+        {% else %}
+            Brak zamówień w systemie.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% if page_obj and page_obj.has_other_pages %}
+<nav aria-label="Nawigacja stron">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-double-left"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-left"></i>
+                </a>
+            </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+                <li class="page-item active">
+                    <span class="page-link">{{ num }}</span>
+                </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">{{ num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

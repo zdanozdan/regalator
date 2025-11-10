@@ -113,19 +113,47 @@ def kompletacja_dashboard(request):
     """Dashboard kompletacji (ZK)"""
     # Statystyki kompletacji
     pending_orders = CustomerOrder.objects.filter(status='pending').count()
+    created_orders = CustomerOrder.objects.filter(status='created').count()
     in_progress_orders = CustomerOrder.objects.filter(status='in_progress').count()
+    partially_completed_orders = CustomerOrder.objects.filter(status='partially_completed').count()
     completed_orders = CustomerOrder.objects.filter(status='completed').count()
     active_picking_orders = PickingOrder.objects.filter(status='in_progress').count()
     
     # Ostatnie zamówienia
-    recent_orders = CustomerOrder.objects.all().order_by('-created_at')[:5]
+    recent_orders = list(
+        CustomerOrder.objects
+        .all()
+        .prefetch_related('items')
+        .prefetch_related(
+            Prefetch(
+                'pickingorder_set',
+                queryset=PickingOrder.objects.select_related('assigned_to')
+            )
+        )
+        .order_by('-created_at')[:10]
+    )
+    recent_counts = {
+        'pending': 0,
+        'created': 0,
+        'in_progress': 0,
+        'partially_completed': 0,
+        'completed': 0,
+        'cancelled': 0,
+    }
+    for order in recent_orders:
+        if order.status in recent_counts:
+            recent_counts[order.status] += 1
+        _prepare_order_display(order)
     
     context = {
         'pending_orders': pending_orders,
+        'created_orders': created_orders,
         'in_progress_orders': in_progress_orders,
+        'partially_completed_orders': partially_completed_orders,
         'completed_orders': completed_orders,
         'active_picking_orders': active_picking_orders,
         'recent_orders': recent_orders,
+        'recent_counts': recent_counts,
     }
     return render(request, 'wms/kompletacja_dashboard.html', context)
 
@@ -140,7 +168,25 @@ def przyjecia_dashboard(request):
     active_receiving = ReceivingOrder.objects.filter(status='in_progress').count()
     
     # Ostatnie zamówienia ZD
-    recent_supplier_orders = SupplierOrder.objects.all().order_by('-created_at')[:5]
+    recent_supplier_orders = list(
+        SupplierOrder.objects
+        .all()
+        .order_by('-created_at')[:10]
+        .prefetch_related('receiving_orders__assigned_to')
+    )
+    
+    recent_counts = {
+        'pending': 0,
+        'created': 0,
+        'in_progress': 0,
+        'partially_completed': 0,
+        'completed': 0,
+        'cancelled': 0,
+    }
+    for order in recent_supplier_orders:
+        if order.status in recent_counts:
+            recent_counts[order.status] += 1
+        _prepare_supplier_order_display(order)
     
     context = {
         'pending_supplier_orders': pending_supplier_orders,
@@ -148,6 +194,7 @@ def przyjecia_dashboard(request):
         'received_supplier_orders': received_supplier_orders,
         'active_receiving': active_receiving,
         'recent_supplier_orders': recent_supplier_orders,
+        'recent_counts': recent_counts,
     }
     return render(request, 'wms/przyjecia_dashboard.html', context)
 
@@ -163,7 +210,8 @@ def order_list(request):
         Prefetch(
             'pickingorder_set',
             queryset=PickingOrder.objects.select_related('assigned_to')
-        )
+        ),
+        'items'
     )
     
     if status_filter:
@@ -193,6 +241,9 @@ def order_list(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    for order in page_obj:
+        _prepare_order_display(order)
+    
     assigned_users = User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct()
     
     context = {
@@ -221,40 +272,8 @@ def order_detail(request, order_id):
     for picking_order in picking_orders:
         picking_items.extend(list(picking_order.items.all()))
 
-    completed_items = 0
-    partial_items = 0
-    total_items = 0
-    completed_quantity = Decimal('0')
-    total_quantity = Decimal('0')
-
-    if picking_items:
-        total_items = len(picking_items)
-        for p_item in picking_items:
-            qty_to_pick = p_item.quantity_to_pick or Decimal('0')
-            qty_picked = p_item.quantity_picked or Decimal('0')
-
-            total_quantity += qty_to_pick
-            completed_quantity += min(qty_picked, qty_to_pick)
-
-            if qty_to_pick > 0:
-                if qty_picked >= qty_to_pick:
-                    completed_items += 1
-                elif qty_picked > 0:
-                    partial_items += 1
-    else:
-        total_items = len(order_items)
-        for item in order_items:
-            item_quantity = item.quantity or Decimal('0')
-            item_completed = item.completed_quantity or Decimal('0')
-
-            total_quantity += item_quantity
-            completed_quantity += min(item_completed, item_quantity)
-
-            if item_quantity > 0:
-                if item_completed >= item_quantity:
-                    completed_items += 1
-                elif item_completed > 0:
-                    partial_items += 1
+    total_items, completed_items, partial_items, quantities = _calculate_order_progress(order, order_items, picking_items)
+    total_quantity, completed_quantity = quantities
 
     pending_items = max(total_items - completed_items - partial_items, 0)
     picking_progress = 0.0
@@ -298,6 +317,7 @@ def order_detail(request, order_id):
 def start_or_continue_picking(request, picking_id):
     """Rozpoczyna lub kontynuuje kompletację i przekierowuje do procesu fast."""
     picking_order = get_object_or_404(PickingOrder, id=picking_id)
+    customer_order = picking_order.customer_order
 
     if picking_order.status == 'created':
         with transaction.atomic():
@@ -507,49 +527,12 @@ def create_picking_order(request, order_id):
     customer_order = get_object_or_404(CustomerOrder, id=order_id)
     
     if request.method == 'POST':
-        # Sprawdź czy już istnieje zlecenie kompletacji dla tego zamówienia
-        existing_picking = PickingOrder.objects.filter(customer_order=customer_order).first()
-        if existing_picking:
-            messages.warning(request, f'Zlecenie kompletacji już istnieje: {existing_picking.order_number}')
-            return redirect('wms:order_detail', order_id=order_id)
-        
-        # Utwórz nowe zlecenie kompletacji
-        picking_order = PickingOrder.objects.create(
-            order_number=f"Terminacja-{customer_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
-            customer_order=customer_order,
-            status='created',
-            assigned_to=request.user
-        )
-        
-        # Utwórz pozycje kompletacji na podstawie pozycji zamówienia klienta
-        sequence = 1
-        for order_item in customer_order.items.all():
-            # Znajdź lokalizację z największą ilością produktu
-            stock = Stock.objects.filter(
-                product=order_item.product,
-                quantity__gt=0
-            ).order_by('-quantity').first()
-            
-            if stock:
-                location = stock.location
-            else:
-                # Jeśli nie ma stanu, użyj pierwszej dostępnej lokalizacji
-                location = Location.objects.first()
-            
-            PickingItem.objects.create(
-                picking_order=picking_order,
-                order_item=order_item,
-                product=order_item.product,
-                location=location,
-                quantity_to_pick=order_item.quantity,
-                quantity_picked=0,
-                is_completed=False,
-                sequence=sequence
-            )
-            sequence += 1
-        
-        messages.success(request, f'Utworzono zlecenie kompletacji: {picking_order.order_number}')
-        return redirect('wms:picking_detail', picking_id=picking_order.id)
+        picking_order, created = _ensure_picking_order(customer_order, request.user)
+        if created:
+            messages.success(request, f'Utworzono zlecenie kompletacji: {picking_order.order_number}')
+        else:
+            messages.info(request, f'Zlecenie kompletacji już istnieje: {picking_order.order_number}')
+        return redirect('wms:picking_fast', picking_id=picking_order.id)
     
     return redirect('wms:order_detail', order_id=order_id)
 
@@ -1902,46 +1885,19 @@ def supplier_order_list(request):
     status_filter = request.GET.get('status', '')
     assigned_filter = request.GET.get('assigned', '')
     
-    supplier_orders = SupplierOrder.objects.all()
+    supplier_orders = SupplierOrder.objects.all().prefetch_related(
+        Prefetch('receiving_orders', queryset=ReceivingOrder.objects.select_related('assigned_to')),
+        'items'
+    )
     
-    if search_query:
-        supplier_orders = supplier_orders.filter(
-            Q(order_number__icontains=search_query) |
-            Q(supplier_name__icontains=search_query) |
-            Q(supplier_code__icontains=search_query)
-        )
+    order_list = list(supplier_orders)
+    for order in order_list:
+        _prepare_supplier_order_display(order)
     
-    if status_filter:
-        if status_filter == 'in_receiving':
-            supplier_orders = supplier_orders.filter(
-                Q(status='in_receiving') |
-                Q(receiving_orders__status__in=['pending', 'in_progress'])
-            ).distinct()
-        else:
-            supplier_orders = supplier_orders.filter(status=status_filter)
-
-    if assigned_filter:
-        if assigned_filter == 'unassigned':
-            supplier_orders = supplier_orders.filter(
-                Q(receiving_orders__isnull=True) |
-                Q(receiving_orders__assigned_to__isnull=True)
-            ).distinct()
-        else:
-            try:
-                assigned_user_id = int(assigned_filter)
-            except (TypeError, ValueError):
-                assigned_user_id = None
-
-            if assigned_user_id:
-                supplier_orders = supplier_orders.filter(
-                    receiving_orders__assigned_to_id=assigned_user_id,
-                    receiving_orders__status__in=['pending', 'in_progress']
-                ).distinct()
-
     assigned_users = User.objects.all().order_by(Lower('last_name'), Lower('first_name')).distinct()
     
     context = {
-        'supplier_orders': supplier_orders,
+        'supplier_orders': order_list,
         'search_query': search_query,
         'status_filter': status_filter,
         'assigned_filter': assigned_filter,
@@ -4300,6 +4256,140 @@ def htmx_receiving_product_autocomplete(request, receiving_id):
         )
 
     return HttpResponse(''.join(options))
+
+
+def _ensure_picking_order(customer_order, user):
+    existing = customer_order.pickingorder_set.exclude(status='cancelled').first()
+    if existing:
+        return existing, False
+
+    picking_order = PickingOrder.objects.create(
+        order_number=f"Terminacja-{customer_order.order_number}-{timezone.now().strftime('%Y%m%d%H%M')}",
+        customer_order=customer_order,
+        status='created',
+        assigned_to=user
+    )
+
+    sequence = 1
+    for order_item in customer_order.items.all():
+        stock = Stock.objects.filter(
+            product=order_item.product,
+            quantity__gt=0
+        ).order_by('-quantity').first()
+
+        if stock:
+            location = stock.location
+        else:
+            location = Location.objects.first()
+
+        PickingItem.objects.create(
+            picking_order=picking_order,
+            order_item=order_item,
+            product=order_item.product,
+            location=location,
+            quantity_to_pick=order_item.quantity,
+            quantity_picked=0,
+            is_completed=False,
+            sequence=sequence
+        )
+        sequence += 1
+
+    return picking_order, True
+
+
+def _calculate_order_progress(customer_order, order_items=None, picking_items=None):
+    order_items = order_items if order_items is not None else list(customer_order.items.all())
+    picking_items = picking_items if picking_items is not None else []
+
+    total_items = 0
+    completed_items = 0
+    partial_items = 0
+    total_quantity = Decimal('0')
+    completed_quantity = Decimal('0')
+
+    if picking_items:
+        total_items = len(picking_items)
+        for p_item in picking_items:
+            qty_to_pick = p_item.quantity_to_pick or Decimal('0')
+            qty_picked = p_item.quantity_picked or Decimal('0')
+
+            total_quantity += qty_to_pick
+            completed_quantity += min(qty_picked, qty_to_pick)
+
+            if qty_to_pick > 0:
+                if qty_picked >= qty_to_pick:
+                    completed_items += 1
+                elif qty_picked > 0:
+                    partial_items += 1
+            else:
+                completed_items += 1
+    else:
+        total_items = len(order_items)
+        for item in order_items:
+            item_quantity = item.quantity or Decimal('0')
+            item_completed = item.completed_quantity or Decimal('0')
+
+            total_quantity += item_quantity
+            completed_quantity += min(item_completed, item_quantity)
+
+            if item_quantity > 0:
+                if item_completed >= item_quantity:
+                    completed_items += 1
+                elif item_completed > 0:
+                    partial_items += 1
+            else:
+                completed_items += 1
+
+    return total_items, completed_items, partial_items, (total_quantity, completed_quantity)
+
+
+def _prepare_order_display(order):
+    total_items, completed_items, partial_items, quantities = _calculate_order_progress(order)
+    total_quantity, completed_quantity = quantities
+
+    order.total_items_count = total_items
+    order.completed_items_count = completed_items
+    order.partial_items_count = partial_items
+    order.total_quantity = total_quantity
+    order.completed_quantity = completed_quantity
+
+    picking_orders = list(order.pickingorder_set.all())
+    order.first_picking = picking_orders[0] if picking_orders else None
+    order.completed_picking_order = next((po for po in picking_orders if po.status == 'completed'), None)
+    order.picking_completed = bool(order.completed_picking_order)
+    order.can_continue_picking = any(po.status == 'in_progress' for po in picking_orders)
+    order.can_start_picking = not picking_orders or all(po.status == 'created' for po in picking_orders)
+    order.assigned_operator = next((po.assigned_to for po in picking_orders if po.assigned_to), None)
+
+    return order
+
+
+def _prepare_supplier_order_display(order):
+    if not hasattr(order, '_display_prepared'):
+        if hasattr(order, 'items'):
+            items_qs = list(order.items.all())
+            display_total_items = len(items_qs)
+            display_received_items = sum(1 for item in items_qs if getattr(item, 'quantity_received', 0) > 0)
+        else:
+            order_summary = order.items.aggregate(
+                total=Count('id'),
+                received=Count('id', filter=Q(quantity_received__gt=0))
+            ) if hasattr(order, 'items') else {'total': 0, 'received': 0}
+            display_total_items = order_summary.get('total', 0)
+            display_received_items = order_summary.get('received', 0)
+
+        order.display_total_items = display_total_items
+        order.display_received_items = display_received_items
+ 
+        receiving_orders = list(order.receiving_orders.all()) if hasattr(order, 'receiving_orders') else []
+        order.display_has_active_receiving = any(ro.status in ['pending', 'in_progress'] for ro in receiving_orders)
+        order.display_has_any_receiving = bool(receiving_orders)
+        order.display_active_receiving = next((ro for ro in receiving_orders if ro.status in ['pending', 'in_progress']), None)
+        order.display_last_receiving = next((ro for ro in receiving_orders if ro.status == 'completed'), None)
+        order.display_active_receiving_assignment = next((ro.assigned_to for ro in receiving_orders if ro.status in ['pending', 'in_progress'] and ro.assigned_to), None)
+        order._display_prepared = True
+ 
+    return order
 
 
 

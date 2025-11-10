@@ -1,0 +1,189 @@
+{% if orders|length %}
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Numer ZD</th>
+                <th>Dostawca</th>
+                <th>Data zamówienia</th>
+                <th>Data dostawy</th>
+                <th>Status</th>
+                <th>Pozycje</th>
+                <th>Przypisane</th>
+                <th>Akcje</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr {% if order.is_new %}class="table-warning"{% endif %}>
+                <td>
+                    {% if order.is_new %}
+                        <i class="fas fa-circle text-success me-2" title="Nowe zamówienie"></i>
+                    {% endif %}
+                    <strong>{{ order.order_number }}</strong>
+                    {% if order.document_number and order.document_number != order.order_number %}
+                        <br><small class="text-muted">Oryginalny: {{ order.document_number }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    <div>{{ order.supplier_name }}</div>
+                    {% if order.supplier_code %}
+                        <small class="text-muted">{{ order.supplier_code }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ order.order_date|date:"d.m.Y" }}</td>
+                <td>{{ order.expected_delivery_date|date:"d.m.Y" }}</td>
+                <td>
+                    {% if order.has_active_receiving %}
+                        <span class="badge bg-primary text-white">
+                            <i class="fas fa-people-carry me-1"></i>W regalacji
+                        </span>
+                    {% elif order.status == 'received' %}
+                        <span class="badge bg-success text-white">
+                            <i class="fas fa-box-open me-1"></i>Przyjęte
+                        </span>
+                    {% elif order.status == 'partially_received' %}
+                        <span class="badge bg-warning text-dark">
+                            <i class="fas fa-exclamation-triangle me-1"></i>Częściowo przyjęte
+                        </span>
+                    {% elif order.status == 'pending' %}
+                        <span class="badge bg-secondary text-white">
+                            <i class="fas fa-clock me-1"></i>Oczekujące
+                        </span>
+                    {% elif order.status == 'confirmed' %}
+                        <span class="badge bg-primary text-white">
+                            <i class="fas fa-check me-1"></i>Potwierdzone
+                        </span>
+                    {% elif order.status == 'in_transit' %}
+                        <span class="badge bg-info text-white">
+                            <i class="fas fa-shipping-fast me-1"></i>W transporcie
+                        </span>
+                    {% elif order.status == 'cancelled' %}
+                        <span class="badge bg-danger text-white">
+                            <i class="fas fa-times me-1"></i>Anulowane
+                        </span>
+                    {% else %}
+                        <span class="badge bg-light text-dark">
+                            <i class="fas fa-question-circle me-1"></i>{{ order.get_status_display }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td>{{ order.display_total_items }}/{{ order.display_received_items }}</td>
+                <td>
+                    {% if order.display_active_receiving_assignment %}
+                        {{ order.display_active_receiving_assignment.get_full_name|default:order.display_active_receiving_assignment.username }}
+                    {% else %}
+                        <span class="text-muted">–</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false"
+                                data-bs-popper-config='{"strategy":"fixed"}'>
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'wms:supplier_order_detail' order.id %}">
+                                    <i class="fas fa-eye me-2"></i>Szczegóły ZD
+                                </a>
+                            </li>
+                            {% if not order.display_has_any_receiving and order.status in 'pending,confirmed,in_transit' %}
+                                <li>
+                                    <form method="post" action="{% url 'wms:create_receiving_order' order.id %}"
+                                          onsubmit="return confirm('Utworzyć regalację dla {{ order.order_number }}?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item">
+                                            <i class="fas fa-clipboard-check me-2"></i>Utwórz Regalację
+                                        </button>
+                                    </form>
+                                </li>
+                            {% else %}
+                                {% if order.display_active_receiving %}
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'wms:receiving_order_fast' order.display_active_receiving.id %}">
+                                            <i class="fas fa-dolly me-2"></i>Przyjęcie
+                                        </a>
+                                    </li>
+                                {% elif order.display_last_receiving %}
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'wms:receiving_order_detail' order.display_last_receiving.id %}">
+                                            <i class="fas fa-undo-alt me-2"></i>Zakończona regalacja
+                                        </a>
+                                    </li>
+                                {% else %}
+                                    <li>
+                                        <span class="dropdown-item text-muted disabled">
+                                            <i class="fas fa-clipboard-check me-2"></i>Brak regalacji
+                                        </span>
+                                    </li>
+                                {% endif %}
+                            {% endif %}
+                            <li>
+                                <a class="dropdown-item text-danger" href="#"
+                                   hx-delete="{% url 'wms:htmx_delete_supplier_order' order.id %}"
+                                   hx-confirm="Czy na pewno chcesz usunąć zamówienie ZD {{ order.order_number }}?"
+                                   hx-target="closest tr"
+                                   hx-swap="delete">
+                                    <i class="fas fa-trash me-2"></i>Usuń
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-4">
+    <i class="fas fa-truck fa-3x text-muted mb-3"></i>
+    <p class="text-muted">Brak zamówień do dostawców do wyświetlenia</p>
+</div>
+{% endif %}
+
+{% if page_obj is not None and page_obj.has_other_pages %}
+<nav aria-label="Nawigacja stron">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-double-left"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-left"></i>
+                </a>
+            </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+                <li class="page-item active">
+                    <span class="page-link">{{ num }}</span>
+                </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">{{ num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if assigned_filter %}&assigned={{ assigned_filter }}{% endif %}">
+                    <i class="fas fa-angle-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

@@ -130,48 +130,7 @@
                 </h5>
             </div>
             <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Numer</th>
-                                <th>Klient</th>
-                                <th>Status</th>
-                                <th>Data</th>
-                                <th>Akcje</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for order in recent_orders %}
-                            <tr>
-                                <td><strong>{{ order.order_number }}</strong></td>
-                                <td>{{ order.customer_name }}</td>
-                                <td>
-                                    {% if order.status == 'pending' %}
-                                        <span class="badge bg-warning">Oczekujące</span>
-                                    {% elif order.status == 'in_progress' %}
-                                        <span class="badge bg-info">W kompletacji</span>
-                                    {% elif order.status == 'completed' %}
-                                        <span class="badge bg-success">Zrealizowane</span>
-                                    {% endif %}
-                                </td>
-                                <td>{{ order.order_date|date:"d.m.Y H:i" }}</td>
-                                <td>
-                                    <a href="{% url 'wms:order_detail' order.id %}" class="btn btn-sm btn-outline-primary">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="5" class="text-center text-muted">
-                                    Brak zamówień do wyświetlenia
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                {% include 'wms/partials/_orders_table.html' with orders=recent_orders page_obj=None search_query='' status_filter='' assigned_filter='' %}
             </div>
         </div>
     </div>

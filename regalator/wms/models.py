@@ -330,6 +330,7 @@ class CustomerOrder(models.Model):
     """Zamówienie klienta (ZK) - symulacja z Subiekt GT"""
     ORDER_STATUS = [
         ('pending', 'Oczekujące'),
+        ('created', 'Utworzona kompletacja'),
         ('in_progress', 'W kompletacji'),
         ('completed', 'Zrealizowane'),
         ('partially_completed', 'Częściowo zrealizowane'),
