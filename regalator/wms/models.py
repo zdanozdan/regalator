@@ -546,6 +546,63 @@ class SupplierOrder(models.Model):
         return self.receiving_orders.order_by('-created_at').first()
 
 
+class Company(models.Model):
+    """Firma obsługiwana w systemie"""
+    name = models.CharField(max_length=255, verbose_name="Nazwa firmy")
+    short_name = models.CharField(max_length=120, blank=True, verbose_name="Skrócona nazwa")
+    vat_id = models.CharField(max_length=32, blank=True, verbose_name="VAT ID")
+    email = models.EmailField(blank=True, verbose_name="Adres e-mail")
+    phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon")
+    website = models.URLField(blank=True, verbose_name="Strona www")
+    notes = models.TextField(blank=True, verbose_name="Uwagi")
+    is_active = models.BooleanField(default=True, verbose_name="Aktywna")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
+
+    class Meta:
+        verbose_name = "Firma"
+        verbose_name_plural = "Firmy"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.short_name or self.name
+
+
+class CompanyAddress(models.Model):
+    """Adresy powiązane z firmą"""
+    ADDRESS_TYPES = [
+        ('headquarters', 'Siedziba'),
+        ('billing', 'Fakturowanie'),
+        ('shipping', 'Wysyłka'),
+        ('warehouse', 'Magazyn'),
+        ('office', 'Biuro'),
+        ('other', 'Inny'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='addresses', verbose_name="Firma")
+    address_type = models.CharField(max_length=32, choices=ADDRESS_TYPES, default='other', verbose_name="Typ adresu")
+    street = models.CharField(max_length=255, verbose_name="Ulica i numer")
+    postal_code = models.CharField(max_length=20, blank=True, verbose_name="Kod pocztowy")
+    city = models.CharField(max_length=120, verbose_name="Miasto")
+    country = models.CharField(max_length=120, default='Polska', verbose_name="Kraj")
+    is_primary = models.BooleanField(default=False, verbose_name="Adres domyślny")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Zaktualizowano")
+
+    class Meta:
+        verbose_name = "Adres firmy"
+        verbose_name_plural = "Adresy firmy"
+        ordering = ['company', '-is_primary', 'address_type', 'city']
+
+    def __str__(self):
+        return f"{self.company} - {self.get_address_type_display()}"
+
+    @property
+    def formatted(self):
+        parts = [self.street, self.postal_code, self.city, self.country]
+        return ', '.join([p for p in parts if p])
+
+
 class SupplierOrderItem(models.Model):
     """Pozycje zamówienia do dostawcy"""
     supplier_order = models.ForeignKey(SupplierOrder, on_delete=models.CASCADE, related_name='items')
