@@ -174,7 +174,7 @@ class LocationEditForm(forms.ModelForm):
             parent_choices.append(('', 'Brak'))
 
         parent_choices.extend([
-            (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
+                (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
         ])
 
         self.fields['parent'].choices = parent_choices
@@ -192,8 +192,8 @@ class LocationEditForm(forms.ModelForm):
             self.fields['is_active'].initial = self.instance.is_active
         else:
             self.fields['is_active'].initial = True
- 
- 
+    
+    
     def clean_barcode(self):
         barcode = self.cleaned_data.get('barcode')
         if barcode:

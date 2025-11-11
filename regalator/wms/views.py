@@ -985,6 +985,12 @@ def picking_fast(request, picking_id):
         picking_order.save(update_fields=['status', 'started_at'])
 
     context = _build_picking_fast_context(request, picking_order, picking_id)
+    print(context['pending_items'])
+    print(context['picked_items'])
+    for item in context['pending_items']:
+        print(item.location)
+    for item in context['picked_items']:
+        print(item.location)
     return render(request, 'wms/picking_fast.html', context)
 
 
@@ -4379,7 +4385,7 @@ def _ensure_picking_order(customer_order, user):
         if stock:
             location = stock.location
         else:
-            location = Location.objects.first()
+            location = Location.objects.filter(is_default=True).first()
 
         PickingItem.objects.create(
             picking_order=picking_order,

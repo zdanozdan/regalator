@@ -238,6 +238,7 @@ class Location(models.Model):
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, verbose_name="Lokalizacja nadrzędna")
     description = models.TextField(blank=True, verbose_name="Opis")
     is_active = models.BooleanField(default=True, verbose_name="Aktywna")
+    is_default = models.BooleanField(default=False, verbose_name="Domyślna lokalizacja")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -246,6 +247,11 @@ class Location(models.Model):
 
     def __str__(self):
         return f"{self.name}, {self.get_location_type_display()}"
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            Location.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
     
     @property
     def primary_photo(self):
@@ -498,7 +504,13 @@ class PickingItem(models.Model):
     picking_order = models.ForeignKey(PickingOrder, on_delete=models.CASCADE, related_name='items', verbose_name="Zlecenie kompletacji")
     order_item = models.ForeignKey(OrderItem, on_delete=models.CASCADE, verbose_name="Pozycja zamówienia")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Produkt")
-    location = models.ForeignKey(Location, on_delete=models.CASCADE, verbose_name="Lokalizacja")
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Lokalizacja"
+    )
     quantity_to_pick = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Ilość do pobrania")
     quantity_picked = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Ilość pobrana")
     is_completed = models.BooleanField(default=False, verbose_name="Zakończone")
@@ -509,7 +521,8 @@ class PickingItem(models.Model):
         verbose_name_plural = "Pozycje kompletacji"
 
     def __str__(self):
-        return f"{self.product.name} - {self.quantity_to_pick} z {self.location.name}"
+        location_name = self.location.name if self.location else "brak lokalizacji"
+        return f"{self.product.name} - {self.quantity_to_pick} z {location_name}"
 
 
 class PickingHistory(models.Model):
