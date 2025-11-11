@@ -1,0 +1,9 @@
+# Cursor project rules
+
+- Always run `python manage.py makemigrations` after modifying Django models.
+- Prefer using absolute paths in tool commands.
+- Keep templates and Python code ASCII-only unless existing content requires Unicode.
+- Use HTMX best practices: specify `hx-target` and `hx-swap` explicitly on dynamic triggers.
+- Default to HTMX interactions instead of custom JavaScript or AJAX when enhancing views.
+- Favor Bootstrap components and utility classes before introducing custom CSS.
+- Activate `/Users/zdanozdan/workspace/regalator/venv` before invoking Django `manage.py` commands.
