@@ -69,6 +69,8 @@ urlpatterns = [
     path('htmx/location/<int:location_id>/photo/set-primary/', views.htmx_location_photo_set_primary, name='htmx_location_photo_set_primary'),
     path('htmx/location/<int:location_id>/photo/delete/', views.htmx_location_photo_delete, name='htmx_location_photo_delete'),
     path('stock/', views.stock_list, name='stock_list'),
+    path('stock/movements/', views.movement_list, name='movement_list'),
+    path('stock/<int:stock_id>/transfer/', views.stock_transfer, name='stock_transfer'),
     
 
     # Autentykacja

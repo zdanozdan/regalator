@@ -1,0 +1,185 @@
+{% extends 'wms/base.html' %}
+
+{% block title %}Przesunięcie stanu - Regalator WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="mb-1">
+                <i class="fas fa-exchange-alt me-2"></i>Przesunięcie towaru
+            </h1>
+            <p class="text-muted mb-0">Z lokalizacji {{ stock.location.name }} do innej lokalizacji</p>
+        </div>
+        <div>
+            <a href="{% url 'wms:stock_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Powrót do stanów
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12 col-xl-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-box-open me-2"></i>Aktualny stan
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Produkt</dt>
+                    <dd class="col-sm-8">{{ stock.product.name }}</dd>
+
+                    <dt class="col-sm-4">Kod produktu</dt>
+                    <dd class="col-sm-8">{{ stock.product.code }}</dd>
+
+                    <dt class="col-sm-4">Lokalizacja źródłowa</dt>
+                    <dd class="col-sm-8">
+                        <div>{{ stock.location.name }}</div>
+                        <div class="text-muted small">
+                            <i class="fas fa-barcode me-1"></i>{{ stock.location.barcode }}
+                        </div>
+                    </dd>
+
+                    <dt class="col-sm-4">Dostępna ilość</dt>
+                    <dd class="col-sm-8">
+                        <span class="fw-bold">{{ stock.quantity }} {{ stock.product.unit }}</span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-share me-2"></i>Formularz przesunięcia
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" novalidate>
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.target_location.id_for_label }}">{{ form.target_location.label }}</label>
+                        {{ form.target_location }}
+                        {% if form.target_location.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.target_location.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="form-text">Wybierz lokalizację docelową dla towaru.</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.quantity.id_for_label }}">{{ form.quantity.label }}</label>
+                        {{ form.quantity }}
+                        {% if form.quantity.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.quantity.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="form-text">Maksymalnie {{ stock.quantity }} {{ stock.product.unit }}.</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+                        {{ form.note }}
+                        {% if form.note.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.note.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="form-text">Dodaj opcjonalną notatkę dotyczącą przesunięcia.</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Zapisz przesunięcie
+                        </button>
+                        <a href="{% url 'wms:stock_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i>Anuluj
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>Ostatnie przesunięcia produktu
+                </h5>
+                <span class="badge bg-secondary">{{ recent_movements|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if recent_movements %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Z</th>
+                                    <th>Do</th>
+                                    <th>Ilość</th>
+                                    <th>Operator</th>
+                                    <th>Notatka</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for movement in recent_movements %}
+                                <tr>
+                                    <td>{{ movement.created_at|date:"d.m.Y H:i" }}</td>
+                                    <td>
+                                        <div>{{ movement.source_location.name }}</div>
+                                        <div class="text-muted small">
+                                            <i class="fas fa-barcode me-1"></i>{{ movement.source_location.barcode }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div>{{ movement.target_location.name }}</div>
+                                        <div class="text-muted small">
+                                            <i class="fas fa-barcode me-1"></i>{{ movement.target_location.barcode }}
+                                        </div>
+                                    </td>
+                                    <td>{{ movement.quantity }} {{ stock.product.unit }}</td>
+                                    <td>
+                                        {% if movement.performed_by %}
+                                            {{ movement.performed_by.get_full_name|default:movement.performed_by.username }}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ movement.note|default:'—' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-info-circle fa-2x mb-3"></i>
+                        <p class="mb-0">Brak zarejestrowanych przesunięć dla tego produktu.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

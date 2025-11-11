@@ -12,7 +12,16 @@ from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.contrib.auth.models import User
 from decimal import Decimal, InvalidOperation
 from .models import *
-from .forms import UserProfileForm, ProductCodeForm, LocationEditForm, LocationImageForm, ProductColorSizeForm, ProductStockInlineFormSet, ProductForm
+from .forms import (
+    UserProfileForm,
+    ProductCodeForm,
+    LocationEditForm,
+    LocationImageForm,
+    ProductColorSizeForm,
+    ProductStockInlineFormSet,
+    ProductForm,
+    StockTransferForm,
+)
 from assets.models import Asset
 import json
 import logging
@@ -1648,6 +1657,13 @@ def stock_list(request):
     
     # Get all active locations for the dropdown
     locations = Location.objects.filter(is_active=True).order_by('name')
+    recent_movements = []
+    if product:
+        recent_movements = list(
+            StockMovement.objects.filter(product=product)
+            .select_related('source_location', 'target_location', 'performed_by')
+            .order_by('-created_at')[:10]
+        )
     
     context = {
         'page_obj': page_obj,
@@ -1657,6 +1673,7 @@ def stock_list(request):
         'subiekt_id_filter': subiekt_id_filter,
         'product': product,
         'locations': locations,
+        'recent_movements': recent_movements,
     }
 
     # Check if request comes from HTMX
@@ -1664,6 +1681,81 @@ def stock_list(request):
         return render(request, 'wms/stock_list.html#stock-table', context)
     
     return render(request, 'wms/stock_list.html', context)
+
+
+@login_required
+def stock_transfer(request, stock_id):
+    """Przesunięcie towaru między lokalizacjami"""
+    stock = get_object_or_404(
+        Stock.objects.select_related('product', 'location'),
+        id=stock_id
+    )
+
+    form = StockTransferForm(stock=stock)
+    if request.method == 'POST':
+        form = StockTransferForm(request.POST, stock=stock)
+        if form.is_valid():
+            quantity = form.cleaned_data['quantity']
+            target_location = form.cleaned_data['target_location']
+            note = form.cleaned_data['note']
+
+            transfer_successful = False
+
+            with transaction.atomic():
+                source_stock = Stock.objects.select_for_update().select_related('product', 'location').get(pk=stock.pk)
+
+                if quantity > source_stock.quantity:
+                    form.add_error('quantity', 'Brak wystarczającej ilości w lokalizacji źródłowej.')
+                else:
+                    source_stock.quantity = source_stock.quantity - quantity
+                    source_stock.save(update_fields=['quantity', 'updated_at'])
+
+                    target_stock = Stock.objects.select_for_update().filter(
+                        product=source_stock.product,
+                        location=target_location
+                    ).first()
+
+                    if target_stock:
+                        target_stock.quantity = target_stock.quantity + quantity
+                        target_stock.save(update_fields=['quantity', 'updated_at'])
+                    else:
+                        target_stock = Stock.objects.create(
+                            product=source_stock.product,
+                            location=target_location,
+                            quantity=quantity,
+                            reserved_quantity=Decimal('0')
+                        )
+
+                    StockMovement.objects.create(
+                        product=source_stock.product,
+                        source_location=source_stock.location,
+                        target_location=target_location,
+                        quantity=quantity,
+                        performed_by=request.user if request.user.is_authenticated else None,
+                        note=note
+                    )
+
+                    transfer_successful = True
+
+            if transfer_successful:
+                messages.success(
+                    request,
+                    f'Przeniesiono {quantity} {stock.product.unit} z {stock.location.name} do {target_location.name}.'
+                )
+                redirect_url = f"{reverse('wms:stock_list')}?product_id={stock.product.id}"
+                return redirect(redirect_url)
+
+    recent_movements = StockMovement.objects.filter(product=stock.product).select_related(
+        'source_location', 'target_location', 'performed_by'
+    ).order_by('-created_at')[:10]
+
+    context = {
+        'stock': stock,
+        'form': form,
+        'recent_movements': recent_movements,
+    }
+
+    return render(request, 'wms/stock_transfer.html', context)
 
 
 # API endpoints dla skanowania
@@ -4147,7 +4239,7 @@ def htmx_locations_autocomplete(request):
     locations = locations_query.order_by('name')[:10]  # Limit to 10 results
 
     # Create HTML divs for the autocomplete dropdown
-    options_html = ''
+    options = []
     for location in locations:
         barcode = location.barcode or ''
         name = location.name or barcode or 'Lokalizacja'
@@ -4159,18 +4251,25 @@ def htmx_locations_autocomplete(request):
                 location_type_display = ''
         barcode_display = barcode if barcode else 'Brak kodu'
         supplemental_text = location_type_display or barcode_display
-        options_html += (
+        options.append(
             '<button type="button" class="dropdown-item autocomplete-item text-start py-2" '
             f'data-location-id="{location.id}" '
             f'data-location-barcode="{barcode}" '
             f'data-location-name="{name}" '
-            f'data-location-type="{location_type_display}">' 
+            f'data-location-type="{location_type_display}">'
             f'<span class="d-block fw-semibold">{name}</span>'
             f'<small class="d-block text-muted">{supplemental_text}</small>'
             '</button>'
         )
 
-    return HttpResponse(options_html)
+    if not options:
+        options_html = '<div class="px-3 py-2 text-muted small">Brak wyników</div>'
+    else:
+        options_html = ''.join(options)
+
+    response = HttpResponse(options_html)
+    response['HX-Trigger'] = 'location-autocomplete'
+    return response
 
 
 @login_required
@@ -4390,6 +4489,48 @@ def _prepare_supplier_order_display(order):
         order._display_prepared = True
  
     return order
+
+
+@login_required
+def movement_list(request):
+    """Historia ruchów towaru"""
+    movements = StockMovement.objects.select_related(
+        'product', 'source_location', 'target_location', 'performed_by'
+    ).order_by('-created_at')
+
+    product_query = request.GET.get('product')
+    location_query = request.GET.get('location')
+    movement_type = request.GET.get('movement_type')
+
+    if product_query:
+        movements = movements.filter(
+            Q(product__name__icontains=product_query) |
+            Q(product__code__icontains=product_query) |
+            Q(product__subiekt_id__icontains=product_query)
+        )
+
+    if location_query:
+        movements = movements.filter(
+            Q(source_location__name__icontains=location_query) |
+            Q(target_location__name__icontains=location_query)
+        )
+
+    if movement_type:
+        movements = movements.filter(movement_type=movement_type)
+
+    paginator = Paginator(movements, 50)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'product_query': product_query or '',
+        'location_query': location_query or '',
+        'movement_type': movement_type or '',
+        'movement_types': StockMovement.MOVEMENT_TYPES,
+    }
+
+    return render(request, 'wms/movement_list.html', context)
 
 
 

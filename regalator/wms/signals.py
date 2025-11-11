@@ -16,6 +16,9 @@ from .models import (
     SupplierOrder,
     ReceivingOrder,
     ReceivingItem,
+    PickingHistory,
+    ReceivingHistory,
+    StockMovement,
 )
 
 # Custom signal for product updates
@@ -224,3 +227,43 @@ def sync_supplier_on_receiving_item_delete(sender, instance, **kwargs):
     receiving_order = getattr(instance, 'receiving_order', None)
     if receiving_order and receiving_order.supplier_order_id:
         _sync_supplier_order_status(receiving_order.supplier_order)
+
+
+@receiver(post_save, sender=ReceivingHistory)
+def create_movement_on_receiving_history(sender, instance, created, **kwargs):
+    if not created:
+        return
+
+    quantity = instance.quantity_received or Decimal('0')
+    if quantity <= 0:
+        return
+
+    StockMovement.objects.create(
+        product=instance.product,
+        source_location=None,
+        target_location=instance.location,
+        quantity=quantity,
+        movement_type='inbound',
+        performed_by=instance.scanned_by,
+        note=f"Regalacja {instance.receiving_order.order_number}" if instance.receiving_order_id else ''
+    )
+
+
+@receiver(post_save, sender=PickingHistory)
+def create_movement_on_picking_history(sender, instance, created, **kwargs):
+    if not created:
+        return
+
+    quantity = instance.quantity_picked or Decimal('0')
+    if quantity <= 0:
+        return
+
+    StockMovement.objects.create(
+        product=instance.product_scanned,
+        source_location=instance.location_scanned,
+        target_location=None,
+        quantity=quantity,
+        movement_type='outbound',
+        performed_by=instance.user,
+        note=f"Terminacja {instance.picking_item.picking_order.order_number}" if instance.picking_item_id else ''
+    )

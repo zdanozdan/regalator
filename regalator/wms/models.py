@@ -326,6 +326,65 @@ class Stock(models.Model):
         return f"{self.product.name} w {self.location.name}: {self.quantity}"
 
 
+class StockMovement(models.Model):
+    """Rejestr przesunięć stanów magazynowych"""
+
+    MOVEMENT_TYPES = [
+        ('transfer', 'Przesunięcie'),
+        ('inbound', 'Przyjęcie'),
+        ('outbound', 'Wydanie'),
+    ]
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Produkt")
+    source_location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movements_out',
+        verbose_name="Lokalizacja źródłowa"
+    )
+    target_location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movements_in',
+        verbose_name="Lokalizacja docelowa"
+    )
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        verbose_name="Ilość"
+    )
+    movement_type = models.CharField(
+        max_length=10,
+        choices=MOVEMENT_TYPES,
+        default='transfer',
+        verbose_name="Typ ruchu"
+    )
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Wykonał"
+    )
+    note = models.CharField(max_length=255, blank=True, verbose_name="Notatka")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Utworzono")
+
+    class Meta:
+        verbose_name = "Przesunięcie magazynowe"
+        verbose_name_plural = "Przesunięcia magazynowe"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        source = self.source_location.name if self.source_location else 'zewnętrzny'
+        target = self.target_location.name if self.target_location else 'zewnętrzny'
+        return f"{self.product.name}: {self.quantity} z {source} do {target}"
+
+
 class CustomerOrder(models.Model):
     """Zamówienie klienta (ZK) - symulacja z Subiekt GT"""
     ORDER_STATUS = [

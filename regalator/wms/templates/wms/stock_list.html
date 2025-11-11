@@ -7,9 +7,14 @@
 <div class="row">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>
+            <h1 class="mb-0">
                 <i class="fas fa-warehouse me-2"></i>Stany magazynowe
             </h1>
+            <div class="d-flex gap-2">
+                <a href="{% url 'wms:movement_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-exchange-alt me-1"></i>Ruch towaru
+                </a>
+            </div>
         </div>
     </div>
 </div>
@@ -114,8 +119,35 @@
                                 {% partialdef stock-row-partial inline %}
                                 <tr hx-get="{% url 'wms:htmx_stock_row' stock.product.id %}" hx-swap="outerHTML" hx-trigger="stock-list-updated from:body delay:500ms, subiekt-stock-synced-{{ stock.product.id }} from:body">
                                     <td>
-                                        <div>{{ stock.product.name }} {{ stock.product.subiekt_id }}</div>
-                                        <small class="text-muted">{{ stock.product.description|truncatechars:50 }}</small>
+                                        {% if stock.product.parent %}
+                                            <button type="button"
+                                                    class="btn btn-link p-0 text-start text-reset fw-semibold"
+                                                    hx-get="{% url 'wms:htmx_edit_size_color_modal' stock.product.parent.id stock.product.id %}"
+                                                    hx-swap="innerHTML"
+                                                    hx-target="#modalBody"
+                                                    hx-trigger="click"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#mainModal"
+                                                    onmouseover="this.style.textDecoration='underline'"
+                                                    onmouseout="this.style.textDecoration='none'">
+                                                {{ stock.product.name }}
+                                            </button>
+                                        {% else %}
+                                            <button type="button"
+                                                    class="btn btn-link p-0 text-start text-reset fw-semibold"
+                                                    hx-get="{% url 'wms:htmx_edit_product_modal' stock.product.id %}"
+                                                    hx-swap="innerHTML"
+                                                    hx-target="#modalBody"
+                                                    hx-trigger="click"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#mainModal"
+                                                    onmouseover="this.style.textDecoration='underline'"
+                                                    onmouseout="this.style.textDecoration='none'">
+                                                {{ stock.product.name }}
+                                            </button>
+                                        {% endif %}
+                                        <div class="text-muted small">Subiekt ID: {{ stock.product.subiekt_id|default:'brak' }}</div>
+                                        <div class="text-muted small">{{ stock.product.description|truncatechars:50 }}</div>
                                     </td>
                                     <td>
                                         <div class="cursor-pointer" 
@@ -129,7 +161,9 @@
                                              title="Kliknij aby edytować lokalizację">
                                             {{ stock.location.name }}
                                         </div>
-                                        <small class="text-muted">{{ stock.location.barcode }}</small>
+                                        <small class="text-muted">
+                                            <i class="fas fa-barcode me-1"></i>{{ stock.location.barcode }}
+                                        </small>
                                     </td>
                                     <td>
                                         {{ stock.quantity }} {{ stock.product.unit }}
@@ -184,6 +218,11 @@
                                                     </a>
                                                 </li>
                                                 {% endif %}
+                                                <li>
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_transfer' stock.id %}">
+                                                        <i class="fas fa-exchange-alt me-2"></i>Przesuń
+                                                    </a>
+                                                </li>
                                                 {% if stock.product.parent %}
                                                 <li>
                                                     <a class="dropdown-item disabled" href="#" title="Nie można synchronizować wariantów">
@@ -269,23 +308,32 @@
                 {% endif %}
                 <div class="text-center py-1">
                 {% if product %}
-                    {% if product.parent %}
-                        <a class="btn btn-primary" href="#"
-                        hx-get="{% url 'wms:htmx_edit_size_color_modal' product.parent.id product.id %}"
-                        hx-swap="innerHTML"
-                        hx-target="#modalBody"
-                        hx-trigger="click">
-                            <i class="fas fa-warehouse me-2"></i>Dodaj stan magazynowy
-                        </a>
-                    {% else %}
-                        <a class="btn btn-primary" href="#"
-                        hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
-                        hx-swap="innerHTML"
-                        hx-target="#modalBody"
-                        hx-trigger="click">
-                            <i class="fas fa-warehouse me-2"></i>Dodaj stan magazynowy
-                        </a>
-                    {% endif %}
+                    <div class="d-inline-flex gap-2">
+                        {% if product.parent %}
+                            <a class="btn btn-primary" href="#"
+                            hx-get="{% url 'wms:htmx_edit_size_color_modal' product.parent.id product.id %}"
+                            hx-swap="innerHTML"
+                            hx-target="#modalBody"
+                            hx-trigger="click">
+                                <i class="fas fa-warehouse me-2"></i>Dodaj stan magazynowy
+                            </a>
+                        {% else %}
+                            <a class="btn btn-primary" href="#"
+                            hx-get="{% url 'wms:htmx_edit_product_modal' product.id %}"
+                            hx-swap="innerHTML"
+                            hx-target="#modalBody"
+                            hx-trigger="click">
+                                <i class="fas ma-warehouse me-2"></i>Dodaj stan magazynowy
+                            </a>
+                        {% endif %}
+                        {% with first_stock=page_obj|first %}
+                            {% if first_stock %}
+                                <a class="btn btn-outline-primary" href="{% url 'wms:stock_transfer' first_stock.id %}">
+                                    <i class="fas fa-exchange-alt me-2"></i>Przesuń
+                                </a>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
                 {% endif %}
             </div>
             </div>
@@ -293,6 +341,72 @@
     </div>
 </div>
 {% endpartialdef %}
+
+{% if product %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>Ostatnie przesunięcia produktu
+                </h5>
+                <span class="badge bg-secondary">{{ recent_movements|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if recent_movements %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Z</th>
+                                    <th>Do</th>
+                                    <th>Ilość</th>
+                                    <th>Operator</th>
+                                    <th>Notatka</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for movement in recent_movements %}
+                                <tr>
+                                    <td>{{ movement.created_at|date:"d.m.Y H:i" }}</td>
+                                    <td>
+                                        <div>{{ movement.source_location.name }}</div>
+                                        <div class="text-muted small">
+                                            <i class="fas fa-barcode me-1"></i>{{ movement.source_location.barcode }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div>{{ movement.target_location.name }}</div>
+                                        <div class="text-muted small">
+                                            <i class="fas fa-barcode me-1"></i>{{ movement.target_location.barcode }}
+                                        </div>
+                                    </td>
+                                    <td>{{ movement.quantity }} {{ movement.product.unit }}</td>
+                                    <td>
+                                        {% if movement.performed_by %}
+                                            {{ movement.performed_by.get_full_name|default:movement.performed_by.username }}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ movement.note|default:'—' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-info-circle fa-2x mb-3"></i>
+                        <p class="mb-0">Brak zarejestrowanych przesunięć dla tego produktu.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Statystyki -->
 {% if page_obj %}

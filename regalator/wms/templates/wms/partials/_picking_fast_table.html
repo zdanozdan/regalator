@@ -57,6 +57,9 @@
                                 onmouseout="this.style.textDecoration='none'">
                             {{ current_picking_item.product.name }}
                         </button>
+                        <div class="text-muted small">
+                            Subiekt ID: {{ current_picking_item.product.subiekt_id|default:'brak' }}
+                        </div>
                         <div class="small" data-product-id="{{ current_picking_item.product.id }}">
                             {% with code=current_picking_item.product.codes.first %}
                                 {% if code %}
@@ -92,22 +95,7 @@
                     <div class="col-lg-4">
                         <label for="locationInput" class="form-label">Lokalizacja</label>
                         <div class="position-relative">
-                            <input type="hidden" name="location_code" id="locationCodeHidden" value="{{ form_location_value|default:'' }}">
-                            <input type="text" name="location" id="locationInput" class="form-control"
-                                   placeholder="Skanuj lub wpisz kod"
-                                   value="{{ form_location_display_value|default:'' }}"
-                                   data-focus-key="location_code"
-                                   hx-get="{% url 'wms:htmx_locations_autocomplete' %}"
-                                   hx-trigger="input changed delay:200ms"
-                                   hx-target="#location-suggestions"
-                                   hx-swap="innerHTML"
-                                   hx-vals='{"picking_id": "{{ picking_order.id }}"}'
-                                   autocomplete="off"
-                                   hx-indicator="#location-loading">
-                            <div id="location-loading" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
-                                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
-                            </div>
-                            <div id="location-suggestions" class="dropdown-menu w-100 shadow mt-2" style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0, 0, 0, 0.08); background-color: #fff;"></div>
+                            {% include 'wms/partials/_location_autocomplete.html' with include_hidden=True hidden_name='location_code' hidden_id='locationCodeHidden' hidden_value=form_location_value input_id='locationInput' input_name='location' input_value=form_location_display_value placeholder='Skanuj lub wpisz kod' data_focus_key='location_code' suggestions_id='location-suggestions' indicator_id='location-loading' extra_hx_vals='{"picking_id": "'|add:picking_order.id|add:'"}' only %}
                         </div>
                     </div>
                     <div class="col-lg-4">
@@ -333,6 +321,9 @@
                             style="cursor: pointer;">
                             <td>
                                 <div class="fw-semibold">{{ item.product.name }}</div>
+                                <div class="text-muted small">
+                                    Subiekt ID: {{ item.product.subiekt_id|default:'brak' }}
+                                </div>
                                 <div class="small" data-product-id="{{ item.product.id }}">
                                     {% with code=item.product.codes.first %}
                                         {% if code %}

@@ -2,7 +2,8 @@ from django import forms
 from django.contrib.auth.models import User
 from django.forms import inlineformset_factory, BaseInlineFormSet
 from django.utils.text import slugify
-from .models import UserProfile, ProductCode, Location, LocationImage, Product, Stock
+from decimal import Decimal
+from .models import UserProfile, ProductCode, Location, LocationImage, Product, Stock, CompanyAddress
 
 
 class ProductCodeForm(forms.ModelForm):
@@ -156,15 +157,43 @@ class LocationEditForm(forms.ModelForm):
         self.location = kwargs.pop('location', None)
         super().__init__(*args, **kwargs)
         
-        # Customize parent field choices
+        available_parents = Location.objects.filter(is_active=True)
         if self.location:
-            # Exclude current location and its children from parent choices
-            available_parents = Location.objects.filter(is_active=True).exclude(id=self.location.id)
-            self.fields['parent'].choices = [('', 'Brak')] + [
-                (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
-            ]
-    
-    
+            available_parents = available_parents.exclude(id=self.location.id)
+
+        default_parent = self._get_default_company_location(
+            exclude_id=self.location.id if self.location else None
+        )
+
+        parent_choices = []
+
+        if default_parent:
+            parent_choices.append((default_parent.id, f"{default_parent.barcode} - {default_parent.name}"))
+            available_parents = available_parents.exclude(id=default_parent.id)
+        else:
+            parent_choices.append(('', 'Brak'))
+
+        parent_choices.extend([
+            (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
+        ])
+
+        self.fields['parent'].choices = parent_choices
+
+        if self.location and self.location.parent_id:
+            self.fields['parent'].initial = self.location.parent_id
+        elif default_parent:
+            self.fields['parent'].initial = default_parent.id
+        else:
+            self.fields['parent'].initial = ''
+
+        # Hide is_active from the modal form but keep its value
+        self.fields['is_active'].widget = forms.HiddenInput()
+        if self.instance and self.instance.pk:
+            self.fields['is_active'].initial = self.instance.is_active
+        else:
+            self.fields['is_active'].initial = True
+ 
+ 
     def clean_barcode(self):
         barcode = self.cleaned_data.get('barcode')
         if barcode:
@@ -174,6 +203,53 @@ class LocationEditForm(forms.ModelForm):
             ).exclude(id=self.location.id).exists():
                 raise forms.ValidationError('Ten kod kreskowy już istnieje.')
         return barcode 
+
+
+    def _get_default_company_location(self, exclude_id=None):
+        default_address = CompanyAddress.objects.filter(is_primary=True, company__is_active=True).select_related('company').first()
+        if not default_address:
+            return None
+
+        company = getattr(default_address, 'company', None)
+        company_display = (company.short_name or company.name) if company else 'Firma'
+        city_display = default_address.city or 'brak'
+        street_display = default_address.street or 'brak'
+
+        formatted_name = f"#{company_display}/{city_display}/{street_display}|"
+
+        location_defaults = {
+            'name': formatted_name,
+            'location_type': 'zone',
+            'description': f"Domyślny adres firmy {company_display}" if company_display else 'Domyślny adres firmy',
+            'parent': None,
+        }
+
+        candidate_barcode = formatted_name
+
+        location, created = Location.objects.get_or_create(
+            barcode=candidate_barcode,
+            defaults=location_defaults
+        )
+
+        if not created:
+            fields_to_update = {}
+            if location.name != formatted_name:
+                fields_to_update['name'] = formatted_name
+            if location.description != location_defaults['description']:
+                fields_to_update['description'] = location_defaults['description']
+            if fields_to_update:
+                for key, value in fields_to_update.items():
+                    setattr(location, key, value)
+                location.save(update_fields=list(fields_to_update.keys()))
+
+        if exclude_id and location.id == exclude_id:
+            return None
+
+        if not location.is_active:
+            location.is_active = True
+            location.save(update_fields=['is_active'])
+
+        return location
 
 
 class LocationImageForm(forms.ModelForm):
@@ -371,6 +447,52 @@ class ProductColorSizeForm(forms.ModelForm):
         color_part = slugify(color)
         # Zachowaj czytelny separator
         return f"{base_code}-{size_part}-{color_part}"
+
+
+class StockTransferForm(forms.Form):
+    """Formularz przesunięcia towaru między lokalizacjami"""
+
+    target_location = forms.ModelChoiceField(
+        queryset=Location.objects.none(),
+        label="Lokalizacja docelowa",
+        widget=forms.Select(attrs={'class': 'form-select', 'required': True})
+    )
+    quantity = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal('0.01'),
+        label="Ilość do przeniesienia",
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'})
+    )
+    note = forms.CharField(
+        required=False,
+        label="Notatka",
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Opcjonalna notatka'})
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.stock = kwargs.pop('stock', None)
+        super().__init__(*args, **kwargs)
+
+        available_locations = Location.objects.filter(is_active=True)
+        if self.stock:
+            available_locations = available_locations.exclude(id=self.stock.location_id)
+            if not self.initial.get('quantity'):
+                self.initial['quantity'] = self.stock.quantity
+
+        self.fields['target_location'].queryset = available_locations.order_by('name')
+
+    def clean_target_location(self):
+        target_location = self.cleaned_data['target_location']
+        if self.stock and target_location == self.stock.location:
+            raise forms.ValidationError('Wybierz inną lokalizację docelową niż źródłowa.')
+        return target_location
+
+    def clean_quantity(self):
+        quantity = self.cleaned_data['quantity']
+        if self.stock and quantity > self.stock.quantity:
+            raise forms.ValidationError('Nie możesz przenieść więcej, niż aktualnie znajduje się w lokalizacji źródłowej.')
+        return quantity
 
 
 class ProductForm(forms.ModelForm):

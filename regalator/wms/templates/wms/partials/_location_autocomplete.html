@@ -1,0 +1,66 @@
+<div class="position-relative location-autocomplete" data-location-autocomplete>
+    {% if include_hidden %}
+    <input type="hidden" name="{{ hidden_name|default:'location_code' }}" id="{{ hidden_id|default:'locationCodeHidden' }}" value="{{ hidden_value|default:'' }}">
+    {% endif %}
+    <input type="text"
+           class="form-control"
+           id="{{ input_id|default:'locationInput' }}"
+           name="{{ input_name|default:'location' }}"
+           value="{{ input_value|default:'' }}"
+           placeholder="{{ placeholder|default:'Skanuj lub wpisz kod' }}"
+           autocomplete="off"
+           hx-get="{% url 'wms:htmx_locations_autocomplete' %}"
+           hx-trigger="input changed delay:200ms"
+           hx-target="#{{ suggestions_id|default:'location-suggestions' }}"
+           hx-swap="innerHTML"
+           {% if extra_hx_vals %}hx-vals='{{ extra_hx_vals }}'{% endif %}
+           hx-indicator="#{% if indicator_id %}{{ indicator_id }}{% else %}location-loading{% endif %}"
+           {% if data_focus_key %}data-focus-key="{{ data_focus_key }}"{% endif %}
+    >
+    <div id="{{ indicator_id|default:'location-loading' }}" class="htmx-indicator position-absolute top-0 end-0 mt-2 me-3">
+        <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+    </div>
+    <div id="{{ suggestions_id|default:'location-suggestions' }}"
+         class="dropdown-menu w-100 shadow mt-2"
+         style="max-height: 260px; overflow-y: auto; display: none; border-radius: 0.75rem; border: 1px solid rgba(0,0,0,0.08); background-color: #fff;">
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const wrappers = document.querySelectorAll('[data-location-autocomplete]');
+        wrappers.forEach(function (wrapper) {
+            const input = wrapper.querySelector('input[type="text"]');
+            const suggestions = wrapper.querySelector('.dropdown-menu');
+            if (!input || !suggestions) {
+                return;
+            }
+
+            htmx.on('location-autocomplete', function (event) {
+                if (suggestions.innerHTML.trim()) {
+                    suggestions.classList.add('show');
+                    suggestions.style.display = 'block';
+                } else {
+                    suggestions.classList.remove('show');
+                    suggestions.style.display = 'none';
+                }
+            });
+
+            suggestions.addEventListener('click', function (event) {
+                const item = event.target.closest('.autocomplete-item');
+                if (!item) {
+                    return;
+                }
+                event.preventDefault();
+                const value = item.dataset.locationBarcode || item.dataset.locationName || item.textContent.trim();
+                input.value = value;
+                const changeEvent = new Event('change', { bubbles: true });
+                input.dispatchEvent(changeEvent);
+                suggestions.classList.remove('show');
+                suggestions.style.display = 'none';
+            });
+        });
+    });
+</script>
+{% endblock %}

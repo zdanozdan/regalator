@@ -6,10 +6,10 @@ from django.utils.text import slugify
 from .models import (
     Product, Location, Stock, CustomerOrder, OrderItem,
     PickingOrder, PickingItem, PickingHistory,
-    SupplierOrder, SupplierOrderItem, ReceivingOrder,
+    SupplierOrder, SupplierOrderItem, ReceivingOrder, 
     ReceivingItem, ReceivingHistory, WarehouseDocument, DocumentItem,
     UserProfile, ProductGroup, ProductCode, ProductImage,
-    Company, CompanyAddress
+    Company, CompanyAddress, StockMovement
 )
 
 
@@ -118,7 +118,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ['department', 'position']
     search_fields = ['user__username', 'user__first_name', 'user__last_name', 'department', 'position']
     readonly_fields = ['created_at', 'updated_at']
-
+    
     def display_name(self, obj):
         return obj.display_name
     display_name.short_description = 'Nazwa wyświetlana'
@@ -140,7 +140,7 @@ class ProductCodeAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
     ordering = ['product__name', 'code_type', 'code']
     autocomplete_fields = ['product']
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('product', 'code', 'code_type', 'description')
@@ -164,31 +164,31 @@ class ProductAdmin(admin.ModelAdmin):
     filter_horizontal = ['groups']
     inlines = [ProductCodeInline, ProductImageInline]
     actions = ['update_variants_to_size_and_color']
-
+    
     def display_groups(self, obj):
         """Wyświetla grupy produktu"""
         return ', '.join([group.name for group in obj.groups.all()])
     display_groups.short_description = 'Grupy'
-
-
+    
+    
     def update_variants_to_size_and_color(self, request, queryset):
         """Admin action to update variants JSON field to include SizeAndColor type for products without parents"""
         # Filter only products without parents
         products_without_parents = queryset.filter(parent__isnull=True)
-
+        
         updated_count = 0
         for product in products_without_parents:
             # Get current variants or initialize with default
             variants = product.variants or {'size': '', 'color': ''}
-
+            
             # Add the type field
             variants['type'] = 'SizeAndColor'
-
+            
             # Update the product
             product.variants = variants
             product.save(update_fields=['variants'])
             updated_count += 1
-
+        
         if updated_count > 0:
             self.message_user(
                 request,
@@ -201,9 +201,9 @@ class ProductAdmin(admin.ModelAdmin):
                 'No products without parents were selected. Only products without parent products can be updated.',
                 level='WARNING'
             )
-
+    
     update_variants_to_size_and_color.short_description = "Dodaj kolor i rozmiar"
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('code', 'name', 'description', 'unit', 'groups','variants')
@@ -231,6 +231,15 @@ class StockAdmin(admin.ModelAdmin):
     list_filter = ['location', 'updated_at']
     search_fields = ['product__name', 'product__code', 'location__name', 'location__barcode']
     ordering = ['location__barcode', 'product__name']
+
+
+@admin.register(StockMovement)
+class StockMovementAdmin(admin.ModelAdmin):
+    list_display = ['product', 'source_location', 'target_location', 'quantity', 'movement_type', 'performed_by', 'created_at']
+    list_filter = ['movement_type', 'source_location', 'target_location', 'performed_by', 'created_at']
+    search_fields = ['product__name', 'product__code', 'source_location__name', 'target_location__name']
+    readonly_fields = ['created_at']
+    ordering = ['-created_at']
 
 
 @admin.register(CustomerOrder)
@@ -283,7 +292,7 @@ class SupplierOrderAdmin(admin.ModelAdmin):
     search_fields = ['order_number', 'supplier_name', 'supplier_code', 'document_number', 'document_id']
     date_hierarchy = 'order_date'
     readonly_fields = ['created_at', 'updated_at']
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('order_number', 'supplier_name', 'supplier_code', 'status')
@@ -314,7 +323,7 @@ class ReceivingOrderAdmin(admin.ModelAdmin):
     search_fields = ['order_number', 'supplier_order__order_number', 'supplier_order__supplier_name']
     date_hierarchy = 'created_at'
     readonly_fields = ['created_at']
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('order_number', 'supplier_order', 'status', 'assigned_to')
@@ -352,7 +361,7 @@ class WarehouseDocumentAdmin(admin.ModelAdmin):
     search_fields = ['document_number', 'supplier_order__order_number', 'customer_order__order_number']
     date_hierarchy = 'document_date'
     readonly_fields = ['created_at']
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('document_number', 'document_type', 'document_date', 'status')
@@ -382,14 +391,14 @@ class ProductImageAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at', 'image_preview']
     ordering = ['product__name', 'is_primary', 'order', 'created_at']
     autocomplete_fields = ['product']
-
+    
     def image_preview(self, obj):
         """Wyświetla podgląd zdjęcia"""
         if obj.image:
             return f'<img src="{obj.image.url}" style="max-width: 100px; max-height: 100px;" />'
         return "Brak zdjęcia"
     image_preview.short_description = 'Podgląd'
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('product', 'image', 'description')
@@ -415,7 +424,7 @@ class ProductGroupAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code', 'description']
     readonly_fields = ['created_at', 'updated_at', 'products_count']
     ordering = ['name']
-
+    
     fieldsets = (
         ('Podstawowe informacje', {
             'fields': ('name', 'code', 'description', 'color')
