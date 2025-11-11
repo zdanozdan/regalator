@@ -5,8 +5,8 @@ from django.http import JsonResponse, HttpResponse
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
-from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F, Value
-from django.db.models.functions import Lower
+from django.db.models import Q, Sum, Count, Avg, Max, Min, Prefetch, F, Value, CharField
+from django.db.models.functions import Lower, Cast
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm
 from django.contrib.auth.models import User
@@ -1349,11 +1349,14 @@ def product_list(request):
     products = Product.objects.prefetch_related('images', 'parent').all()
 
     if search_query:
-        products = products.filter(
+        products = products.annotate(
+            subiekt_id_str=Cast('subiekt_id', CharField())
+        ).filter(
             Q(code__icontains=search_query) |
             Q(name__icontains=search_query) |
             Q(codes__code__icontains=search_query) |
-            Q(variants__icontains=search_query)
+            Q(variants__icontains=search_query) |
+            Q(subiekt_id_str__icontains=search_query)
         ).distinct()
     
     # Filtrowanie po grupie
@@ -1395,8 +1398,6 @@ def product_list(request):
     elif sync_filter == 'synced':
         products = products.filter(subiekt_id__isnull=False)
         products = [p for p in products if not p.needs_sync]
-    elif sync_filter == 'not_synced':
-        products = products.filter(subiekt_id__isnull=True)
     
     # Sprawdź czy products to lista (po filtrowaniu Python) czy QuerySet
     if isinstance(products, list):
@@ -1437,10 +1438,13 @@ def product_list(request):
     
     # Apply search filter to variants if present
     if search_query:
-        variants_query = variants_query.filter(
+        variants_query = variants_query.annotate(
+            subiekt_id_str=Cast('subiekt_id', CharField())
+        ).filter(
             Q(code__icontains=search_query) |
             Q(name__icontains=search_query) |
-            Q(codes__code__icontains=search_query)
+            Q(codes__code__icontains=search_query) |
+            Q(subiekt_id_str__icontains=search_query)
         ).distinct()
     
     # Apply group filter to variants if present
@@ -1476,8 +1480,6 @@ def product_list(request):
         # Note: needs_sync property filtering would need to be done in Python for variants too
     elif sync_filter == 'synced':
         variants_query = variants_query.filter(subiekt_id__isnull=False)
-    elif sync_filter == 'not_synced':
-        variants_query = variants_query.filter(subiekt_id__isnull=True)
     
     # Final query with ordering
     variants_query = variants_query.select_related('parent').order_by('parent_id', 'name')
