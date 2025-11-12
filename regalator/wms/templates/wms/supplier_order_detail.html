@@ -237,8 +237,6 @@
                             <thead>
                                 <tr>
                                     <th>Produkt</th>
-                                    <th>Kod kreskowy</th>
-                                    <th>Subiekt ID</th>
                                     <th>Ilość zamówiona</th>
                                     <th>Ilość przyjęta</th>
                                     <th>Status</th>
@@ -271,33 +269,18 @@
                                                 </a>
                                             </small>
                                         {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if item.product.codes.first.code %}
-                                            <i class="fas fa-barcode me-1 text-muted"></i>{{ item.product.codes.first.code }}
-                                        {% else %}
-                                            <span class="text-muted">
-                                                <i class="fas fa-exclamation-triangle text-warning me-1"></i>Brak kodu
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if item.product.subiekt_id %}
-                                            <a href="#" 
-                                               hx-get="{% url 'wms:htmx_product_details' item.product.id %}"
-                                               hx-trigger="click"
-                                               hx-swap="innerHTML"
-                                               hx-target="#modalBody"
-                                               class="text-muted"
-                                               style="cursor: pointer; text-decoration: none;"
-                                               onmouseover="this.style.textDecoration='underline'"
-                                               onmouseout="this.style.textDecoration='none'"
-                                               title="Kliknij aby zobaczyć szczegóły produktu">
-                                                <i class="fas fa-info-circle me-1"></i>{{ item.product.subiekt_id }}
-                                            </a>
-                                        {% else %}
-                                            <span class="text-muted">-</span>
-                                        {% endif %}
+                                        <br>
+                                        {% with primary_code=item.product.codes.first %}
+                                            {% if primary_code %}
+                                                <small class="text-muted">
+                                                    <i class="fas fa-barcode me-1"></i>{{ primary_code.code }}
+                                                </small>
+                                            {% else %}
+                                                <small class="text-muted">
+                                                    <i class="fas fa-barcode me-1"></i>brak
+                                                </small>
+                                            {% endif %}
+                                        {% endwith %}
                                     </td>
                                     <td>{{ item.quantity_ordered }}</td>
                                     <td>
