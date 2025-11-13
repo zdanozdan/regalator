@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'subiekt',
     'template_partials',
     'widget_tweaks',
+    'wms_builder',
 ]
 
 MIDDLEWARE = [
@@ -180,6 +181,7 @@ STATIC_URL = 'static/'
 
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "wms/static"),
+    os.path.join(BASE_DIR, "wms_builder/static"),
 ]
 
 print(STATICFILES_DIRS)

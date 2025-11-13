@@ -1,0 +1,71 @@
+{% extends 'wms/base.html' %}
+{% load static %}
+
+{% block title %}Lista magazynów - WMS Builder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-warehouse me-2"></i>Projektowanie magazynu</h1>
+    <a href="{% url 'wms_builder:warehouse_create' %}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Utwórz magazyn
+    </a>
+</div>
+
+<div class="row">
+    {% for warehouse in warehouses %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ warehouse.name }}</h5>
+                <p class="card-text text-muted">
+                    {% if warehouse.description %}
+                        {{ warehouse.description|truncatewords:20 }}
+                    {% else %}
+                        <em>Brak opisu</em>
+                    {% endif %}
+                </p>
+                <div class="mb-2">
+                    <small class="text-muted">
+                        <i class="fas fa-ruler-combined me-1"></i>
+                        {{ warehouse.width }} × {{ warehouse.height }} jednostek
+                    </small>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">
+                        <i class="fas fa-user me-1"></i>
+                        {{ warehouse.created_by|default:"Nieznany" }}
+                    </small>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">
+                        <i class="fas fa-calendar me-1"></i>
+                        {{ warehouse.created_at|date:"d.m.Y H:i" }}
+                    </small>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent">
+                <div class="btn-group w-100" role="group">
+                    <a href="{% url 'wms_builder:warehouse_detail' warehouse.id %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye me-1"></i>Otwórz
+                    </a>
+                    <a href="{% url 'wms_builder:warehouse_edit' warehouse.id %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-edit me-1"></i>Edytuj
+                    </a>
+                    <a href="{% url 'wms_builder:warehouse_delete' warehouse.id %}" class="btn btn-sm btn-outline-danger">
+                        <i class="fas fa-trash me-1"></i>Usuń
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Brak magazynów. <a href="{% url 'wms_builder:warehouse_create' %}">Utwórz pierwszy magazyn</a>.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+

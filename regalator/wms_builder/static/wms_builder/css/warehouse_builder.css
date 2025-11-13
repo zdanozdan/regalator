@@ -1,0 +1,117 @@
+/* Warehouse Builder Styles */
+
+#svg-container {
+    position: relative;
+    background: #f8f9fa;
+}
+
+#warehouse-svg {
+    display: block;
+}
+
+.draggable-zone,
+.draggable-rack,
+.draggable-shelf {
+    transition: opacity 0.2s;
+}
+
+.draggable-zone:hover,
+.draggable-rack:hover,
+.draggable-shelf:hover {
+    opacity: 0.8;
+}
+
+.draggable-zone.dragging,
+.draggable-rack.dragging,
+.draggable-shelf.dragging {
+    opacity: 0.6;
+    cursor: grabbing !important;
+}
+
+.zone-rect,
+.rack-rect,
+.shelf-rect {
+    transition: stroke-width 0.2s;
+}
+
+.zone-rect:hover,
+.rack-rect:hover,
+.shelf-rect:hover {
+    stroke-width: 3;
+}
+
+/* Resize handles */
+.zone-rect {
+    cursor: move;
+}
+
+.zone-rect[data-resizable] {
+    cursor: nwse-resize;
+}
+
+/* Resize handle indicator */
+.interact-resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #007bff;
+    border: 2px solid white;
+    border-radius: 50%;
+    pointer-events: all;
+    cursor: nwse-resize;
+}
+
+.interact-resize-handle-bottom-right {
+    bottom: -5px;
+    right: -5px;
+}
+
+/* Context menu styles */
+.context-menu {
+    position: fixed;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding: 4px 0;
+    z-index: 10000;
+    min-width: 180px;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.context-menu-item:hover {
+    background: #f0f0f0;
+}
+
+.context-menu-item i {
+    margin-right: 8px;
+    width: 16px;
+}
+
+.context-menu-divider {
+    height: 1px;
+    background: #ddd;
+    margin: 4px 0;
+}
+
+/* Selected element styles */
+.draggable-zone.selected .zone-rect,
+.draggable-rack.selected .rack-rect,
+.draggable-shelf.selected .shelf-rect {
+    stroke: #ffc107;
+    stroke-width: 4;
+    filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.6));
+}
+
+.draggable-zone.selected,
+.draggable-rack.selected,
+.draggable-shelf.selected {
+    opacity: 1;
+}
+

@@ -1,0 +1,33 @@
+{% extends 'wms/base.html' %}
+{% load static %}
+
+{% block title %}Usuń magazyn - WMS Builder{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Potwierdź usunięcie</h4>
+            </div>
+            <div class="card-body">
+                <p>Czy na pewno chcesz usunąć magazyn <strong>{{ warehouse.name }}</strong>?</p>
+                <p class="text-danger"><small>Ta operacja jest nieodwracalna. Zostaną również usunięte wszystkie strefy, regały i półki.</small></p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'wms_builder:warehouse_detail' warehouse.id %}" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i>Anuluj
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash me-1"></i>Usuń
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

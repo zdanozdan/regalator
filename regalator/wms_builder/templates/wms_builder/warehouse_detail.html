@@ -1,0 +1,379 @@
+{% extends 'wms/base.html' %}
+{% load static %}
+
+{% block title %}{{ warehouse.name }} - WMS Builder{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'wms_builder/css/warehouse_builder.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-warehouse me-2"></i>{{ warehouse.name }}</h1>
+        {% if warehouse.description %}
+            <p class="text-muted mb-0">{{ warehouse.description }}</p>
+        {% endif %}
+    </div>
+    <div class="btn-group">
+        <a href="{% url 'wms_builder:warehouse_edit' warehouse.id %}" class="btn btn-outline-secondary">
+            <i class="fas fa-edit me-1"></i>Edytuj magazyn
+        </a>
+        <button type="button" class="btn btn-primary" 
+                hx-get="{% url 'wms_builder:htmx_zone_create' warehouse.id %}"
+                hx-target="#modalBody"
+                hx-swap="innerHTML"
+                data-bs-toggle="modal"
+                data-bs-target="#dynamicModal">
+            <i class="fas fa-plus me-1"></i>Dodaj strefę
+        </button>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-3">
+                <strong>Wymiary</strong><br>
+                <span class="text-muted">{{ warehouse.width }} × {{ warehouse.height }}</span>
+            </div>
+            <div class="col-md-3">
+                <strong>Strefy</strong><br>
+                <span class="text-muted">{{ zones|length }}</span>
+            </div>
+            <div class="col-md-3">
+                <strong>Regały</strong><br>
+                <span class="text-muted">
+                    {% for zone in zones %}
+                        {{ zone.racks.count }}{% if not forloop.last %} + {% endif %}
+                    {% empty %}0{% endfor %}
+                </span>
+            </div>
+            <div class="col-md-3">
+                <strong>Półki</strong><br>
+                <span class="text-muted">
+                    {% for zone in zones %}
+                        {% for rack in zone.racks.all %}
+                            {{ rack.shelves.count }}{% if not forloop.last %} + {% endif %}
+                        {% endfor %}
+                    {% empty %}0{% endfor %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-drafting-compass me-2"></i>Wizualizacja magazynu</h5>
+        <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary" id="zoomIn">
+                <i class="fas fa-search-plus"></i>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="zoomOut">
+                <i class="fas fa-search-minus"></i>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="resetZoom">
+                <i class="fas fa-expand"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="svg-container" style="overflow: auto; max-height: 80vh; border: 1px solid #dee2e6;">
+            <svg id="warehouse-svg" 
+                 viewBox="0 0 {{ warehouse.width|stringformat:"f" }} {{ warehouse.height|stringformat:"f" }}"
+                 xmlns="http://www.w3.org/2000/svg"
+                 style="width: 100%; height: auto; min-height: 600px; background: #f8f9fa;">
+                <!-- Grid background -->
+                <defs>
+                    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+                
+                <!-- Warehouse boundary -->
+                <rect x="0" y="0" 
+                      width="{{ warehouse.width|stringformat:"f" }}" 
+                      height="{{ warehouse.height|stringformat:"f" }}"
+                      fill="none" 
+                      stroke="#333" 
+                      stroke-width="2"
+                      stroke-dasharray="5,5" />
+                
+                <!-- Zones -->
+                {% for zone_data in zones_data %}
+                {% with zone=zone_data.zone %}
+                <g id="zone-{{ zone.id }}" class="draggable-zone" 
+                   data-zone-id="{{ zone.id }}"
+                   data-x="{{ zone.x|stringformat:"f" }}"
+                   data-y="{{ zone.y|stringformat:"f" }}"
+                   data-width="{{ zone.width|stringformat:"f" }}"
+                   data-height="{{ zone.height|stringformat:"f" }}"
+                   {% if zone.location %}data-synced="true"{% endif %}>
+                    <rect x="{{ zone.x|stringformat:"f" }}" 
+                          y="{{ zone.y|stringformat:"f" }}" 
+                          width="{{ zone.width|stringformat:"f" }}" 
+                          height="{{ zone.height|stringformat:"f" }}"
+                          fill="{{ zone.color }}" 
+                          fill-opacity="0.3"
+                          stroke="{{ zone.color }}" 
+                          stroke-width="2"
+                          rx="5"
+                          style="cursor: move;"
+                          class="zone-rect" />
+                    <!-- Resize handle indicator -->
+                    <circle cx="{{ zone.x|add:zone.width|stringformat:"f" }}" 
+                            cy="{{ zone.y|add:zone.height|stringformat:"f" }}" 
+                            r="5"
+                            fill="{{ zone.color }}"
+                            stroke="white"
+                            stroke-width="2"
+                            style="cursor: nwse-resize; pointer-events: none;"
+                            class="resize-handle-indicator" />
+                    <text x="{{ zone_data.text_x|stringformat:"f" }}" 
+                          y="{{ zone_data.text_y|stringformat:"f" }}" 
+                          text-anchor="middle" 
+                          dominant-baseline="middle"
+                          font-size="14"
+                          font-weight="bold"
+                          fill="#333"
+                          style="pointer-events: none;">
+                        {{ zone.name }}
+                    </text>
+                    {% if zone.location %}
+                    <circle cx="{{ zone.x|add:zone.width|add:-10|stringformat:"f" }}" 
+                            cy="{{ zone.y|add:10|stringformat:"f" }}" 
+                            r="6"
+                            fill="#28a745"
+                            stroke="white"
+                            stroke-width="1.5"
+                            style="pointer-events: none;"
+                            title="Zsynchronizowane z WMS" />
+                    {% endif %}
+                    
+                    <!-- Racks in zone -->
+                    {% for rack_data in zone_data.racks %}
+                    {% with rack=rack_data.rack %}
+                    <g id="rack-{{ rack.id }}" class="draggable-rack"
+                       data-rack-id="{{ rack.id }}"
+                       data-x="{{ rack.x|stringformat:"f" }}"
+                       data-y="{{ rack.y|stringformat:"f" }}"
+                       data-width="{{ rack.width|stringformat:"f" }}"
+                       data-height="{{ rack.height|stringformat:"f" }}"
+                       {% if rack.location %}data-synced="true"{% endif %}>
+                        <rect x="{{ rack_data.abs_x|stringformat:"f" }}" 
+                              y="{{ rack_data.abs_y|stringformat:"f" }}" 
+                              width="{{ rack.width|stringformat:"f" }}" 
+                              height="{{ rack.height|stringformat:"f" }}"
+                              fill="{{ rack.color }}" 
+                              fill-opacity="0.5"
+                              stroke="{{ rack.color }}" 
+                              stroke-width="1.5"
+                              rx="3"
+                              style="cursor: move;"
+                              class="rack-rect" />
+                        <!-- Resize handle indicator -->
+                        <circle cx="{{ rack_data.abs_x|add:rack.width|stringformat:"f" }}" 
+                                cy="{{ rack_data.abs_y|add:rack.height|stringformat:"f" }}" 
+                                r="4"
+                                fill="{{ rack.color }}"
+                                stroke="white"
+                                stroke-width="1.5"
+                                style="cursor: nwse-resize; pointer-events: none;"
+                                class="resize-handle-indicator" />
+                        <text x="{{ rack_data.text_x|stringformat:"f" }}" 
+                              y="{{ rack_data.text_y|stringformat:"f" }}" 
+                              text-anchor="middle" 
+                              dominant-baseline="middle"
+                              font-size="10"
+                              font-weight="bold"
+                              fill="#333"
+                              style="pointer-events: none;">
+                            {{ rack.name }}
+                        </text>
+                        {% if rack.location %}
+                        <circle cx="{{ rack_data.abs_x|add:rack.width|add:-8|stringformat:"f" }}" 
+                                cy="{{ rack_data.abs_y|add:8|stringformat:"f" }}" 
+                                r="5"
+                                fill="#28a745"
+                                stroke="white"
+                                stroke-width="1"
+                                style="pointer-events: none;"
+                                title="Zsynchronizowane z WMS" />
+                        {% endif %}
+                        
+                        <!-- Shelves in rack -->
+                        {% for shelf_data in rack_data.shelves %}
+                        {% with shelf=shelf_data.shelf %}
+                        <g id="shelf-{{ shelf.id }}" class="draggable-shelf"
+                           data-shelf-id="{{ shelf.id }}"
+                           data-x="{{ shelf.x|stringformat:"f" }}"
+                           data-y="{{ shelf.y|stringformat:"f" }}"
+                           data-width="{{ shelf.width|stringformat:"f" }}"
+                           data-height="{{ shelf.height|stringformat:"f" }}"
+                           {% if shelf.location %}data-synced="true"{% endif %}>
+                            <rect x="{{ shelf_data.abs_x|stringformat:"f" }}" 
+                                  y="{{ shelf_data.abs_y|stringformat:"f" }}" 
+                                  width="{{ shelf.width|stringformat:"f" }}" 
+                                  height="{{ shelf.height|stringformat:"f" }}"
+                                  fill="{{ shelf.color }}" 
+                                  fill-opacity="0.7"
+                                  stroke="{{ shelf.color }}" 
+                                  stroke-width="1"
+                                  rx="2"
+                                  style="cursor: move;"
+                                  class="shelf-rect" />
+                            <!-- Resize handle indicator -->
+                            <circle cx="{{ shelf_data.abs_x|add:shelf.width|stringformat:"f" }}" 
+                                    cy="{{ shelf_data.abs_y|add:shelf.height|stringformat:"f" }}" 
+                                    r="3"
+                                    fill="{{ shelf.color }}"
+                                    stroke="white"
+                                    stroke-width="1"
+                                    style="cursor: nwse-resize; pointer-events: none;"
+                                    class="resize-handle-indicator" />
+                            <text x="{{ shelf_data.text_x|stringformat:"f" }}" 
+                                  y="{{ shelf_data.text_y|stringformat:"f" }}" 
+                                  text-anchor="middle" 
+                                  dominant-baseline="middle"
+                                  font-size="8"
+                                  fill="#333"
+                                  style="pointer-events: none;">
+                                {{ shelf.name|truncatechars:5 }}
+                            </text>
+                            {% if shelf.location %}
+                            <circle cx="{{ shelf_data.abs_x|add:shelf.width|add:-6|stringformat:"f" }}" 
+                                    cy="{{ shelf_data.abs_y|add:6|stringformat:"f" }}" 
+                                    r="4"
+                                    fill="#28a745"
+                                    stroke="white"
+                                    stroke-width="1"
+                                    style="pointer-events: none;"
+                                    title="Zsynchronizowane z WMS" />
+                            {% endif %}
+                        </g>
+                        {% endwith %}
+                        {% endfor %}
+                    </g>
+                    {% endwith %}
+                    {% endfor %}
+                </g>
+                {% endwith %}
+                {% endfor %}
+            </svg>
+        </div>
+    </div>
+</div>
+
+<!-- Legend -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Legenda</h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="d-flex align-items-center mb-2">
+                    <div style="width: 30px; height: 20px; background: #007bff; opacity: 0.3; border: 2px solid #007bff; border-radius: 5px; margin-right: 10px;"></div>
+                    <span>Strefa</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center mb-2">
+                    <div style="width: 30px; height: 20px; background: #28a745; opacity: 0.5; border: 1.5px solid #28a745; border-radius: 3px; margin-right: 10px;"></div>
+                    <span>Regał</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex align-items-center mb-2">
+                    <div style="width: 30px; height: 20px; background: #ffc107; opacity: 0.7; border: 1px solid #ffc107; border-radius: 2px; margin-right: 10px;"></div>
+                    <span>Półka</span>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted small mb-0 mt-2">
+            <i class="fas fa-mouse-pointer me-1"></i>Kliknij element, aby go edytować. Przeciągnij, aby zmienić pozycję.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+<script src="{% static 'wms_builder/js/warehouse_builder.js' %}"></script>
+<script>
+    // Initialize with warehouse data
+    const warehouseData = {
+        id: {{ warehouse.id }},
+        width: {{ warehouse.width|stringformat:"f" }},
+        height: {{ warehouse.height|stringformat:"f" }},
+        zones: [
+            {% for zone in zones %}
+            {
+                id: {{ zone.id }},
+                x: {{ zone.x|stringformat:"f" }},
+                y: {{ zone.y|stringformat:"f" }},
+                racks: [
+                    {% for rack in zone.racks.all %}
+                    {
+                        id: {{ rack.id }},
+                        x: {{ rack.x|stringformat:"f" }},
+                        y: {{ rack.y|stringformat:"f" }},
+                        shelves: [
+                            {% for shelf in rack.shelves.all %}
+                            {
+                                id: {{ shelf.id }},
+                                x: {{ shelf.x|stringformat:"f" }},
+                                y: {{ shelf.y|stringformat:"f" }}
+                            }{% if not forloop.last %},{% endif %}
+                            {% endfor %}
+                        ]
+                    }{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                ]
+            }{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        ]
+    };
+    
+    // Initialize warehouse builder - wait for DOM to be ready
+    function initializeWarehouseBuilder() {
+        console.log('Checking for WarehouseBuilder...');
+        console.log('typeof WarehouseBuilder:', typeof WarehouseBuilder);
+        console.log('typeof interact:', typeof interact);
+        
+        if (typeof WarehouseBuilder !== 'undefined') {
+            console.log('WarehouseBuilder found, creating instance...');
+            const builder = new WarehouseBuilder(warehouseData);
+            console.log('Builder instance created:', builder);
+            builder.init();
+            console.log('init() called');
+        } else {
+            console.error('WarehouseBuilder is undefined!');
+        }
+    }
+    
+    // Wait for DOM to be ready and SVG to be rendered
+    function waitForSVG() {
+        const svg = document.getElementById('warehouse-svg');
+        if (svg) {
+            console.log('SVG found, initializing...');
+            initializeWarehouseBuilder();
+        } else {
+            console.log('SVG not found yet, retrying...');
+            setTimeout(waitForSVG, 100);
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(waitForSVG, 100);
+        });
+    } else {
+        // DOM is already ready
+        setTimeout(waitForSVG, 100);
+    }
+</script>
+{% endblock %}
+

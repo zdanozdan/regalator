@@ -25,6 +25,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('wms.urls')),
     path('assets/', include('assets.urls')),
+    path('wms-builder/', include('wms_builder.urls')),
 ]
 
 # Konfiguracja dla media files w development
