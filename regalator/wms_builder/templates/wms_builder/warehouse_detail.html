@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1><i class="fas fa-warehouse me-2"></i>{{ warehouse.name }}</h1>
         {% if warehouse.description %}
@@ -29,6 +29,20 @@
         </button>
     </div>
 </div>
+
+{% if breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb mb-0">
+        {% for crumb in breadcrumbs %}
+            {% if crumb.url %}
+                <li class="breadcrumb-item"><a href="{{ crumb.url }}">{{ crumb.label }}</a></li>
+            {% else %}
+                <li class="breadcrumb-item active" aria-current="page">{{ crumb.label }}</li>
+            {% endif %}
+        {% endfor %}
+    </ol>
+</nav>
+{% endif %}
 
 <div class="card mb-4">
     <div class="card-body">
@@ -66,7 +80,8 @@
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-drafting-compass me-2"></i>Wizualizacja magazynu</h5>
-        <div class="btn-group btn-group-sm">
+        <div class="d-flex align-items-center gap-2">
+            <div class="btn-group btn-group-sm">
             <button type="button" class="btn btn-outline-secondary" id="zoomIn">
                 <i class="fas fa-search-plus"></i>
             </button>
@@ -76,6 +91,13 @@
             <button type="button" class="btn btn-outline-secondary" id="resetZoom">
                 <i class="fas fa-expand"></i>
             </button>
+            </div>
+            <select id="zoneMode" class="form-select form-select-sm" data-detail-base="{{ detail_base_url }}">
+                <option value="" {% if not active_zone %}selected{% endif %}>Widok: Magazyn</option>
+                {% for zone in zones %}
+                <option value="{{ zone.id }}" {% if active_zone and zone.id == active_zone.id %}selected{% endif %}>Widok: {{ zone.name }}</option>
+                {% endfor %}
+            </select>
         </div>
     </div>
     <div class="card-body p-0">
@@ -83,6 +105,10 @@
             <svg id="warehouse-svg" 
                  viewBox="0 0 {{ warehouse.width|stringformat:"f" }} {{ warehouse.height|stringformat:"f" }}"
                  xmlns="http://www.w3.org/2000/svg"
+                 data-warehouse-id="{{ warehouse.id }}"
+                 data-detail-base="{{ detail_base_url }}"
+                 data-active-zone-id="{% if active_zone %}{{ active_zone.id }}{% endif %}"
+                 data-active-rack-id="{% if active_rack %}{{ active_rack.id }}{% endif %}"
                  style="width: 100%; height: auto; min-height: 600px; background: #f8f9fa;">
                 <!-- Grid background -->
                 <defs>
@@ -149,6 +175,7 @@
                             stroke="white"
                             stroke-width="1.5"
                             style="pointer-events: none;"
+                            class="zone-sync-indicator"
                             title="Zsynchronizowane z WMS" />
                     {% endif %}
                     
@@ -200,6 +227,7 @@
                                 stroke="white"
                                 stroke-width="1"
                                 style="pointer-events: none;"
+                                class="rack-sync-indicator"
                                 title="Zsynchronizowane z WMS" />
                         {% endif %}
                         
@@ -303,40 +331,6 @@
 <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
 <script src="{% static 'wms_builder/js/warehouse_builder.js' %}"></script>
 <script>
-    // Initialize with warehouse data
-    const warehouseData = {
-        id: {{ warehouse.id }},
-        width: {{ warehouse.width|stringformat:"f" }},
-        height: {{ warehouse.height|stringformat:"f" }},
-        zones: [
-            {% for zone in zones %}
-            {
-                id: {{ zone.id }},
-                x: {{ zone.x|stringformat:"f" }},
-                y: {{ zone.y|stringformat:"f" }},
-                racks: [
-                    {% for rack in zone.racks.all %}
-                    {
-                        id: {{ rack.id }},
-                        x: {{ rack.x|stringformat:"f" }},
-                        y: {{ rack.y|stringformat:"f" }},
-                        shelves: [
-                            {% for shelf in rack.shelves.all %}
-                            {
-                                id: {{ shelf.id }},
-                                x: {{ shelf.x|stringformat:"f" }},
-                                y: {{ shelf.y|stringformat:"f" }}
-                            }{% if not forloop.last %},{% endif %}
-                            {% endfor %}
-                        ]
-                    }{% if not forloop.last %},{% endif %}
-                    {% endfor %}
-                ]
-            }{% if not forloop.last %},{% endif %}
-            {% endfor %}
-        ]
-    };
-    
     // Initialize warehouse builder - wait for DOM to be ready
     function initializeWarehouseBuilder() {
         console.log('Checking for WarehouseBuilder...');
@@ -345,7 +339,7 @@
         
         if (typeof WarehouseBuilder !== 'undefined') {
             console.log('WarehouseBuilder found, creating instance...');
-            const builder = new WarehouseBuilder(warehouseData);
+            const builder = new WarehouseBuilder();
             console.log('Builder instance created:', builder);
             builder.init();
             console.log('init() called');
