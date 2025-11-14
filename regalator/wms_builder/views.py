@@ -19,10 +19,22 @@ def warehouse_list(request):
 
 
 @login_required
-def warehouse_detail(request, warehouse_id):
+def warehouse_detail(request, warehouse_id, zone_id=None, rack_id=None):
     """Main view with SVG canvas showing warehouse layout"""
     warehouse = get_object_or_404(Warehouse, id=warehouse_id)
     zones = warehouse.zones.all().prefetch_related('racks__shelves')
+    active_zone = None
+    active_rack = None
+
+    if rack_id is not None:
+        active_rack = get_object_or_404(
+            WarehouseRack.objects.select_related('zone'),
+            id=rack_id,
+            zone__warehouse=warehouse
+        )
+        active_zone = active_rack.zone
+    elif zone_id is not None:
+        active_zone = get_object_or_404(warehouse.zones, id=zone_id)
     
     # Calculate absolute positions for rendering
     zones_data = []
@@ -57,10 +69,28 @@ def warehouse_detail(request, warehouse_id):
             'racks': racks_data,
         })
     
+    breadcrumbs = [
+        {'label': 'Magazyny', 'url': reverse('wms_builder:warehouse_list')},
+        {'label': warehouse.name, 'url': reverse('wms_builder:warehouse_detail', args=[warehouse.id])}
+    ]
+    if active_zone:
+        breadcrumbs.append({
+            'label': active_zone.name,
+            'url': reverse('wms_builder:warehouse_detail_zone', args=[warehouse.id, active_zone.id]) if not active_rack else reverse('wms_builder:warehouse_detail_zone', args=[warehouse.id, active_zone.id])
+        })
+    if active_rack:
+        breadcrumbs.append({'label': active_rack.name, 'url': None})
+    else:
+        breadcrumbs[-1]['url'] = None
+    
     context = {
         'warehouse': warehouse,
         'zones': zones,
         'zones_data': zones_data,
+        'active_zone': active_zone,
+        'active_rack': active_rack,
+        'detail_base_url': reverse('wms_builder:warehouse_detail', args=[warehouse.id]),
+        'breadcrumbs': breadcrumbs,
     }
     return render(request, 'wms_builder/warehouse_detail.html', context)
 
@@ -227,7 +257,8 @@ def htmx_rack_create(request, zone_id):
             rack = form.save(commit=False)
             rack.zone = zone
             rack.save()
-            return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+            redirect_url = reverse('wms_builder:warehouse_detail_zone', args=[zone.warehouse_id, zone.id])
+            return HttpResponse(status=204, headers={'HX-Redirect': redirect_url})
     else:
         form = RackForm()
     

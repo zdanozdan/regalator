@@ -1,3 +1,16 @@
+.zone-mode-hidden {
+    opacity: 0;
+    pointer-events: none !important;
+}
+
+.zone-mode-active .zone-rect {
+    stroke-width: 3;
+}
+
+.zone-mode-active .rack-rect {
+    stroke-width: 2;
+}
+
 /* Warehouse Builder Styles */
 
 #svg-container {

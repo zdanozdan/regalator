@@ -7,6 +7,8 @@ urlpatterns = [
     path('warehouses/', views.warehouse_list, name='warehouse_list'),
     path('warehouses/create/', views.warehouse_create, name='warehouse_create'),
     path('warehouses/<int:warehouse_id>/', views.warehouse_detail, name='warehouse_detail'),
+    path('warehouses/<int:warehouse_id>/zones/<int:zone_id>/', views.warehouse_detail, name='warehouse_detail_zone'),
+    path('warehouses/<int:warehouse_id>/zones/<int:zone_id>/racks/<int:rack_id>/', views.warehouse_detail, name='warehouse_detail_rack'),
     path('warehouses/<int:warehouse_id>/edit/', views.warehouse_edit, name='warehouse_edit'),
     path('warehouses/<int:warehouse_id>/delete/', views.warehouse_delete, name='warehouse_delete'),
     
