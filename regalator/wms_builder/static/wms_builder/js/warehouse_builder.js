@@ -30,7 +30,7 @@ class WarehouseBuilder {
         this.defaultSizes = {
             zone: { width: 200, height: 150 },
             rack: { width: 80, height: 60 },
-            shelf: { width: 60, height: 20 }
+            shelf: { width: 30, height: 10 }
         };
         this.defaultColors = {
             zone: '#007bff',
@@ -1089,20 +1089,27 @@ class WarehouseBuilder {
         if (!rackGroup) {
             return null;
         }
-        const workspaceMode = rackGroup.dataset.rackWorkspaceMode === '1';
-        const x = workspaceMode
-            ? parseFloat(rackGroup.dataset.rackDetailOriginalX) || 0
-            : parseFloat(rackGroup.getAttribute('data-x')) || 0;
-        const y = workspaceMode
-            ? parseFloat(rackGroup.dataset.rackDetailOriginalY) || 0
-            : parseFloat(rackGroup.getAttribute('data-y')) || 0;
-        const width = workspaceMode
-            ? parseFloat(rackGroup.dataset.rackDetailOriginalWidth) || parseFloat(rackGroup.getAttribute('data-width')) || 0
-            : parseFloat(rackGroup.getAttribute('data-width')) || 0;
-        const height = workspaceMode
-            ? parseFloat(rackGroup.dataset.rackDetailOriginalHeight) || parseFloat(rackGroup.getAttribute('data-height')) || 0
-            : parseFloat(rackGroup.getAttribute('data-height')) || 0;
-        return { x, y, width, height, workspaceMode };
+        const rackWorkspaceMode = rackGroup.dataset.rackWorkspaceMode === '1';
+        const zoneWorkspaceMode = rackGroup.dataset.zoneWorkspaceMode === '1';
+        if (rackWorkspaceMode) {
+            const x = parseFloat(rackGroup.dataset.rackDetailOriginalX) || 0;
+            const y = parseFloat(rackGroup.dataset.rackDetailOriginalY) || 0;
+            const width = parseFloat(rackGroup.dataset.rackDetailOriginalWidth) || parseFloat(rackGroup.getAttribute('data-width')) || 0;
+            const height = parseFloat(rackGroup.dataset.rackDetailOriginalHeight) || parseFloat(rackGroup.getAttribute('data-height')) || 0;
+            return { x, y, width, height, workspaceMode: true };
+        }
+        if (zoneWorkspaceMode) {
+            const x = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalX) || 0;
+            const y = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalY) || 0;
+            const width = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalWidth) || 0;
+            const height = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalHeight) || 0;
+            return { x, y, width, height, workspaceMode: true };
+        }
+        const x = parseFloat(rackGroup.getAttribute('data-x')) || 0;
+        const y = parseFloat(rackGroup.getAttribute('data-y')) || 0;
+        const width = parseFloat(rackGroup.getAttribute('data-width')) || 0;
+        const height = parseFloat(rackGroup.getAttribute('data-height')) || 0;
+        return { x, y, width, height, workspaceMode: false };
     }
 
     getWarehouseDimensions() {
@@ -1811,6 +1818,9 @@ class WarehouseBuilder {
         if (!rackGroup) {
             return;
         }
+        if (rackGroup.dataset.zoneWorkspaceMode === '1') {
+            return;
+        }
         const zoneGroup = rackGroup.closest('.draggable-zone');
         if (!zoneGroup || zoneGroup.dataset.workspaceMode !== '1') {
             return;
@@ -1827,16 +1837,37 @@ class WarehouseBuilder {
             return;
         }
         const rackGroup = shelfGroup.closest('.draggable-rack');
-        if (!rackGroup || rackGroup.dataset.rackWorkspaceMode !== '1') {
+        if (!rackGroup) {
             return;
         }
-        const rackWidth = parseFloat(rackGroup.dataset.rackDetailOriginalWidth) || parseFloat(rackGroup.getAttribute('data-width')) || 0;
-        const rackHeight = parseFloat(rackGroup.dataset.rackDetailOriginalHeight) || parseFloat(rackGroup.getAttribute('data-height')) || 0;
-        const workspaceWidth = parseFloat(rackGroup.dataset.rackDetailWorkspaceWidth) || parseFloat(rackGroup.getAttribute('data-width')) || rackWidth;
-        const workspaceHeight = parseFloat(rackGroup.dataset.rackDetailWorkspaceHeight) || parseFloat(rackGroup.getAttribute('data-height')) || rackHeight;
-        const rackX = parseFloat(rackGroup.getAttribute('data-x')) || 0;
-        const rackY = parseFloat(rackGroup.getAttribute('data-y')) || 0;
-        this.convertShelfToWorkspace(shelfGroup, rackWidth, rackHeight, workspaceWidth, workspaceHeight, rackX, rackY);
+        if (rackGroup.dataset.rackWorkspaceMode === '1') {
+            const rackWidth =
+                parseFloat(rackGroup.dataset.rackDetailZoneWidth) ||
+                parseFloat(rackGroup.dataset.rackDetailOriginalWidth) ||
+                parseFloat(rackGroup.getAttribute('data-width')) ||
+                0;
+            const rackHeight =
+                parseFloat(rackGroup.dataset.rackDetailZoneHeight) ||
+                parseFloat(rackGroup.dataset.rackDetailOriginalHeight) ||
+                parseFloat(rackGroup.getAttribute('data-height')) ||
+                0;
+            const workspaceWidth = parseFloat(rackGroup.dataset.rackDetailWorkspaceWidth) || parseFloat(rackGroup.getAttribute('data-width')) || rackWidth;
+            const workspaceHeight = parseFloat(rackGroup.dataset.rackDetailWorkspaceHeight) || parseFloat(rackGroup.getAttribute('data-height')) || rackHeight;
+            const rackX = parseFloat(rackGroup.getAttribute('data-x')) || 0;
+            const rackY = parseFloat(rackGroup.getAttribute('data-y')) || 0;
+            this.convertShelfToWorkspace(shelfGroup, rackWidth, rackHeight, workspaceWidth, workspaceHeight, rackX, rackY);
+            return;
+        }
+
+        if (rackGroup.dataset.zoneWorkspaceMode === '1') {
+            const rackWidth = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalWidth) || 0;
+            const rackHeight = parseFloat(rackGroup.dataset.zoneWorkspaceOriginalHeight) || 0;
+            const workspaceWidth = parseFloat(rackGroup.dataset.zoneWorkspaceWidth) || parseFloat(rackGroup.getAttribute('data-width')) || rackWidth;
+            const workspaceHeight = parseFloat(rackGroup.dataset.zoneWorkspaceHeight) || parseFloat(rackGroup.getAttribute('data-height')) || rackHeight;
+            const rackX = parseFloat(rackGroup.getAttribute('data-x')) || 0;
+            const rackY = parseFloat(rackGroup.getAttribute('data-y')) || 0;
+            this.convertShelfToWorkspace(shelfGroup, rackWidth, rackHeight, workspaceWidth, workspaceHeight, rackX, rackY);
+        }
     }
 
     createSvgElement(tagName) {
@@ -2910,6 +2941,9 @@ class WarehouseBuilder {
             return;
         }
         const zone = rack.closest('.draggable-zone');
+        if (rack.dataset.zoneWorkspaceMode === '1') {
+            return;
+        }
         const originalX = parseFloat(rack.getAttribute('data-x')) || 0;
         const originalY = parseFloat(rack.getAttribute('data-y')) || 0;
         const originalWidth = parseFloat(rack.getAttribute('data-width')) || 0;
@@ -2919,6 +2953,14 @@ class WarehouseBuilder {
         const workspaceY = zoneHeight ? (originalY / zoneHeight) * workspaceHeight : originalY;
         const workspaceRackWidth = zoneWidth ? (originalWidth / zoneWidth) * workspaceWidth : originalWidth;
         const workspaceRackHeight = zoneHeight ? (originalHeight / zoneHeight) * workspaceHeight : originalHeight;
+
+        rack.dataset.zoneWorkspaceMode = '1';
+        rack.dataset.zoneWorkspaceOriginalX = originalX;
+        rack.dataset.zoneWorkspaceOriginalY = originalY;
+        rack.dataset.zoneWorkspaceOriginalWidth = originalWidth;
+        rack.dataset.zoneWorkspaceOriginalHeight = originalHeight;
+        rack.dataset.zoneWorkspaceWidth = workspaceRackWidth;
+        rack.dataset.zoneWorkspaceHeight = workspaceRackHeight;
 
         rack.setAttribute('data-x', workspaceX);
         rack.setAttribute('data-y', workspaceY);
@@ -3006,6 +3048,14 @@ class WarehouseBuilder {
         shelves.forEach(shelf => {
             this.convertShelfFromWorkspace(shelf, zoneRackWidth, zoneRackHeight, workspaceRackWidth, workspaceRackHeight, zoneX + zoneXValue, zoneY + zoneYValue);
         });
+
+        delete rack.dataset.zoneWorkspaceMode;
+        delete rack.dataset.zoneWorkspaceOriginalX;
+        delete rack.dataset.zoneWorkspaceOriginalY;
+        delete rack.dataset.zoneWorkspaceOriginalWidth;
+        delete rack.dataset.zoneWorkspaceOriginalHeight;
+        delete rack.dataset.zoneWorkspaceWidth;
+        delete rack.dataset.zoneWorkspaceHeight;
     }
 
     convertShelfToWorkspace(shelf, rackWidth, rackHeight, workspaceRackWidth, workspaceRackHeight, rackX, rackY) {
