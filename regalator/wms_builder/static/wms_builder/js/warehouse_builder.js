@@ -6,6 +6,7 @@ class WarehouseBuilder {
     constructor(warehouseData = {}) {
         this.warehouseData = warehouseData || {};
         this.svg = null;
+        this.svgContainer = null;
         this.currentZoom = 1;
         this.draggedElement = null;
         this.warehouseId = null;
@@ -20,11 +21,35 @@ class WarehouseBuilder {
         };
         this.zoneModeSelect = null;
         this.detailBaseUrl = null;
+        this.defaultBackground = '#f8f9fa';
+        this.sizingLimits = {
+            zone: { minWidth: 1, minHeight: 1 },
+            rack: { minWidth: 1, minHeight: 1 },
+            shelf: { minWidth: 1, minHeight: 1 }
+        };
+        this.defaultSizes = {
+            zone: { width: 200, height: 150 },
+            rack: { width: 80, height: 60 },
+            shelf: { width: 60, height: 20 }
+        };
+        this.defaultColors = {
+            zone: '#007bff',
+            rack: '#28a745',
+            shelf: '#ffc107'
+        };
+        this.currentSelection = { type: null, element: null };
+        this.clipboard = null;
+        this.clipboardShortcutsBound = false;
+        this.clipboardOffset = 10;
+        this.boundClipboardHandler = this.handleClipboardKeydown.bind(this);
+        this.pointerPosition = null;
+        this.pointerTrackingBound = false;
     }
 
     init() {
         console.log('WarehouseBuilder.init() called');
         this.svg = document.getElementById('warehouse-svg');
+        this.svgContainer = document.getElementById('svg-container');
         if (!this.svg) {
             console.error('SVG element not found!');
             return;
@@ -57,6 +82,8 @@ class WarehouseBuilder {
         this.setupContextMenu();
         this.setupZoomControls();
         this.setupZoneMode();
+        this.setupClipboardShortcuts();
+        this.setupPointerTracking();
     }
 
     setupDragAndDrop() {
@@ -178,10 +205,15 @@ class WarehouseBuilder {
                         
                         width += event.deltaRect.width;
                         height += event.deltaRect.height;
+
+                        const workspaceWidth = this.zoneMode.workspaceWidth || null;
+                        const workspaceHeight = this.zoneMode.workspaceHeight || null;
+                        const maxWidth = workspaceWidth && workspaceWidth > x ? workspaceWidth - x : Number.POSITIVE_INFINITY;
+                        const maxHeight = workspaceHeight && workspaceHeight > y ? workspaceHeight - y : Number.POSITIVE_INFINITY;
+                        const { minWidth, minHeight } = this.sizingLimits.zone;
                         
-                        // Minimum size
-                        if (width < 50) width = 50;
-                        if (height < 50) height = 50;
+                        width = Math.min(Math.max(width, minWidth), maxWidth);
+                        height = Math.min(Math.max(height, minHeight), maxHeight);
                         
                         zoneGroup.setAttribute('data-width', width);
                         zoneGroup.setAttribute('data-height', height);
@@ -213,7 +245,10 @@ class WarehouseBuilder {
                 },
                 modifiers: [
                     interact.modifiers.restrictSize({
-                        min: { width: 50, height: 50 }
+                        min: {
+                            width: this.sizingLimits.zone.minWidth,
+                            height: this.sizingLimits.zone.minHeight
+                        }
                     })
                 ]
             })
@@ -339,9 +374,15 @@ class WarehouseBuilder {
                         
                         width += event.deltaRect.width;
                         height += event.deltaRect.height;
+
+                        const zoneWidth = parseFloat(zone.getAttribute('data-width')) || 0;
+                        const zoneHeight = parseFloat(zone.getAttribute('data-height')) || 0;
+                        const maxWidth = zoneWidth > 0 ? Math.max(this.sizingLimits.rack.minWidth, zoneWidth - x) : Number.POSITIVE_INFINITY;
+                        const maxHeight = zoneHeight > 0 ? Math.max(this.sizingLimits.rack.minHeight, zoneHeight - y) : Number.POSITIVE_INFINITY;
+                        const { minWidth, minHeight } = this.sizingLimits.rack;
                         
-                        if (width < 20) width = 20;
-                        if (height < 20) height = 20;
+                        width = Math.min(Math.max(width, minWidth), maxWidth);
+                        height = Math.min(Math.max(height, minHeight), maxHeight);
                         
                         rackGroup.setAttribute('data-width', width);
                         rackGroup.setAttribute('data-height', height);
@@ -394,7 +435,10 @@ class WarehouseBuilder {
                 },
                 modifiers: [
                     interact.modifiers.restrictSize({
-                        min: { width: 20, height: 20 }
+                        min: {
+                            width: this.sizingLimits.rack.minWidth,
+                            height: this.sizingLimits.rack.minHeight
+                        }
                     })
                 ]
             })
@@ -495,9 +539,15 @@ class WarehouseBuilder {
                         
                         width += event.deltaRect.width;
                         height += event.deltaRect.height;
+
+                        const rackWidth = parseFloat(rack.getAttribute('data-width')) || 0;
+                        const rackHeight = parseFloat(rack.getAttribute('data-height')) || 0;
+                        const maxWidth = rackWidth > 0 ? Math.max(this.sizingLimits.shelf.minWidth, rackWidth - x) : Number.POSITIVE_INFINITY;
+                        const maxHeight = rackHeight > 0 ? Math.max(this.sizingLimits.shelf.minHeight, rackHeight - y) : Number.POSITIVE_INFINITY;
+                        const { minWidth, minHeight } = this.sizingLimits.shelf;
                         
-                        if (width < 15) width = 15;
-                        if (height < 10) height = 10;
+                        width = Math.min(Math.max(width, minWidth), maxWidth);
+                        height = Math.min(Math.max(height, minHeight), maxHeight);
                         
                         shelfGroup.setAttribute('data-width', width);
                         shelfGroup.setAttribute('data-height', height);
@@ -520,7 +570,10 @@ class WarehouseBuilder {
                 },
                 modifiers: [
                     interact.modifiers.restrictSize({
-                        min: { width: 15, height: 10 }
+                        min: {
+                            width: this.sizingLimits.shelf.minWidth,
+                            height: this.sizingLimits.shelf.minHeight
+                        }
                     })
                 ]
             })
@@ -539,226 +592,1320 @@ class WarehouseBuilder {
     }
 
     setupClickToEdit() {
-        // Use direct event listeners on zone-rect elements
         if (!this.svg) {
             console.error('SVG element not found');
             return;
         }
-        
-        console.log('Setting up click to edit');
-        
-        // Helper function to select element
-        const selectElement = (element, type) => {
-            // Remove selection from all elements
-            document.querySelectorAll('.draggable-zone.selected, .draggable-rack.selected, .draggable-shelf.selected').forEach(el => {
-                el.classList.remove('selected');
-            });
-            // Select current element
-            if (element) {
-                element.classList.add('selected');
-            }
+
+        const bindHandlers = () => {
+            document.querySelectorAll('.zone-rect').forEach(rect => this.bindZoneSelectionHandlers(rect));
+            document.querySelectorAll('.draggable-rack').forEach(rack => this.bindRackSelectionHandlers(rack));
+            document.querySelectorAll('.draggable-shelf').forEach(shelf => this.bindShelfSelectionHandlers(shelf));
         };
-        
-        // Helper function to get element group
-        const getElementGroup = (target, className) => {
-            if (target.classList && target.classList.contains(className)) {
-                return target;
-            }
-            let parent = target.parentElement;
-            while (parent && parent !== this.svg) {
-                if (parent.classList && parent.classList.contains(className)) {
-                    return parent;
+
+        setTimeout(bindHandlers, 500);
+    }
+
+    bindZoneSelectionHandlers(rect) {
+        if (!rect || rect.dataset.selectionBound === '1') {
+            return;
+        }
+        rect.dataset.selectionBound = '1';
+        let clickTimer = null;
+        let hasMoved = false;
+        let mouseDownPos = { x: 0, y: 0 };
+
+        rect.addEventListener('mousedown', (e) => {
+            mouseDownPos = { x: e.clientX, y: e.clientY };
+            hasMoved = false;
+        });
+
+        rect.addEventListener('mousemove', (e) => {
+            if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
+                const distance = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+                if (distance > 5) {
+                    hasMoved = true;
                 }
-                parent = parent.parentElement;
             }
-            return null;
+        });
+
+        rect.addEventListener('click', (e) => {
+            if (hasMoved) {
+                hasMoved = false;
+                mouseDownPos = { x: 0, y: 0 };
+                return;
+            }
+
+            const zoneGroup = rect.closest('.draggable-zone');
+            if (!zoneGroup || zoneGroup.classList.contains('dragging')) {
+                return;
+            }
+
+            if (clickTimer === null) {
+                clickTimer = setTimeout(() => {
+                    clickTimer = null;
+                    this.setSelection(zoneGroup, 'zone');
+                }, 300);
+            } else {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                e.stopPropagation();
+                const zoneId = zoneGroup.getAttribute('data-zone-id');
+                if (zoneId) {
+                    if (this.zoneMode.activeZoneId === zoneId) {
+                        this.navigateToZone(null);
+                    } else {
+                        this.navigateToZone(zoneId);
+                    }
+                }
+            }
+
+            mouseDownPos = { x: 0, y: 0 };
+        });
+    }
+
+    bindRackSelectionHandlers(rackGroup) {
+        if (!rackGroup || rackGroup.dataset.selectionBound === '1') {
+            return;
+        }
+        rackGroup.dataset.selectionBound = '1';
+        let clickTimer = null;
+        let hasMoved = false;
+        let mouseDownPos = { x: 0, y: 0 };
+
+        rackGroup.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.draggable-shelf')) return;
+            mouseDownPos = { x: e.clientX, y: e.clientY };
+            hasMoved = false;
+        });
+
+        rackGroup.addEventListener('mousemove', (e) => {
+            if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
+                const distance = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+                if (distance > 5) {
+                    hasMoved = true;
+                }
+            }
+        });
+
+        rackGroup.addEventListener('click', (e) => {
+            if (e.target.closest('.draggable-shelf')) return;
+            if (hasMoved) {
+                hasMoved = false;
+                mouseDownPos = { x: 0, y: 0 };
+                return;
+            }
+
+            if (rackGroup.classList.contains('dragging')) {
+                return;
+            }
+
+            if (clickTimer === null) {
+                clickTimer = setTimeout(() => {
+                    clickTimer = null;
+                    this.setSelection(rackGroup, 'rack');
+                }, 300);
+            } else {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                e.stopPropagation();
+                const rackId = rackGroup.getAttribute('data-rack-id');
+                const zoneGroup = rackGroup.closest('.draggable-zone');
+                const zoneId = zoneGroup ? zoneGroup.getAttribute('data-zone-id') : this.zoneMode.activeZoneId;
+                if (rackId && zoneId) {
+                    if (this.rackMode.activeRackId === rackId) {
+                        this.navigateToRack(zoneId, null);
+                    } else {
+                        this.navigateToRack(zoneId, rackId);
+                    }
+                }
+            }
+
+            mouseDownPos = { x: 0, y: 0 };
+        });
+    }
+
+    bindShelfSelectionHandlers(shelfGroup) {
+        if (!shelfGroup || shelfGroup.dataset.selectionBound === '1') {
+            return;
+        }
+        shelfGroup.dataset.selectionBound = '1';
+        let clickTimer = null;
+        let hasMoved = false;
+        let mouseDownPos = { x: 0, y: 0 };
+
+        shelfGroup.addEventListener('mousedown', (e) => {
+            mouseDownPos = { x: e.clientX, y: e.clientY };
+            hasMoved = false;
+        });
+
+        shelfGroup.addEventListener('mousemove', (e) => {
+            if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
+                const distance = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+                if (distance > 5) {
+                    hasMoved = true;
+                }
+            }
+        });
+
+        shelfGroup.addEventListener('click', (e) => {
+            if (hasMoved) {
+                hasMoved = false;
+                mouseDownPos = { x: 0, y: 0 };
+                return;
+            }
+
+            if (shelfGroup.classList.contains('dragging')) {
+                return;
+            }
+
+            if (clickTimer === null) {
+                clickTimer = setTimeout(() => {
+                    clickTimer = null;
+                    this.setSelection(shelfGroup, 'shelf');
+                }, 300);
+            } else {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                e.stopPropagation();
+                const shelfId = shelfGroup.getAttribute('data-shelf-id');
+                if (shelfId) {
+                    this.editShelf(shelfId);
+                }
+            }
+
+            mouseDownPos = { x: 0, y: 0 };
+        });
+    }
+
+    setSelection(element, type) {
+        if (this.currentSelection && this.currentSelection.element === element) {
+            return;
+        }
+
+        document.querySelectorAll('.draggable-zone.selected, .draggable-rack.selected, .draggable-shelf.selected').forEach(el => {
+            if (el !== element) {
+                el.classList.remove('selected');
+            }
+        });
+
+        if (element) {
+            element.classList.add('selected');
+            this.currentSelection = { element, type };
+        } else {
+            this.currentSelection = { element: null, type: null };
+        }
+    }
+
+    clearSelection() {
+        document.querySelectorAll('.draggable-zone.selected, .draggable-rack.selected, .draggable-shelf.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        this.currentSelection = { element: null, type: null };
+    }
+
+    getSelectedElement() {
+        if (this.currentSelection && this.currentSelection.element) {
+            return this.currentSelection;
+        }
+        return null;
+    }
+
+    setupClipboardShortcuts() {
+        if (this.clipboardShortcutsBound) {
+            return;
+        }
+        document.addEventListener('keydown', this.boundClipboardHandler);
+        this.clipboardShortcutsBound = true;
+    }
+
+    setupPointerTracking() {
+        if (this.pointerTrackingBound) {
+            return;
+        }
+        const updatePointer = (event) => {
+            if (!event) return;
+            this.pointerPosition = {
+                clientX: event.clientX,
+                clientY: event.clientY
+            };
         };
-        
-        // Wait a bit for elements to be rendered, then attach listeners
-        setTimeout(() => {
-            // Handle zones - single click selects, double click edits
-            const zoneRects = document.querySelectorAll('.zone-rect');
-            console.log('Found zone-rect elements:', zoneRects.length);
-            
-            zoneRects.forEach((rect) => {
-                let clickTimer = null;
-                let hasMoved = false;
-                let mouseDownPos = { x: 0, y: 0 };
-                
-                rect.addEventListener('mousedown', (e) => {
-                    mouseDownPos = { x: e.clientX, y: e.clientY };
-                    hasMoved = false;
-                });
-                
-                rect.addEventListener('mousemove', (e) => {
-                    if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
-                        const distance = Math.sqrt(
-                            Math.pow(e.clientX - mouseDownPos.x, 2) + 
-                            Math.pow(e.clientY - mouseDownPos.y, 2)
-                        );
-                        if (distance > 5) {
-                            hasMoved = true;
-                        }
-                    }
-                });
-                
-                rect.addEventListener('click', (e) => {
-                    if (hasMoved) {
-                        hasMoved = false;
-                        mouseDownPos = { x: 0, y: 0 };
-                        return;
-                    }
-                    
-                    const zoneGroup = getElementGroup(rect, 'draggable-zone');
-                    if (!zoneGroup || zoneGroup.classList.contains('dragging')) {
-                        return;
-                    }
-                    
-                    // Single click - select
-                    if (clickTimer === null) {
-                        clickTimer = setTimeout(() => {
-                            clickTimer = null;
-                            selectElement(zoneGroup, 'zone');
-                        }, 300); // Wait 300ms to see if it's a double click
-                    } else {
-                        // Double click - enter/exit zone focus
-                        clearTimeout(clickTimer);
-                        clickTimer = null;
-                        e.stopPropagation();
-                        const zoneId = zoneGroup.getAttribute('data-zone-id');
-                        if (zoneId) {
-                            if (this.zoneMode.activeZoneId === zoneId) {
-                                this.navigateToZone(null);
-                            } else {
-                                this.navigateToZone(zoneId);
-                            }
-                        }
-                    }
-                    
-                    mouseDownPos = { x: 0, y: 0 };
-                });
-            });
+        const resetPointer = () => {
+            this.pointerPosition = null;
+        };
+        const container = this.svgContainer || this.svg || document;
+        if (container) {
+            container.addEventListener('mousemove', updatePointer);
+            container.addEventListener('mouseleave', resetPointer);
+            this.pointerTrackingBound = true;
+        }
+    }
 
-            // Handle racks - single click selects, double click enters rack view
-            document.querySelectorAll('.draggable-rack, .rack-rect').forEach(element => {
-                let clickTimer = null;
-                let hasMoved = false;
-                let mouseDownPos = { x: 0, y: 0 };
-                
-                element.addEventListener('mousedown', (e) => {
-                    if (e.target.closest('.draggable-shelf')) return;
-                    mouseDownPos = { x: e.clientX, y: e.clientY };
-                    hasMoved = false;
-                });
-                
-                element.addEventListener('mousemove', (e) => {
-                    if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
-                        const distance = Math.sqrt(
-                            Math.pow(e.clientX - mouseDownPos.x, 2) + 
-                            Math.pow(e.clientY - mouseDownPos.y, 2)
-                        );
-                        if (distance > 5) {
-                            hasMoved = true;
-                        }
-                    }
-                });
-                
-                element.addEventListener('click', (e) => {
-                    if (e.target.closest('.draggable-shelf')) return;
-                    if (hasMoved) {
-                        hasMoved = false;
-                        mouseDownPos = { x: 0, y: 0 };
-                        return;
-                    }
-                    
-                    const rackGroup = getElementGroup(element, 'draggable-rack');
-                    if (!rackGroup || rackGroup.classList.contains('dragging')) {
-                        return;
-                    }
-                    
-                    // Single click - select
-                    if (clickTimer === null) {
-                        clickTimer = setTimeout(() => {
-                            clickTimer = null;
-                            selectElement(rackGroup, 'rack');
-                        }, 300);
-                    } else {
-                        // Double click - enter/exit rack focus
-                        clearTimeout(clickTimer);
-                        clickTimer = null;
-                        e.stopPropagation();
-                        const rackId = rackGroup.getAttribute('data-rack-id');
-                        const zoneGroup = rackGroup.closest('.draggable-zone');
-                        const zoneId = zoneGroup ? zoneGroup.getAttribute('data-zone-id') : this.zoneMode.activeZoneId;
-                        if (rackId && zoneId) {
-                            if (this.rackMode.activeRackId === rackId) {
-                                this.navigateToRack(zoneId, null);
-                            } else {
-                                this.navigateToRack(zoneId, rackId);
-                            }
-                        }
-                    }
-                    
-                    mouseDownPos = { x: 0, y: 0 };
-                });
-            });
+    handleClipboardKeydown(event) {
+        if (!event) {
+            return;
+        }
+        const key = (event.key || '').toLowerCase();
+        const isDeleteKey = key === 'delete' || key === 'backspace';
+        if (!event.ctrlKey && !event.metaKey && isDeleteKey) {
+            if (this.isEditableTarget(event.target)) {
+                return;
+            }
+            const deleted = this.deleteCurrentSelection();
+            if (deleted) {
+                event.preventDefault();
+            }
+            return;
+        }
+        if (!event.ctrlKey && !event.metaKey) {
+            return;
+        }
+        if (key !== 'c' && key !== 'v') {
+            return;
+        }
+        if (this.isEditableTarget(event.target)) {
+            return;
+        }
+        if (key === 'c') {
+            const copied = this.copyCurrentSelection();
+            if (copied) {
+                event.preventDefault();
+            }
+        } else if (key === 'v') {
+            const pasted = this.pasteFromClipboard();
+            if (pasted) {
+                event.preventDefault();
+            }
+        }
+    }
 
-            // Handle shelves - single click selects, double click edits
-            document.querySelectorAll('.draggable-shelf, .shelf-rect').forEach(element => {
-                let clickTimer = null;
-                let hasMoved = false;
-                let mouseDownPos = { x: 0, y: 0 };
-                
-                element.addEventListener('mousedown', (e) => {
-                    mouseDownPos = { x: e.clientX, y: e.clientY };
-                    hasMoved = false;
-                });
-                
-                element.addEventListener('mousemove', (e) => {
-                    if (mouseDownPos.x !== 0 || mouseDownPos.y !== 0) {
-                        const distance = Math.sqrt(
-                            Math.pow(e.clientX - mouseDownPos.x, 2) + 
-                            Math.pow(e.clientY - mouseDownPos.y, 2)
-                        );
-                        if (distance > 5) {
-                            hasMoved = true;
-                        }
+    isEditableTarget(target) {
+        if (!target) {
+            return false;
+        }
+        const tagName = target.tagName ? target.tagName.toLowerCase() : '';
+        const editableTags = ['input', 'textarea', 'select'];
+        if (editableTags.includes(tagName) || target.isContentEditable) {
+            return true;
+        }
+        return target.closest('[contenteditable="true"]') !== null;
+    }
+
+    copyCurrentSelection() {
+        const selection = this.getSelectedElement();
+        if (!selection || !selection.element) {
+            console.warn('Brak zaznaczonego elementu do skopiowania.');
+            return false;
+        }
+        const sourceId = this.getElementIdByType(selection.element, selection.type);
+        if (!sourceId) {
+            console.warn('Nie udało się ustawić schowka dla wybranego elementu.');
+            return false;
+        }
+        this.clipboard = { type: selection.type, sourceId };
+        console.info(`Skopiowano ${selection.type} #${sourceId} do schowka.`);
+        const label = this.getEntityAccusativeLabel(selection.type);
+        const name = this.getElementName(selection.element, selection.type);
+        if (label) {
+            this.showToast(`Skopiowano ${label}${name ? ` "${name}"` : ''}.`, 'info');
+        } else {
+            this.showToast(`Skopiowano element${name ? ` "${name}"` : ''}.`, 'info');
+        }
+        return true;
+    }
+
+    pasteFromClipboard() {
+        if (!this.clipboard) {
+            console.warn('Schowek jest pusty.');
+            return false;
+        }
+        const selection = this.getSelectedElement();
+        if (!selection || !selection.element) {
+            console.warn('Wybierz element aby określić miejsce wklejenia.');
+            return false;
+        }
+        if (selection.type !== this.clipboard.type) {
+            console.warn('Typ zaznaczenia nie odpowiada zawartości schowka.');
+            return false;
+        }
+        const pointerSnapshot = this.pointerPosition ? { ...this.pointerPosition } : null;
+        const payload = this.calculatePastePayload(selection, pointerSnapshot);
+        if (!payload) {
+            console.warn('Nie udało się wyliczyć pozycji wklejenia.');
+            return false;
+        }
+
+        if (selection.type === 'zone') {
+            this.duplicateZoneRequest(this.clipboard.sourceId, payload, selection.element);
+        } else if (selection.type === 'rack') {
+            this.duplicateRackRequest(this.clipboard.sourceId, payload, selection.element);
+        } else if (selection.type === 'shelf') {
+            this.duplicateShelfRequest(this.clipboard.sourceId, payload, selection.element);
+        }
+        return true;
+    }
+
+    calculatePastePayload(selection, pointerPosition = null) {
+        if (!selection || !selection.element) {
+            return null;
+        }
+        if (selection.type === 'zone') {
+            return this.calculateZonePastePayload(selection.element, pointerPosition);
+        }
+        if (selection.type === 'rack') {
+            return this.calculateRackPastePayload(selection.element, pointerPosition);
+        }
+        if (selection.type === 'shelf') {
+            return this.calculateShelfPastePayload(selection.element, pointerPosition);
+        }
+        return null;
+    }
+
+    calculateZonePastePayload(zoneGroup, pointerPosition = null) {
+        const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+        if (!zoneMetrics) {
+            return null;
+        }
+        const workspace = this.getWarehouseDimensions();
+        const workspaceWidth = this.zoneMode.workspaceWidth || workspace.width || zoneMetrics.width;
+        const workspaceHeight = this.zoneMode.workspaceHeight || workspace.height || zoneMetrics.height;
+        if (pointerPosition) {
+            const pointerActual = this.getPointerInWorkspaceActual(pointerPosition);
+            if (pointerActual) {
+                const maxX = Math.max(0, (workspaceWidth || zoneMetrics.width) - zoneMetrics.width);
+                const maxY = Math.max(0, (workspaceHeight || zoneMetrics.height) - zoneMetrics.height);
+                const clampedX = Math.min(Math.max(pointerActual.x - zoneMetrics.width / 2, 0), maxX);
+                const clampedY = Math.min(Math.max(pointerActual.y - zoneMetrics.height / 2, 0), maxY);
+                return {
+                    x: clampedX,
+                    y: clampedY
+                };
+            }
+        }
+        const { height: warehouseHeight } = this.getWarehouseDimensions();
+        const desiredY = zoneMetrics.y + zoneMetrics.height + this.clipboardOffset;
+        const maxY = Math.max(0, warehouseHeight - zoneMetrics.height);
+        return {
+            x: zoneMetrics.x,
+            y: Math.min(desiredY, maxY)
+        };
+    }
+
+    calculateRackPastePayload(rackGroup, pointerPosition = null) {
+        const rackMetrics = this.getRackActualMetrics(rackGroup);
+        const zoneGroup = rackGroup ? rackGroup.closest('.draggable-zone') : null;
+        const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+        if (!rackMetrics || !zoneGroup || !zoneMetrics) {
+            return null;
+        }
+        if (pointerPosition) {
+            const placement = this.calculateRackCreationMetrics(zoneGroup, pointerPosition, {
+                width: rackMetrics.width,
+                height: rackMetrics.height,
+                centerPointer: false
+            });
+            if (placement) {
+                return {
+                    x: placement.x,
+                    y: placement.y,
+                    zoneId: zoneGroup.getAttribute('data-zone-id')
+                };
+            }
+        }
+        const desiredY = rackMetrics.y + rackMetrics.height + this.clipboardOffset;
+        const maxY = Math.max(0, zoneMetrics.height - rackMetrics.height);
+        return {
+            x: rackMetrics.x,
+            y: Math.min(desiredY, maxY),
+            zoneId: zoneGroup.getAttribute('data-zone-id')
+        };
+    }
+
+    calculateShelfPastePayload(shelfGroup, pointerPosition = null) {
+        if (!shelfGroup) {
+            return null;
+        }
+        const rackGroup = shelfGroup.closest('.draggable-rack');
+        const zoneGroup = rackGroup ? rackGroup.closest('.draggable-zone') : null;
+        const rackMetrics = this.convertShelfMetricsForServer(
+            shelfGroup,
+            {
+                x: parseFloat(shelfGroup.getAttribute('data-x')) || 0,
+                y: parseFloat(shelfGroup.getAttribute('data-y')) || 0,
+                width: parseFloat(shelfGroup.getAttribute('data-width')) || 0,
+                height: parseFloat(shelfGroup.getAttribute('data-height')) || 0
+            }
+        );
+        const rackActual = this.getRackActualMetrics(rackGroup);
+        if (!rackMetrics || !rackGroup || !rackActual) {
+            return null;
+        }
+        if (pointerPosition) {
+            const placement = this.calculateShelfCreationMetrics(rackGroup, pointerPosition, {
+                width: rackMetrics.width,
+                height: rackMetrics.height,
+                centerPointer: false
+            });
+            if (placement) {
+                return {
+                    x: placement.x,
+                    y: placement.y,
+                    rackId: rackGroup.getAttribute('data-rack-id'),
+                    zoneId: zoneGroup ? zoneGroup.getAttribute('data-zone-id') : null
+                };
+            }
+        }
+        const desiredY = rackMetrics.y + rackMetrics.height + this.clipboardOffset;
+        const maxY = Math.max(0, rackActual.height - rackMetrics.height);
+        return {
+            x: rackMetrics.x,
+            y: Math.min(desiredY, maxY),
+            rackId: rackGroup.getAttribute('data-rack-id'),
+            zoneId: zoneGroup ? zoneGroup.getAttribute('data-zone-id') : null
+        };
+    }
+
+    getZoneActualMetrics(zoneGroup) {
+        if (!zoneGroup) {
+            return null;
+        }
+        const workspaceMode = zoneGroup.dataset.workspaceMode === '1';
+        const x = workspaceMode
+            ? parseFloat(zoneGroup.dataset.zoneOriginalX) || 0
+            : parseFloat(zoneGroup.getAttribute('data-x')) || 0;
+        const y = workspaceMode
+            ? parseFloat(zoneGroup.dataset.zoneOriginalY) || 0
+            : parseFloat(zoneGroup.getAttribute('data-y')) || 0;
+        const width = workspaceMode
+            ? parseFloat(zoneGroup.dataset.zoneOriginalWidth) || parseFloat(zoneGroup.getAttribute('data-width')) || 0
+            : parseFloat(zoneGroup.getAttribute('data-width')) || 0;
+        const height = workspaceMode
+            ? parseFloat(zoneGroup.dataset.zoneOriginalHeight) || parseFloat(zoneGroup.getAttribute('data-height')) || 0
+            : parseFloat(zoneGroup.getAttribute('data-height')) || 0;
+        return { x, y, width, height, workspaceMode };
+    }
+
+    getRackActualMetrics(rackGroup) {
+        if (!rackGroup) {
+            return null;
+        }
+        const workspaceMode = rackGroup.dataset.rackWorkspaceMode === '1';
+        const x = workspaceMode
+            ? parseFloat(rackGroup.dataset.rackDetailOriginalX) || 0
+            : parseFloat(rackGroup.getAttribute('data-x')) || 0;
+        const y = workspaceMode
+            ? parseFloat(rackGroup.dataset.rackDetailOriginalY) || 0
+            : parseFloat(rackGroup.getAttribute('data-y')) || 0;
+        const width = workspaceMode
+            ? parseFloat(rackGroup.dataset.rackDetailOriginalWidth) || parseFloat(rackGroup.getAttribute('data-width')) || 0
+            : parseFloat(rackGroup.getAttribute('data-width')) || 0;
+        const height = workspaceMode
+            ? parseFloat(rackGroup.dataset.rackDetailOriginalHeight) || parseFloat(rackGroup.getAttribute('data-height')) || 0
+            : parseFloat(rackGroup.getAttribute('data-height')) || 0;
+        return { x, y, width, height, workspaceMode };
+    }
+
+    getWarehouseDimensions() {
+        if (!this.svg) {
+            return { width: 0, height: 0 };
+        }
+        const viewBoxAttr = this.svg.getAttribute('viewBox');
+        if (!viewBoxAttr) {
+            return { width: 0, height: 0 };
+        }
+        const parts = viewBoxAttr.split(' ').map(parseFloat);
+        return {
+            width: parts[2] || 0,
+            height: parts[3] || 0
+        };
+    }
+
+    getSvgCoordinatesFromClient(clientX, clientY) {
+        if (!this.svg || typeof clientX !== 'number' || typeof clientY !== 'number') {
+            return null;
+        }
+        const point = this.svg.createSVGPoint();
+        point.x = clientX;
+        point.y = clientY;
+        const ctm = this.svg.getScreenCTM();
+        if (!ctm) {
+            return null;
+        }
+        const transformed = point.matrixTransform(ctm.inverse());
+        return { x: transformed.x, y: transformed.y };
+    }
+
+    getPointerRelativeToZoneDisplay(zoneGroup, pointerPosition) {
+        if (!zoneGroup || !pointerPosition) {
+            return null;
+        }
+        const svgCoords = this.getSvgCoordinatesFromClient(pointerPosition.clientX, pointerPosition.clientY);
+        if (!svgCoords) {
+            return null;
+        }
+        const zoneDisplayX = parseFloat(zoneGroup.getAttribute('data-x')) || 0;
+        const zoneDisplayY = parseFloat(zoneGroup.getAttribute('data-y')) || 0;
+        return {
+            x: svgCoords.x - zoneDisplayX,
+            y: svgCoords.y - zoneDisplayY
+        };
+    }
+
+    convertZoneDisplayToActual(zoneGroup, displayCoord) {
+        if (!zoneGroup || !displayCoord) {
+            return null;
+        }
+        const workspaceMode = zoneGroup.dataset.workspaceMode === '1';
+        if (!workspaceMode) {
+            return displayCoord;
+        }
+        const workspaceWidth = parseFloat(zoneGroup.getAttribute('data-width')) || 1;
+        const workspaceHeight = parseFloat(zoneGroup.getAttribute('data-height')) || 1;
+        const zoneWidth = parseFloat(zoneGroup.dataset.zoneOriginalWidth) || workspaceWidth;
+        const zoneHeight = parseFloat(zoneGroup.dataset.zoneOriginalHeight) || workspaceHeight;
+        return {
+            x: workspaceWidth ? (displayCoord.x / workspaceWidth) * zoneWidth : displayCoord.x,
+            y: workspaceHeight ? (displayCoord.y / workspaceHeight) * zoneHeight : displayCoord.y
+        };
+    }
+
+    getPointerInZoneActual(zoneGroup, pointerPosition) {
+        const displayCoords = this.getPointerRelativeToZoneDisplay(zoneGroup, pointerPosition);
+        if (!displayCoords) {
+            return null;
+        }
+        return this.convertZoneDisplayToActual(zoneGroup, displayCoords);
+    }
+
+    getPointerInWorkspaceActual(pointerPosition) {
+        if (!pointerPosition) {
+            return null;
+        }
+        const svgCoords = this.getSvgCoordinatesFromClient(pointerPosition.clientX, pointerPosition.clientY);
+        if (!svgCoords) {
+            return null;
+        }
+        const activeZoneId = this.zoneMode && this.zoneMode.activeZoneId;
+        if (!activeZoneId) {
+            return svgCoords;
+        }
+        const zoneGroup = this.getZoneGroupById(activeZoneId);
+        if (!zoneGroup) {
+            return svgCoords;
+        }
+        const pointerInZone = this.getPointerInZoneActual(zoneGroup, pointerPosition);
+        if (!pointerInZone) {
+            return svgCoords;
+        }
+        return pointerInZone;
+    }
+
+    calculateZoneCreationMetrics(clientPosition) {
+        const workspace = this.getWarehouseDimensions();
+        const defaults = (this.defaultSizes && this.defaultSizes.zone) || { width: 200, height: 150 };
+        const defaultWidth = Number(defaults.width) || 200;
+        const defaultHeight = Number(defaults.height) || 150;
+        const workspaceWidth = this.zoneMode.workspaceWidth || workspace.width || defaultWidth;
+        const workspaceHeight = this.zoneMode.workspaceHeight || workspace.height || defaultHeight;
+        let targetX = 0;
+        let targetY = 0;
+        if (clientPosition) {
+            const svgCoords = this.getSvgCoordinatesFromClient(clientPosition.clientX, clientPosition.clientY);
+            if (svgCoords) {
+                targetX = svgCoords.x;
+                targetY = svgCoords.y;
+            }
+        }
+        const maxX = Math.max(0, workspaceWidth - defaultWidth);
+        const maxY = Math.max(0, workspaceHeight - defaultHeight);
+        const clampedX = Math.min(Math.max(targetX, 0), maxX);
+        const clampedY = Math.min(Math.max(targetY, 0), maxY);
+        return {
+            x: clampedX,
+            y: clampedY,
+            width: defaultWidth,
+            height: defaultHeight,
+            color: (this.defaultColors && this.defaultColors.zone) || '#007bff',
+            name: null
+        };
+    }
+
+    calculateRackCreationMetrics(zoneGroup, clientPosition, overrides = {}) {
+        if (!zoneGroup) return null;
+        const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+        if (!zoneMetrics) return null;
+        const defaults = (this.defaultSizes && this.defaultSizes.rack) || { width: 80, height: 60 };
+        const width = typeof overrides.width === 'number' ? overrides.width : (Number(defaults.width) || 80);
+        const height = typeof overrides.height === 'number' ? overrides.height : (Number(defaults.height) || 60);
+        const centerPointer = overrides.centerPointer !== false;
+        let relativeX = 0;
+        let relativeY = 0;
+        const pointerActual = this.getPointerInZoneActual(zoneGroup, clientPosition);
+        if (pointerActual) {
+            relativeX = pointerActual.x - (centerPointer ? width / 2 : 0);
+            relativeY = pointerActual.y - (centerPointer ? height / 2 : 0);
+        } else {
+            relativeX = (zoneMetrics.width - width) / 2;
+            relativeY = (zoneMetrics.height - height) / 2;
+        }
+        const maxX = Math.max(0, zoneMetrics.width - width);
+        const maxY = Math.max(0, zoneMetrics.height - height);
+        const clampedX = Math.min(Math.max(relativeX, 0), maxX);
+        const clampedY = Math.min(Math.max(relativeY, 0), maxY);
+        return {
+            x: clampedX,
+            y: clampedY,
+            width,
+            height,
+            color: overrides.color || (this.defaultColors && this.defaultColors.rack) || '#28a745',
+            name: overrides.name || null
+        };
+    }
+
+    calculateShelfCreationMetrics(rackGroup, clientPosition, overrides = {}) {
+        if (!rackGroup) return null;
+        const rackMetrics = this.getRackActualMetrics(rackGroup);
+        if (!rackMetrics) return null;
+        const zoneGroup = rackGroup.closest('.draggable-zone');
+        const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+        if (!zoneMetrics) return null;
+        const defaults = (this.defaultSizes && this.defaultSizes.shelf) || { width: 60, height: 20 };
+        const width = typeof overrides.width === 'number' ? overrides.width : (Number(defaults.width) || 60);
+        const height = typeof overrides.height === 'number' ? overrides.height : (Number(defaults.height) || 20);
+        const centerPointer = overrides.centerPointer !== false;
+        let relativeX = 0;
+        let relativeY = 0;
+        const pointerActual = this.getPointerInZoneActual(zoneGroup, clientPosition);
+        if (pointerActual) {
+            relativeX = pointerActual.x - rackMetrics.x - (centerPointer ? width / 2 : 0);
+            relativeY = pointerActual.y - rackMetrics.y - (centerPointer ? height / 2 : 0);
+        } else {
+            relativeX = (rackMetrics.width - width) / 2;
+            relativeY = (rackMetrics.height - height) / 2;
+        }
+        const maxX = Math.max(0, rackMetrics.width - width);
+        const maxY = Math.max(0, rackMetrics.height - height);
+        const clampedX = Math.min(Math.max(relativeX, 0), maxX);
+        const clampedY = Math.min(Math.max(relativeY, 0), maxY);
+        return {
+            x: clampedX,
+            y: clampedY,
+            width,
+            height,
+            color: overrides.color || (this.defaultColors && this.defaultColors.shelf) || '#ffc107',
+            name: overrides.name || null
+        };
+    }
+
+    deleteCurrentSelection() {
+        const selection = this.getSelectedElement();
+        if (!selection || !selection.element || !selection.type) {
+            return false;
+        }
+        if (selection.type === 'zone') {
+            this.deleteZone(selection.element);
+            return true;
+        }
+        if (selection.type === 'rack') {
+            this.deleteRack(selection.element);
+            return true;
+        }
+        if (selection.type === 'shelf') {
+            this.deleteShelf(selection.element);
+            return true;
+        }
+        return false;
+    }
+
+    deleteZone(zoneGroup) {
+        if (!zoneGroup) {
+            return;
+        }
+        const zoneId = zoneGroup.getAttribute('data-zone-id');
+        if (!zoneId) {
+            return;
+        }
+        this.performDeleteRequest(`/wms-builder/zones/${zoneId}/delete/`, {
+            onSuccess: () => {
+                zoneGroup.remove();
+                if (this.zoneMode.activeZoneId === zoneId) {
+                    this.setZoneMode(null);
+                }
+                if (this.zoneModeSelect) {
+                    const option = this.zoneModeSelect.querySelector(`option[value="${zoneId}"]`);
+                    if (option) {
+                        option.remove();
                     }
-                });
-                
-                element.addEventListener('click', (e) => {
-                    if (hasMoved) {
-                        hasMoved = false;
-                        mouseDownPos = { x: 0, y: 0 };
-                        return;
-                    }
-                    
-                    const shelfGroup = getElementGroup(element, 'draggable-shelf');
-                    if (!shelfGroup || shelfGroup.classList.contains('dragging')) {
-                        return;
-                    }
-                    
-                    // Single click - select
-                    if (clickTimer === null) {
-                        clickTimer = setTimeout(() => {
-                            clickTimer = null;
-                            selectElement(shelfGroup, 'shelf');
-                        }, 300);
-                    } else {
-                        // Double click - edit
-                        clearTimeout(clickTimer);
-                        clickTimer = null;
-                        e.stopPropagation();
-                        const shelfId = shelfGroup.getAttribute('data-shelf-id');
-                        if (shelfId) {
-                            this.editShelf(shelfId);
-                        }
-                    }
-                    
-                    mouseDownPos = { x: 0, y: 0 };
+                }
+                this.clearSelection();
+                if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                    this.zoneMode.updateZonesVisibility();
+                }
+            },
+            successMessage: 'Strefa została usunięta.',
+            errorMessage: 'Nie udało się usunąć strefy.'
+        });
+    }
+
+    deleteRack(rackGroup) {
+        if (!rackGroup) {
+            return;
+        }
+        const rackId = rackGroup.getAttribute('data-rack-id');
+        if (!rackId) {
+            return;
+        }
+        this.performDeleteRequest(`/wms-builder/racks/${rackId}/delete/`, {
+            onSuccess: () => {
+                rackGroup.remove();
+                if (this.rackMode.activeRackId === rackId) {
+                    this.setRackMode(null);
+                }
+                this.clearSelection();
+                if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                    this.zoneMode.updateZonesVisibility();
+                }
+            },
+            successMessage: 'Regał został usunięty.',
+            errorMessage: 'Nie udało się usunąć regału.'
+        });
+    }
+
+    deleteShelf(shelfGroup) {
+        if (!shelfGroup) {
+            return;
+        }
+        const shelfId = shelfGroup.getAttribute('data-shelf-id');
+        if (!shelfId) {
+            return;
+        }
+        this.performDeleteRequest(`/wms-builder/shelves/${shelfId}/delete/`, {
+            onSuccess: () => {
+                shelfGroup.remove();
+                this.clearSelection();
+            },
+            successMessage: 'Półka została usunięta.',
+            errorMessage: 'Nie udało się usunąć półki.'
+        });
+    }
+
+    performDeleteRequest(url, options = {}) {
+        if (!url) {
+            return;
+        }
+        const { onSuccess, successMessage, errorMessage } = options;
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+        fetch(url, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error(`Delete request failed: ${url}`);
+            }
+            if (typeof onSuccess === 'function') {
+                onSuccess();
+            }
+            if (successMessage) {
+                this.showToast(successMessage, 'success');
+            }
+        }).catch(error => {
+            console.error(error);
+            if (errorMessage) {
+                this.showToast(errorMessage, 'danger');
+            }
+        });
+    }
+
+    duplicateZoneRequest(sourceZoneId, payload, referenceZone) {
+        if (!sourceZoneId || !payload) {
+            return;
+        }
+        const formData = new FormData();
+        formData.append('x', payload.x);
+        formData.append('y', payload.y);
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+
+        fetch(`/wms-builder/zones/${sourceZoneId}/duplicate/`, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Nie udało się zduplikować strefy.');
+            }
+            return response.json();
+        }).then(data => {
+            if (!data || !data.zone) {
+                return;
+            }
+            const zoneGroup = this.createZoneElement(data.zone);
+            if (!zoneGroup) {
+                return;
+            }
+            this.insertAfter(zoneGroup, referenceZone);
+            const zoneRect = zoneGroup.querySelector('.zone-rect');
+            if (zoneRect) {
+                this.bindZoneSelectionHandlers(zoneRect);
+            }
+            zoneGroup.querySelectorAll('.draggable-rack').forEach(rack => {
+                this.bindRackSelectionHandlers(rack);
+                this.applyRackWorkspaceTransformIfNeeded(rack);
+                rack.querySelectorAll('.draggable-shelf').forEach(shelf => {
+                    this.bindShelfSelectionHandlers(shelf);
+                    this.applyShelfWorkspaceTransformIfNeeded(shelf);
                 });
             });
-        }, 500); // Wait 500ms for elements to render
+            this.setSelection(zoneGroup, 'zone');
+            if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                this.zoneMode.updateZonesVisibility();
+            }
+            const label = this.getEntityAccusativeLabel('zone');
+            const name = data.zone && data.zone.name ? data.zone.name : null;
+            this.showToast(`Wklejono ${label || 'element'}${name ? ` "${name}"` : ''}.`, 'success');
+        }).catch(error => {
+            console.error(error);
+        });
+    }
+
+    duplicateRackRequest(sourceRackId, payload, referenceRack) {
+        if (!sourceRackId || !payload || !payload.zoneId) {
+            return;
+        }
+        const formData = new FormData();
+        formData.append('x', payload.x);
+        formData.append('y', payload.y);
+        formData.append('target_zone_id', payload.zoneId);
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+
+        fetch(`/wms-builder/racks/${sourceRackId}/duplicate/`, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Nie udało się zduplikować regału.');
+            }
+            return response.json();
+        }).then(data => {
+            if (!data || !data.rack) {
+                return;
+            }
+            const zoneGroup = this.getZoneGroupById(payload.zoneId);
+            const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+            if (!zoneGroup || !zoneMetrics) {
+                return;
+            }
+            const rackGroup = this.createRackElement(data.rack, zoneMetrics);
+            if (!rackGroup) {
+                return;
+            }
+            this.insertAfter(rackGroup, referenceRack);
+            this.bindRackSelectionHandlers(rackGroup);
+            rackGroup.querySelectorAll('.draggable-shelf').forEach(shelf => {
+                this.bindShelfSelectionHandlers(shelf);
+                this.applyShelfWorkspaceTransformIfNeeded(shelf);
+            });
+            this.applyRackWorkspaceTransformIfNeeded(rackGroup);
+            this.setSelection(rackGroup, 'rack');
+        const label = this.getEntityAccusativeLabel('rack');
+        const name = data && data.rack && data.rack.name ? data.rack.name : null;
+        this.showToast(`Wklejono ${label || 'element'}${name ? ` "${name}"` : ''}.`, 'success');
+        }).catch(error => {
+            console.error(error);
+        });
+    }
+
+    duplicateShelfRequest(sourceShelfId, payload, referenceShelf) {
+        if (!sourceShelfId || !payload || !payload.rackId) {
+            return;
+        }
+        const formData = new FormData();
+        formData.append('x', payload.x);
+        formData.append('y', payload.y);
+        formData.append('target_rack_id', payload.rackId);
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+
+        fetch(`/wms-builder/shelves/${sourceShelfId}/duplicate/`, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Nie udało się zduplikować półki.');
+            }
+            return response.json();
+        }).then(data => {
+            if (!data || !data.shelf) {
+                return;
+            }
+            const rackGroup = this.getRackGroupById(payload.rackId);
+            const zoneGroup = rackGroup ? rackGroup.closest('.draggable-zone') : null;
+            const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+            const rackMetrics = this.getRackActualMetrics(rackGroup);
+            if (!rackGroup || !zoneMetrics || !rackMetrics) {
+                return;
+            }
+            const shelfGroup = this.createShelfElement(data.shelf, {
+                zoneX: zoneMetrics.x,
+                zoneY: zoneMetrics.y,
+                rackX: rackMetrics.x,
+                rackY: rackMetrics.y
+            });
+            if (!shelfGroup) {
+                return;
+            }
+            this.insertAfter(shelfGroup, referenceShelf);
+            this.bindShelfSelectionHandlers(shelfGroup);
+            this.applyShelfWorkspaceTransformIfNeeded(shelfGroup);
+            this.setSelection(shelfGroup, 'shelf');
+            const label = this.getEntityAccusativeLabel('shelf');
+            const name = data.shelf && data.shelf.name ? data.shelf.name : null;
+            this.showToast(`Wklejono ${label || 'element'}${name ? ` "${name}"` : ''}.`, 'success');
+        }).catch(error => {
+            console.error(error);
+        });
+    }
+
+    createZoneElement(zoneData) {
+        if (!zoneData) {
+            return null;
+        }
+        const zoneGroup = this.createSvgElement('g');
+        zoneGroup.id = `zone-${zoneData.id}`;
+        zoneGroup.classList.add('draggable-zone');
+        zoneGroup.setAttribute('data-zone-id', zoneData.id);
+        zoneGroup.setAttribute('data-x', zoneData.x);
+        zoneGroup.setAttribute('data-y', zoneData.y);
+        zoneGroup.setAttribute('data-width', zoneData.width);
+        zoneGroup.setAttribute('data-height', zoneData.height);
+        if (zoneData.synced) {
+            zoneGroup.setAttribute('data-synced', 'true');
+        }
+
+        const rect = this.createSvgElement('rect');
+        rect.setAttribute('x', zoneData.x);
+        rect.setAttribute('y', zoneData.y);
+        rect.setAttribute('width', zoneData.width);
+        rect.setAttribute('height', zoneData.height);
+        rect.setAttribute('fill', zoneData.color || '#007bff');
+        rect.setAttribute('fill-opacity', '0.3');
+        rect.setAttribute('stroke', zoneData.color || '#007bff');
+        rect.setAttribute('stroke-width', '2');
+        rect.setAttribute('rx', '5');
+        rect.classList.add('zone-rect');
+        zoneGroup.appendChild(rect);
+
+        const handle = this.createSvgElement('circle');
+        handle.setAttribute('cx', zoneData.x + zoneData.width);
+        handle.setAttribute('cy', zoneData.y + zoneData.height);
+        handle.setAttribute('r', '5');
+        handle.setAttribute('fill', zoneData.color || '#007bff');
+        handle.setAttribute('stroke', 'white');
+        handle.setAttribute('stroke-width', '2');
+        handle.classList.add('resize-handle-indicator');
+        zoneGroup.appendChild(handle);
+
+        const text = this.createSvgElement('text');
+        text.setAttribute('x', zoneData.x + zoneData.width / 2);
+        text.setAttribute('y', zoneData.y + zoneData.height / 2);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('font-size', '14');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('fill', '#333');
+        text.textContent = zoneData.name || '';
+        zoneGroup.appendChild(text);
+
+        if (zoneData.synced) {
+            const syncIndicator = this.createSvgElement('circle');
+            syncIndicator.setAttribute('cx', zoneData.x + zoneData.width - 10);
+            syncIndicator.setAttribute('cy', zoneData.y + 10);
+            syncIndicator.setAttribute('r', '6');
+            syncIndicator.setAttribute('fill', '#28a745');
+            syncIndicator.setAttribute('stroke', 'white');
+            syncIndicator.setAttribute('stroke-width', '1.5');
+            syncIndicator.classList.add('zone-sync-indicator');
+            zoneGroup.appendChild(syncIndicator);
+        }
+
+        if (Array.isArray(zoneData.racks)) {
+            zoneData.racks.forEach(rackData => {
+                const rackGroup = this.createRackElement(rackData, zoneData);
+                if (rackGroup) {
+                    zoneGroup.appendChild(rackGroup);
+                }
+            });
+        }
+
+        return zoneGroup;
+    }
+
+    createRackElement(rackData, zoneContext) {
+        if (!rackData || !zoneContext) {
+            return null;
+        }
+        const zoneX = zoneContext.x || 0;
+        const zoneY = zoneContext.y || 0;
+        const rackGroup = this.createSvgElement('g');
+        rackGroup.id = `rack-${rackData.id}`;
+        rackGroup.classList.add('draggable-rack');
+        rackGroup.setAttribute('data-rack-id', rackData.id);
+        rackGroup.setAttribute('data-x', rackData.x);
+        rackGroup.setAttribute('data-y', rackData.y);
+        rackGroup.setAttribute('data-width', rackData.width);
+        rackGroup.setAttribute('data-height', rackData.height);
+        if (rackData.synced) {
+            rackGroup.setAttribute('data-synced', 'true');
+        }
+
+        const absX = zoneX + rackData.x;
+        const absY = zoneY + rackData.y;
+
+        const rect = this.createSvgElement('rect');
+        rect.setAttribute('x', absX);
+        rect.setAttribute('y', absY);
+        rect.setAttribute('width', rackData.width);
+        rect.setAttribute('height', rackData.height);
+        rect.setAttribute('fill', rackData.color || '#28a745');
+        rect.setAttribute('fill-opacity', '0.5');
+        rect.setAttribute('stroke', rackData.color || '#28a745');
+        rect.setAttribute('stroke-width', '1.5');
+        rect.setAttribute('rx', '3');
+        rect.classList.add('rack-rect');
+        rackGroup.appendChild(rect);
+
+        const handle = this.createSvgElement('circle');
+        handle.setAttribute('cx', absX + rackData.width);
+        handle.setAttribute('cy', absY + rackData.height);
+        handle.setAttribute('r', '4');
+        handle.setAttribute('fill', rackData.color || '#28a745');
+        handle.setAttribute('stroke', 'white');
+        handle.setAttribute('stroke-width', '1.5');
+        handle.classList.add('resize-handle-indicator');
+        rackGroup.appendChild(handle);
+
+        const text = this.createSvgElement('text');
+        text.setAttribute('x', absX + rackData.width / 2);
+        text.setAttribute('y', absY + rackData.height / 2);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('font-size', '10');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('fill', '#333');
+        text.textContent = rackData.name || '';
+        rackGroup.appendChild(text);
+
+        if (rackData.synced) {
+            const syncIndicator = this.createSvgElement('circle');
+            syncIndicator.setAttribute('cx', absX + rackData.width - 8);
+            syncIndicator.setAttribute('cy', absY + 8);
+            syncIndicator.setAttribute('r', '5');
+            syncIndicator.setAttribute('fill', '#28a745');
+            syncIndicator.setAttribute('stroke', 'white');
+            syncIndicator.setAttribute('stroke-width', '1');
+            syncIndicator.classList.add('rack-sync-indicator');
+            rackGroup.appendChild(syncIndicator);
+        }
+
+        if (Array.isArray(rackData.shelves)) {
+            rackData.shelves.forEach(shelfData => {
+                const shelfGroup = this.createShelfElement(shelfData, {
+                    zoneX,
+                    zoneY,
+                    rackX: rackData.x,
+                    rackY: rackData.y
+                });
+                if (shelfGroup) {
+                    rackGroup.appendChild(shelfGroup);
+                }
+            });
+        }
+
+        return rackGroup;
+    }
+
+    createShelfElement(shelfData, context) {
+        if (!shelfData || !context) {
+            return null;
+        }
+        const zoneX = context.zoneX || 0;
+        const zoneY = context.zoneY || 0;
+        const rackX = context.rackX || 0;
+        const rackY = context.rackY || 0;
+        const group = this.createSvgElement('g');
+        group.id = `shelf-${shelfData.id}`;
+        group.classList.add('draggable-shelf');
+        group.setAttribute('data-shelf-id', shelfData.id);
+        group.setAttribute('data-x', shelfData.x);
+        group.setAttribute('data-y', shelfData.y);
+        group.setAttribute('data-width', shelfData.width);
+        group.setAttribute('data-height', shelfData.height);
+        if (shelfData.synced) {
+            group.setAttribute('data-synced', 'true');
+        }
+
+        const absX = zoneX + rackX + shelfData.x;
+        const absY = zoneY + rackY + shelfData.y;
+
+        const rect = this.createSvgElement('rect');
+        rect.setAttribute('x', absX);
+        rect.setAttribute('y', absY);
+        rect.setAttribute('width', shelfData.width);
+        rect.setAttribute('height', shelfData.height);
+        rect.setAttribute('fill', shelfData.color || '#ffc107');
+        rect.setAttribute('fill-opacity', '0.7');
+        rect.setAttribute('stroke', shelfData.color || '#ffc107');
+        rect.setAttribute('stroke-width', '1');
+        rect.setAttribute('rx', '2');
+        rect.classList.add('shelf-rect');
+        group.appendChild(rect);
+
+        const handle = this.createSvgElement('circle');
+        handle.setAttribute('cx', absX + shelfData.width);
+        handle.setAttribute('cy', absY + shelfData.height);
+        handle.setAttribute('r', '3');
+        handle.setAttribute('fill', shelfData.color || '#ffc107');
+        handle.setAttribute('stroke', 'white');
+        handle.setAttribute('stroke-width', '1');
+        handle.classList.add('resize-handle-indicator');
+        group.appendChild(handle);
+
+        const text = this.createSvgElement('text');
+        text.setAttribute('x', absX + shelfData.width / 2);
+        text.setAttribute('y', absY + shelfData.height / 2);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('font-size', '8');
+        text.setAttribute('fill', '#333');
+        text.textContent = this.truncateLabel(shelfData.name || '', 5);
+        group.appendChild(text);
+
+        if (shelfData.synced) {
+            const syncIndicator = this.createSvgElement('circle');
+            syncIndicator.setAttribute('cx', absX + shelfData.width - 6);
+            syncIndicator.setAttribute('cy', absY + 6);
+            syncIndicator.setAttribute('r', '4');
+            syncIndicator.setAttribute('fill', '#28a745');
+            syncIndicator.setAttribute('stroke', 'white');
+            syncIndicator.setAttribute('stroke-width', '1');
+            group.appendChild(syncIndicator);
+        }
+
+        return group;
+    }
+
+    insertAfter(newElement, referenceElement) {
+        if (!newElement) {
+            return;
+        }
+        const parent = referenceElement && referenceElement.parentNode ? referenceElement.parentNode : (this.svg || null);
+        if (!parent) {
+            return;
+        }
+        if (referenceElement && referenceElement.nextSibling) {
+            parent.insertBefore(newElement, referenceElement.nextSibling);
+        } else {
+            parent.appendChild(newElement);
+        }
+    }
+
+    applyRackWorkspaceTransformIfNeeded(rackGroup) {
+        if (!rackGroup) {
+            return;
+        }
+        const zoneGroup = rackGroup.closest('.draggable-zone');
+        if (!zoneGroup || zoneGroup.dataset.workspaceMode !== '1') {
+            return;
+        }
+        const zoneWidth = parseFloat(zoneGroup.dataset.zoneOriginalWidth) || parseFloat(zoneGroup.getAttribute('data-width')) || 0;
+        const zoneHeight = parseFloat(zoneGroup.dataset.zoneOriginalHeight) || parseFloat(zoneGroup.getAttribute('data-height')) || 0;
+        const workspaceWidth = parseFloat(zoneGroup.dataset.workspaceWidth) || parseFloat(zoneGroup.getAttribute('data-width')) || zoneWidth;
+        const workspaceHeight = parseFloat(zoneGroup.dataset.workspaceHeight) || parseFloat(zoneGroup.getAttribute('data-height')) || zoneHeight;
+        this.convertRackToWorkspace(rackGroup, zoneWidth, zoneHeight, workspaceWidth, workspaceHeight);
+    }
+
+    applyShelfWorkspaceTransformIfNeeded(shelfGroup) {
+        if (!shelfGroup) {
+            return;
+        }
+        const rackGroup = shelfGroup.closest('.draggable-rack');
+        if (!rackGroup || rackGroup.dataset.rackWorkspaceMode !== '1') {
+            return;
+        }
+        const rackWidth = parseFloat(rackGroup.dataset.rackDetailOriginalWidth) || parseFloat(rackGroup.getAttribute('data-width')) || 0;
+        const rackHeight = parseFloat(rackGroup.dataset.rackDetailOriginalHeight) || parseFloat(rackGroup.getAttribute('data-height')) || 0;
+        const workspaceWidth = parseFloat(rackGroup.dataset.rackDetailWorkspaceWidth) || parseFloat(rackGroup.getAttribute('data-width')) || rackWidth;
+        const workspaceHeight = parseFloat(rackGroup.dataset.rackDetailWorkspaceHeight) || parseFloat(rackGroup.getAttribute('data-height')) || rackHeight;
+        const rackX = parseFloat(rackGroup.getAttribute('data-x')) || 0;
+        const rackY = parseFloat(rackGroup.getAttribute('data-y')) || 0;
+        this.convertShelfToWorkspace(shelfGroup, rackWidth, rackHeight, workspaceWidth, workspaceHeight, rackX, rackY);
+    }
+
+    createSvgElement(tagName) {
+        return document.createElementNS('http://www.w3.org/2000/svg', tagName);
+    }
+
+    truncateLabel(label, maxLength = 5) {
+        if (!label) {
+            return '';
+        }
+        if (label.length <= maxLength) {
+            return label;
+        }
+        return `${label.substring(0, maxLength)}…`;
+    }
+
+    getElementIdByType(element, type) {
+        if (!element) {
+            return null;
+        }
+        if (type === 'zone') {
+            return element.getAttribute('data-zone-id');
+        }
+        if (type === 'rack') {
+            return element.getAttribute('data-rack-id');
+        }
+        if (type === 'shelf') {
+            return element.getAttribute('data-shelf-id');
+        }
+        return null;
+    }
+
+    formatNumber(value) {
+        if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+            return '0';
+        }
+        return value.toFixed(2);
+    }
+
+    getElementName(element, type) {
+        if (!element) {
+            return null;
+        }
+        if (type === 'zone') {
+            const zoneText = element.querySelector('text');
+            return zoneText ? zoneText.textContent.trim() : null;
+        }
+        if (type === 'rack') {
+            const rackText = element.querySelector('text');
+            return rackText ? rackText.textContent.trim() : null;
+        }
+        if (type === 'shelf') {
+            const shelfText = element.querySelector('text');
+            return shelfText ? shelfText.textContent.trim() : null;
+        }
+        return null;
+    }
+
+    getEntityAccusativeLabel(type) {
+        switch (type) {
+            case 'zone':
+                return 'strefę';
+            case 'rack':
+                return 'regał';
+            case 'shelf':
+                return 'półkę';
+            default:
+                return null;
+        }
     }
 
     setupContextMenu() {
@@ -811,23 +1958,186 @@ class WarehouseBuilder {
             }
         });
         
-        const openZoneCreateModal = () => {
+        const createZoneAtPosition = (clientPosition = null) => {
             if (!warehouseId) {
                 console.error('Warehouse ID is missing, cannot create zone.');
                 return;
             }
-            if (typeof htmx !== 'undefined') {
-                htmx.ajax('GET', `/wms-builder/warehouses/${warehouseId}/zones/create/`, {
-                    target: '#modalBody',
-                    swap: 'innerHTML'
-                }).then(() => {
-                    const modalElement = document.getElementById('dynamicModal');
-                    if (modalElement) {
-                        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                        modal.show();
-                    }
-                });
+            const metrics = this.calculateZoneCreationMetrics(clientPosition);
+            if (!metrics) {
+                return;
             }
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+            formData.append('x', this.formatNumber(metrics.x));
+            formData.append('y', this.formatNumber(metrics.y));
+            formData.append('width', this.formatNumber(metrics.width));
+            formData.append('height', this.formatNumber(metrics.height));
+            formData.append('color', metrics.color);
+            if (metrics.name) {
+                formData.append('name', metrics.name);
+            }
+            fetch(`/wms-builder/warehouses/${warehouseId}/zones/quick-create/`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error('Nie udało się utworzyć strefy.');
+                }
+                return response.json();
+            }).then(data => {
+                if (!data || !data.zone) {
+                    return;
+                }
+                const zoneGroup = this.createZoneElement(data.zone);
+                if (!zoneGroup) {
+                    return;
+                }
+                this.svg.appendChild(zoneGroup);
+                const zoneRect = zoneGroup.querySelector('.zone-rect');
+                if (zoneRect) {
+                    this.bindZoneSelectionHandlers(zoneRect);
+                }
+                zoneGroup.querySelectorAll('.draggable-rack').forEach(rack => {
+                    this.bindRackSelectionHandlers(rack);
+                });
+                this.setSelection(zoneGroup, 'zone');
+                if (this.zoneModeSelect) {
+                    const option = document.createElement('option');
+                    option.value = data.zone.id;
+                    option.textContent = `Widok: ${data.zone.name}`;
+                    this.zoneModeSelect.appendChild(option);
+                }
+                if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                    this.zoneMode.updateZonesVisibility();
+                }
+                const label = this.getEntityAccusativeLabel('zone');
+                this.showToast(`Dodano ${label || 'strefę'} "${data.zone.name}".`, 'success');
+            }).catch(error => {
+                console.error(error);
+                this.showToast('Nie udało się utworzyć strefy.', 'danger');
+            });
+        };
+
+        const createRackAtPosition = (zoneId, clientPosition = null) => {
+            if (!zoneId) {
+                return;
+            }
+            const zoneGroup = this.getZoneGroupById(zoneId);
+            if (!zoneGroup) {
+                return;
+            }
+            const metrics = this.calculateRackCreationMetrics(zoneGroup, clientPosition);
+            if (!metrics) {
+                return;
+            }
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+            formData.append('x', this.formatNumber(metrics.x));
+            formData.append('y', this.formatNumber(metrics.y));
+            formData.append('width', this.formatNumber(metrics.width));
+            formData.append('height', this.formatNumber(metrics.height));
+            formData.append('color', metrics.color);
+            if (metrics.name) {
+                formData.append('name', metrics.name);
+            }
+            fetch(`/wms-builder/zones/${zoneId}/racks/quick-create/`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error('Nie udało się utworzyć regału.');
+                }
+                return response.json();
+            }).then(data => {
+                if (!data || !data.rack) {
+                    return;
+                }
+                const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+                if (!zoneMetrics) {
+                    return;
+                }
+                const rackGroup = this.createRackElement(data.rack, zoneMetrics);
+                if (!rackGroup) {
+                    return;
+                }
+                zoneGroup.appendChild(rackGroup);
+                this.bindRackSelectionHandlers(rackGroup);
+                rackGroup.querySelectorAll('.draggable-shelf').forEach(shelf => {
+                    this.bindShelfSelectionHandlers(shelf);
+                });
+                this.applyRackWorkspaceTransformIfNeeded(rackGroup);
+                this.setSelection(rackGroup, 'rack');
+                if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                    this.zoneMode.updateZonesVisibility();
+                }
+                const label = this.getEntityAccusativeLabel('rack');
+                this.showToast(`Dodano ${label || 'regał'} "${data.rack.name}".`, 'success');
+            }).catch(error => {
+                console.error(error);
+                this.showToast('Nie udało się utworzyć regału.', 'danger');
+            });
+        };
+
+        const createShelfAtPosition = (rackId, clientPosition = null) => {
+            if (!rackId) {
+                return;
+            }
+            const rackGroup = this.getRackGroupById(rackId);
+            if (!rackGroup) {
+                return;
+            }
+            const metrics = this.calculateShelfCreationMetrics(rackGroup, clientPosition);
+            if (!metrics) {
+                return;
+            }
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+            formData.append('x', this.formatNumber(metrics.x));
+            formData.append('y', this.formatNumber(metrics.y));
+            formData.append('width', this.formatNumber(metrics.width));
+            formData.append('height', this.formatNumber(metrics.height));
+            formData.append('color', metrics.color);
+            if (metrics.name) {
+                formData.append('name', metrics.name);
+            }
+            fetch(`/wms-builder/racks/${rackId}/shelves/quick-create/`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error('Nie udało się utworzyć półki.');
+                }
+                return response.json();
+            }).then(data => {
+                if (!data || !data.shelf) {
+                    return;
+                }
+                const zoneGroup = rackGroup.closest('.draggable-zone');
+                const zoneMetrics = this.getZoneActualMetrics(zoneGroup);
+                const rackMetrics = this.getRackActualMetrics(rackGroup);
+                if (!zoneMetrics || !rackMetrics) {
+                    return;
+                }
+                const shelfGroup = this.createShelfElement(data.shelf, {
+                    zoneX: zoneMetrics.x,
+                    zoneY: zoneMetrics.y,
+                    rackX: rackMetrics.x,
+                    rackY: rackMetrics.y
+                });
+                if (!shelfGroup) {
+                    return;
+                }
+                rackGroup.appendChild(shelfGroup);
+                this.bindShelfSelectionHandlers(shelfGroup);
+                this.applyShelfWorkspaceTransformIfNeeded(shelfGroup);
+                this.setSelection(shelfGroup, 'shelf');
+                const label = this.getEntityAccusativeLabel('shelf');
+                this.showToast(`Dodano ${label || 'półkę'} "${data.shelf.name}".`, 'success');
+            }).catch(error => {
+                console.error(error);
+                this.showToast('Nie udało się utworzyć półki.', 'danger');
+            });
         };
         
         // Context menu for zones, racks, and shelves
@@ -835,6 +2145,7 @@ class WarehouseBuilder {
             e.preventDefault();
             
             let target = e.target;
+            const pointerPosition = { clientX: e.clientX, clientY: e.clientY };
             
             // Check for zone - can be clicked on rect, text, or resize handle
             let zoneGroup = null;
@@ -855,20 +2166,7 @@ class WarehouseBuilder {
                     {
                         icon: 'fas fa-plus',
                         label: 'Dodaj regał',
-                        action: () => {
-                            if (typeof htmx !== 'undefined') {
-                                htmx.ajax('GET', `/wms-builder/zones/${zoneId}/racks/create/`, {
-                                    target: '#modalBody',
-                                    swap: 'innerHTML'
-                                }).then(() => {
-                                    const modalElement = document.getElementById('dynamicModal');
-                                    if (modalElement) {
-                                        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                                        modal.show();
-                                    }
-                                });
-                            }
-                        }
+                        action: () => createRackAtPosition(zoneId, pointerPosition)
                     },
                     'divider',
                     {
@@ -933,20 +2231,7 @@ class WarehouseBuilder {
                     {
                         icon: 'fas fa-plus',
                         label: 'Dodaj półkę',
-                        action: () => {
-                            if (typeof htmx !== 'undefined') {
-                                htmx.ajax('GET', `/wms-builder/racks/${rackId}/shelves/create/`, {
-                                    target: '#modalBody',
-                                    swap: 'innerHTML'
-                                }).then(() => {
-                                    const modalElement = document.getElementById('dynamicModal');
-                                    if (modalElement) {
-                                        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                                        modal.show();
-                                    }
-                                });
-                            }
-                        }
+                        action: () => createShelfAtPosition(rackId, pointerPosition)
                     },
                     'divider',
                     {
@@ -1048,20 +2333,7 @@ class WarehouseBuilder {
                     {
                         icon: 'fas fa-plus',
                         label: 'Dodaj półkę',
-                        action: () => {
-                            if (typeof htmx !== 'undefined') {
-                                htmx.ajax('GET', `/wms-builder/racks/${activeRackId}/shelves/create/`, {
-                                    target: '#modalBody',
-                                    swap: 'innerHTML'
-                                }).then(() => {
-                                    const modalElement = document.getElementById('dynamicModal');
-                                    if (modalElement) {
-                                        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                                        modal.show();
-                                    }
-                                });
-                            }
-                        }
+                        action: () => createShelfAtPosition(activeRackId, pointerPosition)
                     }
                 ]);
                 return;
@@ -1076,17 +2348,20 @@ class WarehouseBuilder {
                         {
                             icon: 'fas fa-plus',
                             label: 'Dodaj regał',
+                            action: () => createRackAtPosition(zoneId, pointerPosition)
+                        },
+                        {
+                            icon: 'fas fa-trash',
+                            label: 'Usuń strefę',
                             action: () => {
-                                if (typeof htmx !== 'undefined') {
-                                    htmx.ajax('GET', `/wms-builder/zones/${zoneId}/racks/create/`, {
-                                        target: '#modalBody',
-                                        swap: 'innerHTML'
+                                if (confirm('Czy na pewno chcesz usunąć tę strefę? Wszystkie regały i półki również zostaną usunięte.')) {
+                                    const formData = new FormData();
+                                    formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+                                    fetch(`/wms-builder/zones/${zoneId}/delete/`, {
+                                        method: 'POST',
+                                        body: formData
                                     }).then(() => {
-                                        const modalElement = document.getElementById('dynamicModal');
-                                        if (modalElement) {
-                                            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                                            modal.show();
-                                        }
+                                        this.navigateToZone(null);
                                     });
                                 }
                             }
@@ -1100,7 +2375,7 @@ class WarehouseBuilder {
                 {
                     icon: 'fas fa-plus',
                     label: 'Dodaj strefę',
-                    action: openZoneCreateModal
+                    action: () => createZoneAtPosition(pointerPosition)
                 }
             ]);
         });
@@ -1253,6 +2528,9 @@ class WarehouseBuilder {
             this.setRackMode(null, { updateVisibility: false });
             const previousZone = this.getZoneGroupById(previousZoneId);
             this.restoreZoneWorkspace(previousZone);
+            if (!normalized) {
+                this.applyZoneBackground(null);
+            }
         }
         this.zoneMode.activeZoneId = normalized;
         if (this.zoneModeSelect && syncSelect) {
@@ -1271,9 +2549,12 @@ class WarehouseBuilder {
                 return;
             }
             this.prepareZoneWorkspace(zoneGroup);
+            this.applyZoneBackground(zoneGroup);
             if (!this.rackMode.activeRackId) {
                 this.setRackMode(null, { updateVisibility: false });
             }
+        } else {
+            this.applyZoneBackground(null);
         }
         if (typeof this.zoneMode.updateZonesVisibility === 'function') {
             this.zoneMode.updateZonesVisibility();
@@ -1359,13 +2640,33 @@ class WarehouseBuilder {
         const zoneHeight = parseFloat(zoneGroup.getAttribute('data-height')) || 1;
         const zoneX = parseFloat(zoneGroup.getAttribute('data-x')) || 0;
         const zoneY = parseFloat(zoneGroup.getAttribute('data-y')) || 0;
-        const workspaceWidth = this.zoneMode.workspaceWidth || zoneWidth;
-        const workspaceHeight = this.zoneMode.workspaceHeight || zoneHeight;
+        const workspaceMaxWidth = this.zoneMode.workspaceWidth || zoneWidth;
+        const workspaceMaxHeight = this.zoneMode.workspaceHeight || zoneHeight;
+        let workspaceWidth = workspaceMaxWidth;
+        let workspaceHeight = workspaceMaxHeight;
+        if (workspaceMaxWidth && workspaceMaxHeight && zoneWidth && zoneHeight) {
+            const zoneAspect = zoneWidth / zoneHeight;
+            const workspaceAspect = workspaceMaxWidth / workspaceMaxHeight;
+            if (workspaceAspect > zoneAspect) {
+                workspaceWidth = workspaceMaxHeight * zoneAspect;
+                workspaceHeight = workspaceMaxHeight;
+            } else {
+                workspaceWidth = workspaceMaxWidth;
+                workspaceHeight = workspaceMaxWidth / zoneAspect;
+            }
+        }
 
         zoneGroup.dataset.zoneOriginalX = zoneX;
         zoneGroup.dataset.zoneOriginalY = zoneY;
         zoneGroup.dataset.zoneOriginalWidth = zoneWidth;
         zoneGroup.dataset.zoneOriginalHeight = zoneHeight;
+        const zoneRectOriginal = zoneGroup.querySelector('.zone-rect');
+        if (zoneRectOriginal && !zoneGroup.dataset.zoneOriginalFill) {
+            const originalFill = zoneRectOriginal.getAttribute('fill') || this.defaultBackground;
+            const originalOpacity = zoneRectOriginal.getAttribute('fill-opacity') || '0.3';
+            zoneGroup.dataset.zoneOriginalFill = originalFill;
+            zoneGroup.dataset.zoneOriginalFillOpacity = originalOpacity;
+        }
         zoneGroup.dataset.workspaceWidth = workspaceWidth;
         zoneGroup.dataset.workspaceHeight = workspaceHeight;
         zoneGroup.dataset.workspaceMode = '1';
@@ -1381,6 +2682,12 @@ class WarehouseBuilder {
             zoneRect.setAttribute('y', 0);
             zoneRect.setAttribute('width', workspaceWidth);
             zoneRect.setAttribute('height', workspaceHeight);
+            if (zoneGroup.dataset.zoneOriginalFill) {
+                zoneRect.setAttribute('fill', zoneGroup.dataset.zoneOriginalFill);
+            }
+            if (zoneGroup.dataset.zoneOriginalFillOpacity) {
+                zoneRect.setAttribute('fill-opacity', zoneGroup.dataset.zoneOriginalFillOpacity);
+            }
         }
 
         const zoneHandle = zoneGroup.querySelector('.resize-handle-indicator');
@@ -1429,6 +2736,12 @@ class WarehouseBuilder {
             zoneRect.setAttribute('y', zoneY);
             zoneRect.setAttribute('width', zoneWidth);
             zoneRect.setAttribute('height', zoneHeight);
+            if (zoneGroup.dataset.zoneOriginalFill) {
+                zoneRect.setAttribute('fill', zoneGroup.dataset.zoneOriginalFill);
+            }
+            if (zoneGroup.dataset.zoneOriginalFillOpacity) {
+                zoneRect.setAttribute('fill-opacity', zoneGroup.dataset.zoneOriginalFillOpacity);
+            }
         }
 
         const zoneHandle = zoneGroup.querySelector('.resize-handle-indicator');
@@ -1446,13 +2759,35 @@ class WarehouseBuilder {
         const rackHeight = parseFloat(rackGroup.getAttribute('data-height')) || 1;
         const rackX = parseFloat(rackGroup.getAttribute('data-x')) || 0;
         const rackY = parseFloat(rackGroup.getAttribute('data-y')) || 0;
-        const workspaceWidth = this.zoneMode.workspaceWidth || rackWidth;
-        const workspaceHeight = this.zoneMode.workspaceHeight || rackHeight;
+        const rackZoneMetrics = this.convertRackMetricsForServer(rackGroup, { x: rackX, y: rackY, width: rackWidth, height: rackHeight }) || {};
+        const originalZoneX = typeof rackZoneMetrics.x === 'number' ? rackZoneMetrics.x : rackX;
+        const originalZoneY = typeof rackZoneMetrics.y === 'number' ? rackZoneMetrics.y : rackY;
+        const originalZoneWidth = typeof rackZoneMetrics.width === 'number' ? rackZoneMetrics.width : rackWidth;
+        const originalZoneHeight = typeof rackZoneMetrics.height === 'number' ? rackZoneMetrics.height : rackHeight;
+        const workspaceMaxWidth = this.zoneMode.workspaceWidth || rackWidth;
+        const workspaceMaxHeight = this.zoneMode.workspaceHeight || rackHeight;
+        let workspaceWidth = workspaceMaxWidth;
+        let workspaceHeight = workspaceMaxHeight;
+        if (workspaceMaxWidth && workspaceMaxHeight && rackWidth && rackHeight) {
+            const rackAspect = rackWidth / rackHeight;
+            const workspaceAspect = workspaceMaxWidth / workspaceMaxHeight;
+            if (workspaceAspect > rackAspect) {
+                workspaceWidth = workspaceMaxHeight * rackAspect;
+                workspaceHeight = workspaceMaxHeight;
+            } else {
+                workspaceWidth = workspaceMaxWidth;
+                workspaceHeight = workspaceMaxWidth / rackAspect;
+            }
+        }
 
         rackGroup.dataset.rackDetailOriginalX = rackX;
         rackGroup.dataset.rackDetailOriginalY = rackY;
         rackGroup.dataset.rackDetailOriginalWidth = rackWidth;
         rackGroup.dataset.rackDetailOriginalHeight = rackHeight;
+        rackGroup.dataset.rackDetailZoneX = originalZoneX;
+        rackGroup.dataset.rackDetailZoneY = originalZoneY;
+        rackGroup.dataset.rackDetailZoneWidth = originalZoneWidth;
+        rackGroup.dataset.rackDetailZoneHeight = originalZoneHeight;
         rackGroup.dataset.rackDetailWorkspaceWidth = workspaceWidth;
         rackGroup.dataset.rackDetailWorkspaceHeight = workspaceHeight;
         rackGroup.dataset.rackWorkspaceMode = '1';
@@ -1536,6 +2871,10 @@ class WarehouseBuilder {
         delete rackGroup.dataset.rackDetailOriginalY;
         delete rackGroup.dataset.rackDetailOriginalWidth;
         delete rackGroup.dataset.rackDetailOriginalHeight;
+        delete rackGroup.dataset.rackDetailZoneX;
+        delete rackGroup.dataset.rackDetailZoneY;
+        delete rackGroup.dataset.rackDetailZoneWidth;
+        delete rackGroup.dataset.rackDetailZoneHeight;
         delete rackGroup.dataset.rackDetailWorkspaceWidth;
         delete rackGroup.dataset.rackDetailWorkspaceHeight;
 
@@ -1749,6 +3088,68 @@ class WarehouseBuilder {
         }
     }
 
+    applyZoneBackground(zoneGroup) {
+        if (!this.svgContainer) {
+            return;
+        }
+        if (!zoneGroup) {
+            this.svgContainer.style.background = this.defaultBackground;
+            if (this.svg) {
+                this.svg.style.background = '';
+            }
+            return;
+        }
+        const zoneRect = zoneGroup.querySelector('.zone-rect');
+        if (!zoneRect) {
+            this.svgContainer.style.background = this.defaultBackground;
+            if (this.svg) {
+                this.svg.style.background = '';
+            }
+            return;
+        }
+        const zoneStyle = window.getComputedStyle(zoneRect);
+        const fillColor = zoneRect.getAttribute('fill') || zoneStyle.fill || this.defaultBackground;
+        const opacityAttr = zoneRect.dataset.originalFillOpacity || zoneRect.dataset.zoneOriginalFillOpacity || zoneRect.getAttribute('data-fill-opacity');
+        const fillOpacity = opacityAttr !== undefined && opacityAttr !== null
+            ? parseFloat(opacityAttr)
+            : parseFloat(zoneRect.getAttribute('fill-opacity') || zoneStyle.fillOpacity || '0.3');
+        const rgbaColor = this.getColorWithOpacity(fillColor, fillOpacity);
+        const backgroundColor = rgbaColor || fillColor;
+        this.svgContainer.style.background = backgroundColor;
+        if (this.svg) {
+            this.svg.style.background = '';
+        }
+    }
+
+    getColorWithOpacity(color, alpha = 0.3) {
+        if (!color) {
+            return null;
+        }
+        const normalizedAlpha = Math.min(Math.max(alpha, 0), 1);
+        if (color.startsWith('#')) {
+            const hex = color.replace('#', '');
+            if (hex.length === 3) {
+                const r = parseInt(hex[0] + hex[0], 16);
+                const g = parseInt(hex[1] + hex[1], 16);
+                const b = parseInt(hex[2] + hex[2], 16);
+                return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+            }
+            if (hex.length === 6) {
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
+                return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+            }
+        } else if (color.startsWith('rgb')) {
+            const match = color.match(/rgba?\(([^)]+)\)/);
+            if (match && match[1]) {
+                const [r, g, b] = match[1].split(',').map(v => v.trim());
+                return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`;
+            }
+        }
+        return color;
+    }
+
     getZoneScaling(zone) {
         if (!zone || zone.dataset.workspaceMode !== '1') {
             return null;
@@ -1791,8 +3192,8 @@ class WarehouseBuilder {
         const rackWidth = parseFloat(rack.getAttribute('data-width')) || 1;
         const rackHeight = parseFloat(rack.getAttribute('data-height')) || 1;
 
-        const detailZoneWidth = parseFloat(rack.dataset.rackDetailOriginalWidth || '') || null;
-        const detailZoneHeight = parseFloat(rack.dataset.rackDetailOriginalHeight || '') || null;
+        const detailZoneWidth = parseFloat(rack.dataset.rackDetailZoneWidth || rack.dataset.rackDetailOriginalWidth || '') || null;
+        const detailZoneHeight = parseFloat(rack.dataset.rackDetailZoneHeight || rack.dataset.rackDetailOriginalHeight || '') || null;
         const detailWorkspaceWidth = parseFloat(rack.dataset.rackDetailWorkspaceWidth || '') || null;
         const detailWorkspaceHeight = parseFloat(rack.dataset.rackDetailWorkspaceHeight || '') || null;
 
@@ -2045,6 +3446,20 @@ class WarehouseBuilder {
             }
         }
         return '';
+    }
+
+    showToast(message, type = 'success') {
+        if (!message) {
+            return;
+        }
+        if (typeof htmx !== 'undefined' && typeof htmx.trigger === 'function') {
+            htmx.trigger(document.body, 'toastMessage', {
+                value: message,
+                type
+            });
+        } else {
+            console.log(`[${type}] ${message}`);
+        }
     }
 }
 

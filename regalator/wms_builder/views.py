@@ -4,9 +4,99 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from .models import Warehouse, WarehouseZone, WarehouseRack, WarehouseShelf
 from .forms import WarehouseForm, ZoneForm, RackForm, ShelfForm, ZoneSyncForm, RackSyncForm, ShelfSyncForm
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+
+
+def _generate_copy_label(name):
+    base = (name or '').strip() or 'Kopia'
+    suffix = ' (kopia)'
+    normalized_suffix = suffix.strip().lower()
+    if base.lower().endswith(normalized_suffix):
+        return base
+    return f'{base}{suffix}'
+
+
+def _serialize_shelf(shelf):
+    return {
+        'id': shelf.id,
+        'name': shelf.name,
+        'x': float(shelf.x),
+        'y': float(shelf.y),
+        'width': float(shelf.width),
+        'height': float(shelf.height),
+        'color': shelf.color,
+        'synced': bool(shelf.location_id)
+    }
+
+
+def _serialize_rack(rack):
+    return {
+        'id': rack.id,
+        'name': rack.name,
+        'x': float(rack.x),
+        'y': float(rack.y),
+        'width': float(rack.width),
+        'height': float(rack.height),
+        'color': rack.color,
+        'synced': bool(rack.location_id),
+        'shelves': [_serialize_shelf(shelf) for shelf in rack.shelves.all()]
+    }
+
+
+def _serialize_zone(zone):
+    return {
+        'id': zone.id,
+        'name': zone.name,
+        'x': float(zone.x),
+        'y': float(zone.y),
+        'width': float(zone.width),
+        'height': float(zone.height),
+        'color': zone.color,
+        'synced': bool(zone.location_id),
+        'racks': [_serialize_rack(rack) for rack in zone.racks.all()]
+    }
+
+
+def _generate_default_zone_name(warehouse):
+    base = "Nowa strefa"
+    existing = set(warehouse.zones.values_list('name', flat=True))
+    if base not in existing:
+        return base
+    suffix = 2
+    while True:
+        candidate = f"{base} {suffix}"
+        if candidate not in existing:
+            return candidate
+        suffix += 1
+
+
+def _generate_default_rack_name(zone):
+    base = "Nowy regał"
+    existing = set(zone.racks.values_list('name', flat=True))
+    if base not in existing:
+        return base
+    suffix = 2
+    while True:
+        candidate = f"{base} {suffix}"
+        if candidate not in existing:
+            return candidate
+        suffix += 1
+
+
+def _generate_default_shelf_name(rack):
+    base = "Nowa półka"
+    existing = set(rack.shelves.values_list('name', flat=True))
+    if base not in existing:
+        return base
+    suffix = 2
+    while True:
+        candidate = f"{base} {suffix}"
+        if candidate not in existing:
+            return candidate
+        suffix += 1
 
 
 @login_required
@@ -163,12 +253,65 @@ def htmx_zone_create(request, warehouse_id):
             zone.save()
             return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
     else:
-        form = ZoneForm()
+        initial = {}
+        x_param = request.GET.get('x')
+        y_param = request.GET.get('y')
+        if x_param is not None:
+            try:
+                initial['x'] = Decimal(x_param)
+            except (InvalidOperation, ValueError, TypeError):
+                pass
+        if y_param is not None:
+            try:
+                initial['y'] = Decimal(y_param)
+            except (InvalidOperation, ValueError, TypeError):
+                pass
+        form = ZoneForm(initial=initial or None)
     
     return render(request, 'wms_builder/partials/_zone_form.html', {
         'form': form,
         'warehouse': warehouse
     })
+
+
+@login_required
+@require_http_methods(["POST"])
+def htmx_zone_quick_create(request, warehouse_id):
+    """Create a zone immediately with default values"""
+    warehouse = get_object_or_404(Warehouse, id=warehouse_id)
+    default_width = WarehouseZone._meta.get_field('width').default or Decimal('200')
+    default_height = WarehouseZone._meta.get_field('height').default or Decimal('150')
+    default_color = WarehouseZone._meta.get_field('color').default or '#007bff'
+
+    def _parse_decimal(value, default):
+        try:
+            return Decimal(value)
+        except (InvalidOperation, TypeError, ValueError):
+            return default
+
+    x = _parse_decimal(request.POST.get('x'), Decimal('0'))
+    y = _parse_decimal(request.POST.get('y'), Decimal('0'))
+    width = _parse_decimal(request.POST.get('width'), default_width)
+    height = _parse_decimal(request.POST.get('height'), default_height)
+    if width < 1:
+        width = Decimal('1')
+    if height < 1:
+        height = Decimal('1')
+
+    name = request.POST.get('name') or _generate_default_zone_name(warehouse)
+    color = request.POST.get('color') or default_color
+
+    zone = WarehouseZone.objects.create(
+        warehouse=warehouse,
+        name=name,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        color=color
+    )
+
+    return JsonResponse({'zone': _serialize_zone(zone)}, status=201)
 
 
 @login_required
@@ -197,7 +340,7 @@ def htmx_zone_update_size(request, zone_id):
     try:
         width = Decimal(request.POST.get('width', '200'))
         height = Decimal(request.POST.get('height', '150'))
-        if width < 50 or height < 50:
+        if width < 1 or height < 1:
             return HttpResponse(status=400)
         zone.width = width
         zone.height = height
@@ -244,6 +387,54 @@ def htmx_zone_delete(request, zone_id):
         )
 
 
+@login_required
+@require_http_methods(["POST"])
+def htmx_zone_duplicate(request, zone_id):
+    """Duplicate a zone along with its racks and shelves"""
+    zone = get_object_or_404(
+        WarehouseZone.objects.prefetch_related('racks__shelves'),
+        id=zone_id
+    )
+    try:
+        target_x = Decimal(request.POST.get('x', zone.x))
+        target_y = Decimal(request.POST.get('y', zone.y))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({'error': 'Nieprawidłowe współrzędne.'}, status=400)
+
+    with transaction.atomic():
+        new_zone = WarehouseZone.objects.create(
+            warehouse=zone.warehouse,
+            name=_generate_copy_label(zone.name),
+            x=target_x,
+            y=target_y,
+            width=zone.width,
+            height=zone.height,
+            color=zone.color
+        )
+        for rack in zone.racks.all():
+            new_rack = WarehouseRack.objects.create(
+                zone=new_zone,
+                name=_generate_copy_label(rack.name),
+                x=rack.x,
+                y=rack.y,
+                width=rack.width,
+                height=rack.height,
+                color=rack.color
+            )
+            for shelf in rack.shelves.all():
+                WarehouseShelf.objects.create(
+                    rack=new_rack,
+                    name=_generate_copy_label(shelf.name),
+                    x=shelf.x,
+                    y=shelf.y,
+                    width=shelf.width,
+                    height=shelf.height,
+                    color=shelf.color
+                )
+
+    return JsonResponse({'zone': _serialize_zone(new_zone)}, status=201)
+
+
 # HTMX endpoints for racks
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -266,6 +457,48 @@ def htmx_rack_create(request, zone_id):
         'form': form,
         'zone': zone
     })
+
+
+@login_required
+@require_http_methods(["POST"])
+def htmx_rack_quick_create(request, zone_id):
+    """Create rack immediately with default values"""
+    zone = get_object_or_404(WarehouseZone, id=zone_id)
+    rack_model = WarehouseRack
+    default_width = rack_model._meta.get_field('width').default or Decimal('80')
+    default_height = rack_model._meta.get_field('height').default or Decimal('60')
+    default_color = rack_model._meta.get_field('color').default or '#28a745'
+
+    def _parse_decimal(value, default):
+        try:
+            return Decimal(value)
+        except (InvalidOperation, TypeError, ValueError):
+            return default
+
+    x = _parse_decimal(request.POST.get('x'), Decimal('0'))
+    y = _parse_decimal(request.POST.get('y'), Decimal('0'))
+    width = _parse_decimal(request.POST.get('width'), default_width)
+    height = _parse_decimal(request.POST.get('height'), default_height)
+    if width < 1:
+        width = Decimal('1')
+    if height < 1:
+        height = Decimal('1')
+
+    name = request.POST.get('name') or _generate_default_rack_name(zone)
+    color = request.POST.get('color') or default_color
+
+    rack = WarehouseRack.objects.create(
+        zone=zone,
+        name=name,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        color=color
+    )
+    rack = WarehouseRack.objects.filter(id=rack.id).prefetch_related('shelves').first()
+
+    return JsonResponse({'rack': _serialize_rack(rack)}, status=201)
 
 
 @login_required
@@ -293,7 +526,7 @@ def htmx_rack_update_size(request, rack_id):
     try:
         width = Decimal(request.POST.get('width', '80'))
         height = Decimal(request.POST.get('height', '60'))
-        if width < 20 or height < 20:
+        if width < 1 or height < 1:
             return HttpResponse(status=400)
         rack.width = width
         rack.height = height
@@ -340,6 +573,50 @@ def htmx_rack_delete(request, rack_id):
         )
 
 
+@login_required
+@require_http_methods(["POST"])
+def htmx_rack_duplicate(request, rack_id):
+    """Duplicate a rack (with shelves) into the selected zone"""
+    rack = get_object_or_404(
+        WarehouseRack.objects.prefetch_related('shelves'),
+        id=rack_id
+    )
+    target_zone_id = request.POST.get('target_zone_id')
+    if not target_zone_id:
+        return JsonResponse({'error': 'Brak docelowej strefy.'}, status=400)
+    target_zone = get_object_or_404(WarehouseZone, id=target_zone_id)
+
+    try:
+        target_x = Decimal(request.POST.get('x', rack.x))
+        target_y = Decimal(request.POST.get('y', rack.y))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({'error': 'Nieprawidłowe współrzędne.'}, status=400)
+
+    with transaction.atomic():
+        new_rack = WarehouseRack.objects.create(
+            zone=target_zone,
+            name=_generate_copy_label(rack.name),
+            x=target_x,
+            y=target_y,
+            width=rack.width,
+            height=rack.height,
+            color=rack.color
+        )
+
+        for shelf in rack.shelves.all():
+            WarehouseShelf.objects.create(
+                rack=new_rack,
+                name=_generate_copy_label(shelf.name),
+                x=shelf.x,
+                y=shelf.y,
+                width=shelf.width,
+                height=shelf.height,
+                color=shelf.color
+            )
+
+    return JsonResponse({'rack': _serialize_rack(new_rack)}, status=201)
+
+
 # HTMX endpoints for shelves
 @login_required
 @require_http_methods(["GET", "POST"])
@@ -361,6 +638,47 @@ def htmx_shelf_create(request, rack_id):
         'form': form,
         'rack': rack
     })
+
+
+@login_required
+@require_http_methods(["POST"])
+def htmx_shelf_quick_create(request, rack_id):
+    """Create shelf immediately with default values"""
+    rack = get_object_or_404(WarehouseRack, id=rack_id)
+    shelf_model = WarehouseShelf
+    default_width = shelf_model._meta.get_field('width').default or Decimal('60')
+    default_height = shelf_model._meta.get_field('height').default or Decimal('20')
+    default_color = shelf_model._meta.get_field('color').default or '#ffc107'
+
+    def _parse_decimal(value, default):
+        try:
+            return Decimal(value)
+        except (InvalidOperation, TypeError, ValueError):
+            return default
+
+    x = _parse_decimal(request.POST.get('x'), Decimal('0'))
+    y = _parse_decimal(request.POST.get('y'), Decimal('0'))
+    width = _parse_decimal(request.POST.get('width'), default_width)
+    height = _parse_decimal(request.POST.get('height'), default_height)
+    if width < 1:
+        width = Decimal('1')
+    if height < 1:
+        height = Decimal('1')
+
+    name = request.POST.get('name') or _generate_default_shelf_name(rack)
+    color = request.POST.get('color') or default_color
+
+    shelf = WarehouseShelf.objects.create(
+        rack=rack,
+        name=name,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        color=color
+    )
+
+    return JsonResponse({'shelf': _serialize_shelf(shelf)}, status=201)
 
 
 @login_required
@@ -388,7 +706,7 @@ def htmx_shelf_update_size(request, shelf_id):
     try:
         width = Decimal(request.POST.get('width', '60'))
         height = Decimal(request.POST.get('height', '20'))
-        if width < 15 or height < 10:
+        if width < 1 or height < 1:
             return HttpResponse(status=400)
         shelf.width = width
         shelf.height = height
@@ -433,6 +751,35 @@ def htmx_shelf_delete(request, shelf_id):
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
         )
+
+
+@login_required
+@require_http_methods(["POST"])
+def htmx_shelf_duplicate(request, shelf_id):
+    """Duplicate shelf into the selected rack"""
+    shelf = get_object_or_404(WarehouseShelf, id=shelf_id)
+    target_rack_id = request.POST.get('target_rack_id')
+    if not target_rack_id:
+        return JsonResponse({'error': 'Brak docelowego regału.'}, status=400)
+    target_rack = get_object_or_404(WarehouseRack, id=target_rack_id)
+
+    try:
+        target_x = Decimal(request.POST.get('x', shelf.x))
+        target_y = Decimal(request.POST.get('y', shelf.y))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({'error': 'Nieprawidłowe współrzędne.'}, status=400)
+
+    new_shelf = WarehouseShelf.objects.create(
+        rack=target_rack,
+        name=_generate_copy_label(shelf.name),
+        x=target_x,
+        y=target_y,
+        width=shelf.width,
+        height=shelf.height,
+        color=shelf.color
+    )
+
+    return JsonResponse({'shelf': _serialize_shelf(new_shelf)}, status=201)
 
 
 # HTMX endpoints for synchronization

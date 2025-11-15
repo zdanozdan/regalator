@@ -68,14 +68,14 @@ class WarehouseZone(models.Model):
         max_digits=10,
         decimal_places=2,
         default=Decimal('200.00'),
-        validators=[MinValueValidator(Decimal('50.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Szerokość"
     )
     height = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=Decimal('150.00'),
-        validators=[MinValueValidator(Decimal('50.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Wysokość"
     )
     color = models.CharField(
@@ -205,14 +205,14 @@ class WarehouseRack(models.Model):
         max_digits=10,
         decimal_places=2,
         default=Decimal('80.00'),
-        validators=[MinValueValidator(Decimal('20.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Szerokość"
     )
     height = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=Decimal('60.00'),
-        validators=[MinValueValidator(Decimal('20.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Wysokość"
     )
     color = models.CharField(
@@ -347,14 +347,14 @@ class WarehouseShelf(models.Model):
         max_digits=10,
         decimal_places=2,
         default=Decimal('60.00'),
-        validators=[MinValueValidator(Decimal('15.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Szerokość"
     )
     height = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=Decimal('20.00'),
-        validators=[MinValueValidator(Decimal('10.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
         verbose_name="Wysokość"
     )
     color = models.CharField(
