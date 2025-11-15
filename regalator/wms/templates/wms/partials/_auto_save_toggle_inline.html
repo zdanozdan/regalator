@@ -1,0 +1,23 @@
+<div id="auto-save-inline-toggle"
+     class="border rounded-3 p-3 bg-light">
+    <div class="d-flex flex-column flex-md-row align-items-md-center gap-3">
+        <div class="form-check form-switch m-0">
+            <input class="form-check-input"
+                   type="checkbox"
+                   role="switch"
+                   id="autoSaveSwitch"
+                   {% if auto_save_enabled %}checked{% endif %}
+                   hx-post="{% url 'wms:toggle_auto_save_regalacje' %}"
+                   hx-target="#auto-save-inline-toggle"
+                   hx-swap="outerHTML"
+                   hx-trigger="change">
+            <label class="form-check-label fw-semibold" for="autoSaveSwitch">
+                Automatycznie zapisuj regalacje
+            </label>
+        </div>
+        <small class="text-muted">
+            Kliknięcie pozycji z listy pozostałych zapisze ją automatycznie.
+        </small>
+    </div>
+</div>
+

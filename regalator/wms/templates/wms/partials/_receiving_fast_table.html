@@ -1,5 +1,6 @@
 <div id="receiving-table-wrapper"
      data-focus-target="{{ focus_target }}"
+     data-auto-save="{{ auto_save_enabled|yesno:'true,false' }}"
      hx-get="{% url 'wms:htmx_receiving_table' receiving_order.id %}"
      hx-trigger="location-list-updated from:body"
      hx-target="#receiving-table-wrapper"
@@ -147,6 +148,9 @@
                                 hx-vals='{"action": "clear_selection"}'>
                             <i class="fas fa-undo me-2"></i>Wyczyść formularz
                         </button>
+                    </div>
+                    <div class="col-12">
+                        {% include 'wms/partials/_auto_save_toggle_inline.html' with auto_save_enabled=auto_save_enabled %}
                     </div>
                     {% if recent_locations %}
                     <div class="col-12">
@@ -319,7 +323,7 @@
                             hx-trigger="click"
                             hx-target="#receiving-table-wrapper"
                             hx-swap="outerHTML"
-                            hx-vals='{"receiving_item_id": "{{ item.id }}"}'
+                            hx-vals='{"receiving_item_id": "{{ item.id }}", "auto_submit_after_select": "{{ auto_save_enabled|yesno:"1,0" }}"}'
                             class="{% if current_receiving_item and current_receiving_item.id == item.id %}table-primary{% endif %}"
                             style="cursor: pointer;">
                             <td>

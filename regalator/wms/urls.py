@@ -78,6 +78,10 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('change-password-first-time/', views.change_password_first_time, name='change_password_first_time'),
     
+    # Settings
+    path('settings/', views.settings_view, name='settings'),
+    path('settings/toggle-auto-save/', views.toggle_auto_save_regalacje, name='toggle_auto_save_regalacje'),
+    
         # API
     path('api/scan-barcode/', views.api_scan_barcode, name='api_scan_barcode'),
     path('htmx/sync-product/<int:product_id>/', views.htmx_sync_product, name='htmx_sync_product'),
