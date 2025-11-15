@@ -1,0 +1,30 @@
+{% load i18n %}
+<button
+    id="auto-save-toggle"
+    type="button"
+    class="dropdown-item d-flex align-items-center justify-content-between"
+    hx-post="{% url 'wms:toggle_auto_save_regalacje' %}"
+    hx-target="#auto-save-toggle"
+    hx-swap="outerHTML"
+    hx-indicator="#auto-save-indicator"
+>
+    <span>
+        <i class="fas fa-save me-2"></i>
+        {% trans "Automatycznie zapisuj regalacje" %}
+    </span>
+    <span class="d-flex align-items-center">
+        {% if auto_save_enabled %}
+            <i class="fas fa-toggle-on text-success fs-4"></i>
+        {% else %}
+            <i class="fas fa-toggle-off text-muted fs-4"></i>
+        {% endif %}
+        <span
+            id="auto-save-indicator"
+            class="spinner-border spinner-border-sm text-primary ms-2"
+            role="status"
+            aria-hidden="true"
+            style="display: none;"
+        ></span>
+    </span>
+</button>
+

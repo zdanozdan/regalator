@@ -25,6 +25,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('wms.urls')),
     path('assets/', include('assets.urls')),
+    path('confetti/', include('confetti.urls', namespace='confetti')),
 ]
 
 # Konfiguracja dla media files w development

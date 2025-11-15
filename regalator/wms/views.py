@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseNotAllowed
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -23,6 +23,7 @@ from .forms import (
     StockTransferForm,
 )
 from assets.models import Asset
+from confetti import services as confetti_services
 import json
 import logging
 from django.template.loader import render_to_string
@@ -30,6 +31,7 @@ from django.urls import reverse
 from django.db import IntegrityError
 from .signals import product_updated
 from datetime import datetime
+from .context_processors import AUTO_SAVE_REGALACJE_KEY
 
 # Import subiekt models
 from subiekt.models import tw_Towar
@@ -2243,6 +2245,11 @@ def receiving_order_change_status(request, receiving_id):
         return HttpResponse(status=405)
 
     receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
     new_status = request.POST.get('status')
     allowed_statuses = {'pending', 'in_progress'}
 
@@ -2506,7 +2513,7 @@ def _apply_receiving_intake(receiving_order, receiving_item, location, quantity,
     return receiving_order.status == 'completed'
 
 
-def _build_receiving_fast_context(request, receiving_order, receiving_id):
+def _build_receiving_fast_context(request, receiving_order, receiving_id, *, auto_save_enabled=None):
     current_location = _get_current_location(request, receiving_id)
     current_receiving_item = _get_current_receiving_item(request, receiving_id)
 
@@ -2535,6 +2542,13 @@ def _build_receiving_fast_context(request, receiving_order, receiving_id):
                 break
         if selected_item:
             current_receiving_item = selected_item
+
+    if auto_save_enabled is None:
+        auto_save_enabled = bool(
+            confetti_services.get_effective_setting(
+                AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+            )
+        )
 
     form_mode = 'append'
     form_quantity_value = ''
@@ -2652,6 +2666,7 @@ def _build_receiving_fast_context(request, receiving_order, receiving_id):
         'form_location_value': form_location_value,
         'form_location_display_value': form_location_display_value,
         'recent_locations': recent_locations,
+        'auto_save_enabled': auto_save_enabled,
     }
 
 
@@ -2665,7 +2680,15 @@ def receiving_order_fast(request, receiving_id):
         receiving_order.started_at = timezone.now()
         receiving_order.save(update_fields=['status', 'started_at'])
 
-    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
+
+    context = _build_receiving_fast_context(
+        request, receiving_order, receiving_id, auto_save_enabled=auto_save_enabled
+    )
 
     return render(request, 'wms/receiving_fast.html', context)
 
@@ -2676,6 +2699,11 @@ def htmx_receiving_submit(request, receiving_id):
         return HttpResponse(status=405)
 
     receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
 
     location_code = request.POST.get('location_code', '').strip()
     product_code = request.POST.get('product_code', '').strip()
@@ -2683,6 +2711,9 @@ def htmx_receiving_submit(request, receiving_id):
     receiving_item_id = request.POST.get('receiving_item_id', '').strip()
     action = request.POST.get('action', '').strip()
     mode = request.POST.get('mode', 'append').strip()  # append lub overwrite
+    should_auto_submit = (
+        auto_save_enabled and request.POST.get('auto_submit_after_select') == '1'
+    )
 
     feedback_message = None
     feedback_type = 'info'
@@ -2750,6 +2781,31 @@ def htmx_receiving_submit(request, receiving_id):
         else:
             feedback_message = f'Nie znaleziono produktu dla kodu {product_code}.'
             feedback_type = 'error'
+
+    if (
+        should_auto_submit
+        and current_receiving_item
+        and feedback_type != 'error'
+    ):
+        quantity_key = _receiving_session_key(
+            receiving_id, f'quantity_{current_receiving_item.id}'
+        )
+        cached_quantity = request.session.get(quantity_key)
+        if not cached_quantity:
+            remaining = current_receiving_item.quantity_ordered - current_receiving_item.quantity_received
+            if remaining > 0:
+                cached_quantity = str(remaining)
+        if not current_location:
+            feedback_message = 'Najpierw wybierz lokalizację przyjęcia, aby użyć autozapisu.'
+            feedback_type = 'warning'
+            should_auto_submit = False
+        elif not cached_quantity:
+            feedback_message = 'Brak domyślnej ilości do zapisania dla tej pozycji.'
+            feedback_type = 'warning'
+            should_auto_submit = False
+        else:
+            quantity_text = cached_quantity
+            mode = 'append'
 
     # Obsługa ilości
     if quantity_text and feedback_type != 'error':
@@ -2847,7 +2903,9 @@ def htmx_receiving_submit(request, receiving_id):
                     _clear_current_receiving_item(request, receiving_id)
                     _clear_current_location(request, receiving_id)
 
-    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+    context = _build_receiving_fast_context(
+        request, receiving_order, receiving_id, auto_save_enabled=auto_save_enabled
+    )
 
     html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
 
@@ -2874,8 +2932,15 @@ def htmx_receiving_table(request, receiving_id):
         return HttpResponse(status=405)
 
     receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
 
-    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+    context = _build_receiving_fast_context(
+        request, receiving_order, receiving_id, auto_save_enabled=auto_save_enabled
+    )
 
     html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
     return HttpResponse(html, status=200)
@@ -2887,6 +2952,11 @@ def htmx_receiving_remove_item(request, receiving_id, item_id):
         return HttpResponse(status=405)
 
     receiving_order = get_object_or_404(ReceivingOrder, id=receiving_id)
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
     receiving_item = get_object_or_404(ReceivingItem, id=item_id, receiving_order=receiving_order)
 
     if receiving_item.quantity_received <= 0:
@@ -2937,7 +3007,9 @@ def htmx_receiving_remove_item(request, receiving_id, item_id):
         feedback_message = f'Cofnięto przyjęcie pozycji {receiving_item.product.name}.'
         feedback_type = 'success'
 
-    context = _build_receiving_fast_context(request, receiving_order, receiving_id)
+    context = _build_receiving_fast_context(
+        request, receiving_order, receiving_id, auto_save_enabled=auto_save_enabled
+    )
     html = render_to_string('wms/partials/_receiving_fast_table.html', context, request=request)
 
     response = HttpResponse(html, status=200)
@@ -3004,6 +3076,58 @@ def logout_view(request):
     logout(request)
     messages.success(request, 'Zostałeś pomyślnie wylogowany.')
     return redirect('wms:login')
+
+
+@login_required
+def settings_view(request):
+    """Strona ustawień użytkownika."""
+
+    auto_save_enabled = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
+    context = {
+        "auto_save_enabled": auto_save_enabled,
+    }
+    return render(request, "wms/settings.html", context)
+
+
+@login_required
+def toggle_auto_save_regalacje(request):
+    """HTMX toggle for automatic regalation save setting."""
+
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    current_value = bool(
+        confetti_services.get_effective_setting(
+            AUTO_SAVE_REGALACJE_KEY, user=request.user, default=False
+        )
+    )
+    new_value = not current_value
+    confetti_services.set_user_setting(request.user, AUTO_SAVE_REGALACJE_KEY, new_value)
+
+    target_id = request.headers.get('HX-Target') or ''
+    template_name = 'wms/partials/_settings_toggle_item.html'
+    if target_id == 'auto-save-inline-toggle':
+        template_name = 'wms/partials/_auto_save_toggle_inline.html'
+
+    html = render_to_string(
+        template_name,
+        {'auto_save_enabled': new_value},
+        request=request,
+    )
+    response = HttpResponse(html)
+    toast_message = (
+        'Automatyczne zapisywanie regalacji włączone'
+        if new_value
+        else 'Automatyczne zapisywanie regalacji wyłączone'
+    )
+    response['HX-Trigger'] = json.dumps(
+        {'toastMessage': {'type': 'success', 'value': toast_message}}
+    )
+    return response
 
 
 @login_required

@@ -100,7 +100,7 @@
                     </li>
                 </ul>
                 
-                <ul class="navbar-nav">
+                <ul class="navbar-nav ms-auto align-items-center">
                     {% if user.is_authenticated %}
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown">
@@ -114,12 +114,15 @@
                                 {% endif %}
                                 {{ user.profile.display_name|default:user.username }}
                             </a>
-                            <ul class="dropdown-menu">
+                            <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="{% url 'wms:profile_edit' %}">
                                     <i class="fas fa-user-edit me-2"></i>Edycja profilu
                                 </a></li>
                                 <li><a class="dropdown-item" href="{% url 'assets:asset_list' %}">
                                     <i class="fas fa-images me-2"></i>Zarządzanie zasobami
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'wms:settings' %}">
+                                    <i class="fas fa-sliders-h me-2"></i>Ustawienia
                                 </a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="{% url 'wms:logout' %}">
