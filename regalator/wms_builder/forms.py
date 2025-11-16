@@ -59,30 +59,15 @@ class ShelfForm(forms.ModelForm):
 
 class ZoneSyncForm(forms.Form):
     """Formularz synchronizacji strefy do Location"""
-    barcode = forms.CharField(
-        max_length=100,
-        required=True,
-        label="Kod kreskowy",
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Wprowadź kod kreskowy'})
-    )
+    pass  # Kod kreskowy jest generowany automatycznie
 
 
 class RackSyncForm(forms.Form):
     """Formularz synchronizacji regału do Location"""
-    barcode = forms.CharField(
-        max_length=100,
-        required=True,
-        label="Kod kreskowy",
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Wprowadź kod kreskowy'})
-    )
+    pass  # Kod kreskowy jest generowany automatycznie
 
 
 class ShelfSyncForm(forms.Form):
     """Formularz synchronizacji półki do Location"""
-    barcode = forms.CharField(
-        max_length=100,
-        required=True,
-        label="Kod kreskowy",
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Wprowadź kod kreskowy'})
-    )
+    pass  # Kod kreskowy jest generowany automatycznie
 

@@ -339,6 +339,63 @@
                 toastContainer.removeChild(newToast);
             });
         });
+        
+        // Toast message list handler - wyświetla wiele toastów jeden po drugim
+        htmx.on('toastMessageList', function (event) {
+            const toastContainer = document.getElementById('toast-container');
+            const toasts = event.detail.toasts || [];
+            
+            // Wyświetl każdy toast z opóźnieniem (300ms między toastami)
+            toasts.forEach((toastData, index) => {
+                setTimeout(function() {
+                    const type = (toastData.type || '').toLowerCase();
+                    let bgClass;
+                    switch (type) {
+                        case 'error':
+                            bgClass = 'danger';
+                            break;
+                        case 'warning':
+                            bgClass = 'warning';
+                            break;
+                        case 'info':
+                            bgClass = 'info';
+                            break;
+                        case 'success':
+                        case 'danger':
+                            bgClass = type;
+                            break;
+                        default:
+                            bgClass = 'primary';
+                    }
+                    
+                    const newToast = document.createElement('div');
+                    newToast.className = `toast align-items-center text-white bg-${bgClass} border-0 mb-2`;
+                    newToast.setAttribute('role', 'alert');
+                    newToast.setAttribute('aria-live', 'assertive');
+                    newToast.setAttribute('aria-atomic', 'true');
+                    
+                    newToast.innerHTML = `
+                        <div class="d-flex">
+                            <div class="toast-body">
+                                ${toastData.value}
+                            </div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                    `;
+                    
+                    toastContainer.appendChild(newToast);
+                    
+                    const bsToast = new bootstrap.Toast(newToast);
+                    bsToast.show();
+                    
+                    newToast.addEventListener('hidden.bs.toast', function() {
+                        if (toastContainer.contains(newToast)) {
+                            toastContainer.removeChild(newToast);
+                        }
+                    });
+                }, index * 300); // 300ms opóźnienia między toastami
+            });
+        });
     </script>
     <!-- Skrypty JavaScript -->
     <script src="{% static 'wms/js/barcode.js' %}"></script>

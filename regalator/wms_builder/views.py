@@ -8,6 +8,7 @@ from django.db import transaction
 from .models import Warehouse, WarehouseZone, WarehouseRack, WarehouseShelf
 from .forms import WarehouseForm, ZoneForm, RackForm, ShelfForm, ZoneSyncForm, RackSyncForm, ShelfSyncForm
 from decimal import Decimal, InvalidOperation
+import json
 
 
 def _generate_copy_label(name):
@@ -17,6 +18,57 @@ def _generate_copy_label(name):
     if base.lower().endswith(normalized_suffix):
         return base
     return f'{base}{suffix}'
+
+
+def _get_deleted_item_label(item_type, item_name):
+    """Zwraca etykietę dla usuniętego elementu"""
+    labels = {
+        'zone': f'Strefa "{item_name}"',
+        'rack': f'Regał "{item_name}"',
+        'shelf': f'Półka "{item_name}"',
+        'zone_location': f'Lokalizacja strefy "{item_name}"',
+        'rack_location': f'Lokalizacja regału "{item_name}"',
+        'shelf_location': f'Lokalizacja półki "{item_name}"',
+    }
+    return labels.get(item_type, f'"{item_name}"')
+
+
+def _build_toast_triggers(deleted_items):
+    """Buduje HX-Trigger z wieloma toastami dla usuniętych elementów"""
+    if not deleted_items:
+        return {}
+    
+    # Jeśli jest tylko jeden element, użyj standardowego toastMessage
+    if len(deleted_items) == 1:
+        item = deleted_items[0]
+        item_label = _get_deleted_item_label(item['type'], item['name'])
+        return {
+            'toastMessage': {
+                'value': f'{item_label} została usunięta.',
+                'type': 'success'
+            }
+        }
+    
+    # Jeśli jest wiele elementów, prześlij listę toastów i użyj specjalnego triggera
+    # Frontend wyświetli je jeden po drugim
+    toast_list = []
+    for item in deleted_items:
+        item_label = _get_deleted_item_label(item['type'], item['name'])
+        toast_list.append({
+            'value': f'{item_label} została usunięta.',
+            'type': 'success'
+        })
+    
+    return {
+        'toastMessageList': {
+            'toasts': toast_list
+        },
+        # Dodaj również główny toast dla kompatybilności
+        'toastMessage': {
+            'value': f'Usunięto {len(deleted_items)} element(ów).',
+            'type': 'success'
+        }
+    }
 
 
 def _serialize_shelf(shelf):
@@ -117,12 +169,21 @@ def warehouse_detail(request, warehouse_id, zone_id=None, rack_id=None):
     active_rack = None
 
     if rack_id is not None:
-        active_rack = get_object_or_404(
-            WarehouseRack.objects.select_related('zone'),
-            id=rack_id,
-            zone__warehouse=warehouse
-        )
-        active_zone = active_rack.zone
+        try:
+            active_rack = WarehouseRack.objects.select_related('zone').get(
+                id=rack_id,
+                zone__warehouse=warehouse
+            )
+            active_zone = active_rack.zone
+        except WarehouseRack.DoesNotExist:
+            # Regał został usunięty, przekieruj do widoku magazynu lub strefy
+            if zone_id:
+                redirect_url = reverse('wms_builder:warehouse_detail_zone', 
+                                     args=[warehouse_id, zone_id])
+            else:
+                redirect_url = reverse('wms_builder:warehouse_detail', 
+                                     args=[warehouse_id])
+            return redirect(f'{redirect_url}?not_found=rack')
     elif zone_id is not None:
         active_zone = get_object_or_404(warehouse.zones, id=zone_id)
     
@@ -377,14 +438,28 @@ def htmx_zone_delete(request, zone_id):
     """Delete zone"""
     zone = get_object_or_404(WarehouseZone, id=zone_id)
     try:
-        zone.delete()
-        return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+        deleted_items = []
+        zone.delete(deleted_items=deleted_items)
+        
+        # Wyświetl toasty dla wszystkich usuniętych elementów
+        triggers = _build_toast_triggers(deleted_items)
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps(triggers)
+        return response
     except ValidationError as e:
         error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
-        return HttpResponse(
+        response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
         )
+        toast_message = {
+            "toastMessage": {
+                "value": error_message,
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
 
 
 @login_required
@@ -563,14 +638,28 @@ def htmx_rack_delete(request, rack_id):
     """Delete rack"""
     rack = get_object_or_404(WarehouseRack, id=rack_id)
     try:
-        rack.delete()
-        return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+        deleted_items = []
+        rack.delete(deleted_items=deleted_items)
+        
+        # Wyświetl toasty dla wszystkich usuniętych elementów
+        triggers = _build_toast_triggers(deleted_items)
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps(triggers)
+        return response
     except ValidationError as e:
         error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
-        return HttpResponse(
+        response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
         )
+        toast_message = {
+            "toastMessage": {
+                "value": error_message,
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
 
 
 @login_required
@@ -743,14 +832,28 @@ def htmx_shelf_delete(request, shelf_id):
     """Delete shelf"""
     shelf = get_object_or_404(WarehouseShelf, id=shelf_id)
     try:
-        shelf.delete()
-        return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+        deleted_items = []
+        shelf.delete(deleted_items=deleted_items)
+        
+        # Wyświetl toasty dla wszystkich usuniętych elementów
+        triggers = _build_toast_triggers(deleted_items)
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps(triggers)
+        return response
     except ValidationError as e:
         error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
-        return HttpResponse(
+        response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
         )
+        toast_message = {
+            "toastMessage": {
+                "value": error_message,
+                "type": "danger"
+            }
+        }
+        response['HX-Trigger'] = json.dumps(toast_message)
+        return response
 
 
 @login_required
@@ -793,17 +896,35 @@ def htmx_zone_sync_to_location(request, zone_id):
         form = ZoneSyncForm(request.POST)
         if form.is_valid():
             try:
-                barcode = form.cleaned_data['barcode']
+                # Generuj automatyczny kod kreskowy na podstawie ID strefy
+                # Jeśli Location już istnieje, użyj istniejącego kodu
+                barcode = zone.location.barcode if zone.location else f"ZONE-{zone.id}"
                 zone.sync_to_location(barcode)
-                return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+                
+                # Odśwież obiekt, aby mieć aktualne dane z Location
+                zone.refresh_from_db()
+                
+                # Przygotuj toast message z nazwą i kodem kreskowym
+                location_name = zone.location.name if zone.location else zone.name
+                location_barcode = zone.location.barcode if zone.location else barcode
+                toast_message = f'Strefa "{location_name}" została zsynchronizowana ({location_barcode})'
+                
+                # Zwróć odpowiedź z toast message i zamknij modal
+                response = HttpResponse(status=204)
+                response['HX-Refresh'] = 'true'
+                response['HX-Trigger'] = json.dumps({
+                    'toastMessage': {
+                        'value': toast_message,
+                        'type': 'success'
+                    },
+                    'modalHide': {}
+                })
+                return response
             except ValueError as e:
-                form.add_error('barcode', str(e))
+                # Jeśli błąd, wyświetl komunikat w modalu
+                form.add_error(None, str(e))
     else:
-        # Pre-fill barcode if location exists
-        initial = {}
-        if zone.location:
-            initial['barcode'] = zone.location.barcode
-        form = ZoneSyncForm(initial=initial)
+        form = ZoneSyncForm()
     
     return render(request, 'wms_builder/partials/_zone_sync_form.html', {
         'form': form,
@@ -821,17 +942,40 @@ def htmx_rack_sync_to_location(request, rack_id):
         form = RackSyncForm(request.POST)
         if form.is_valid():
             try:
-                barcode = form.cleaned_data['barcode']
+                # Generuj automatyczny kod kreskowy na podstawie ID regału i strefy
+                # Jeśli Location już istnieje, użyj istniejącego kodu
+                if rack.location:
+                    barcode = rack.location.barcode
+                elif rack.zone.location:
+                    barcode = f"{rack.zone.location.barcode}-R{rack.id}"
+                else:
+                    barcode = f"ZONE-{rack.zone.id}-R{rack.id}"
                 rack.sync_to_location(barcode)
-                return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+                
+                # Odśwież obiekt, aby mieć aktualne dane z Location
+                rack.refresh_from_db()
+                
+                # Przygotuj toast message z nazwą i kodem kreskowym
+                location_name = rack.location.name if rack.location else rack.name
+                location_barcode = rack.location.barcode if rack.location else barcode
+                toast_message = f'Regał "{location_name}" został zsynchronizowany ({location_barcode})'
+                
+                # Zwróć odpowiedź z toast message i zamknij modal
+                response = HttpResponse(status=204)
+                response['HX-Refresh'] = 'true'
+                response['HX-Trigger'] = json.dumps({
+                    'toastMessage': {
+                        'value': toast_message,
+                        'type': 'success'
+                    },
+                    'modalHide': {}
+                })
+                return response
             except ValueError as e:
-                form.add_error('barcode', str(e))
+                # Jeśli błąd, wyświetl komunikat w modalu
+                form.add_error(None, str(e))
     else:
-        # Pre-fill barcode if location exists
-        initial = {}
-        if rack.location:
-            initial['barcode'] = rack.location.barcode
-        form = RackSyncForm(initial=initial)
+        form = RackSyncForm()
     
     return render(request, 'wms_builder/partials/_rack_sync_form.html', {
         'form': form,
@@ -849,17 +993,42 @@ def htmx_shelf_sync_to_location(request, shelf_id):
         form = ShelfSyncForm(request.POST)
         if form.is_valid():
             try:
-                barcode = form.cleaned_data['barcode']
+                # Generuj automatyczny kod kreskowy na podstawie ID półki, regału i strefy
+                # Jeśli Location już istnieje, użyj istniejącego kodu
+                if shelf.location:
+                    barcode = shelf.location.barcode
+                elif shelf.rack.location:
+                    barcode = f"{shelf.rack.location.barcode}-S{shelf.id}"
+                elif shelf.rack.zone.location:
+                    barcode = f"{shelf.rack.zone.location.barcode}-R{shelf.rack.id}-S{shelf.id}"
+                else:
+                    barcode = f"ZONE-{shelf.rack.zone.id}-R{shelf.rack.id}-S{shelf.id}"
                 shelf.sync_to_location(barcode)
-                return HttpResponse(status=204, headers={'HX-Refresh': 'true'})
+                
+                # Odśwież obiekt, aby mieć aktualne dane z Location
+                shelf.refresh_from_db()
+                
+                # Przygotuj toast message z nazwą i kodem kreskowym
+                location_name = shelf.location.name if shelf.location else shelf.name
+                location_barcode = shelf.location.barcode if shelf.location else barcode
+                toast_message = f'Półka "{location_name}" została zsynchronizowana ({location_barcode})'
+                
+                # Zwróć odpowiedź z toast message i zamknij modal
+                response = HttpResponse(status=204)
+                response['HX-Refresh'] = 'true'
+                response['HX-Trigger'] = json.dumps({
+                    'toastMessage': {
+                        'value': toast_message,
+                        'type': 'success'
+                    },
+                    'modalHide': {}
+                })
+                return response
             except ValueError as e:
-                form.add_error('barcode', str(e))
+                # Jeśli błąd, wyświetl komunikat w modalu
+                form.add_error(None, str(e))
     else:
-        # Pre-fill barcode if location exists
-        initial = {}
-        if shelf.location:
-            initial['barcode'] = shelf.location.barcode
-        form = ShelfSyncForm(initial=initial)
+        form = ShelfSyncForm()
     
     return render(request, 'wms_builder/partials/_shelf_sync_form.html', {
         'form': form,

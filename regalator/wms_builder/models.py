@@ -134,8 +134,14 @@ class WarehouseZone(models.Model):
             return True
         return self.is_location_empty()
     
-    def sync_to_location(self, barcode):
-        """Synchronizuje strefę do Location w WMS"""
+    def sync_to_location(self, barcode, sync_children=True, _syncing=False):
+        """Synchronizuje strefę do Location w WMS oraz wszystkie regały i półki w strefie
+        
+        Args:
+            barcode: Kod kreskowy dla Location
+            sync_children: Jeśli True, automatycznie synchronizuje wszystkie regały i półki w strefie
+            _syncing: Flaga wewnętrzna zapobiegająca cyklicznym wywołaniom
+        """
         from wms.models import Location
         
         if not barcode:
@@ -165,19 +171,108 @@ class WarehouseZone(models.Model):
             )
             self.save(update_fields=['location'])
         
+        # Synchronizuj wszystkie regały w strefie (automatycznie generuj barcode jeśli nie są zsynchronizowane)
+        if sync_children and not _syncing:
+            for rack in self.racks.all():
+                if not rack.location:
+                    # Generuj barcode dla regału na podstawie strefy i ID regału
+                    rack_barcode = f"{barcode}-R{rack.id}"
+                    rack.sync_to_location(rack_barcode, sync_children=True, _syncing=True)
+                else:
+                    # Zaktualizuj parent jeśli regał już jest zsynchronizowany
+                    rack.location.parent = self.location
+                    rack.location.save(update_fields=['parent'])
+                
+                # Synchronizuj wszystkie półki w regale (jeśli regał jest zsynchronizowany)
+                if rack.location:
+                    for shelf in rack.shelves.all():
+                        if not shelf.location:
+                            # Generuj barcode dla półki
+                            shelf_barcode = f"{rack.location.barcode}-S{shelf.id}"
+                            shelf.sync_to_location(shelf_barcode, _syncing=True)
+                        else:
+                            # Zaktualizuj parent jeśli półka już jest zsynchronizowana
+                            shelf.location.parent = rack.location
+                            shelf.location.save(update_fields=['parent'])
+        
         return self.location
     
     def delete(self, *args, **kwargs):
         """Usuwa strefę, sprawdzając czy Location jest pusta"""
+        deleted_items = kwargs.pop('deleted_items', None)  # Lista do zbierania informacji o usuniętych elementach
+        
         if self.location:
-            if not self.is_location_empty():
-                raise ValidationError(
-                    f"Nie można usunąć strefy '{self.name}' - powiązana lokalizacja '{self.location.name}' "
-                    f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
-                )
-            # Usuń Location jeśli jest pusta
-            self.location.delete()
+            # Jeśli Location jest już w trakcie usuwania, po prostu odłącz relację
+            if hasattr(self.location, '_deleting_from_builder') and self.location._deleting_from_builder:
+                self.location = None
+                self.save(update_fields=['location'])
+            else:
+                from wms.models import Location, Stock, StockMovement, PickingHistory, ReceivingHistory, DocumentItem
+                
+                # Najpierw usuń Location dla wszystkich półek i regałów w strefie
+                # (child locations blokują usunięcie Location strefy)
+                # Nie dodawaj ich do deleted_items tutaj - zostaną dodane podczas usuwania samych elementów
+                for rack in self.racks.all():
+                    # Usuń Location dla wszystkich półek w regale
+                    for shelf in rack.shelves.all():
+                        if shelf.location:
+                            # Sprawdź czy Location półki nie ma innych powiązań
+                            has_other_relations = any([
+                                Stock.objects.filter(location=shelf.location).exists(),
+                                StockMovement.objects.filter(
+                                    Q(source_location=shelf.location) | Q(target_location=shelf.location)
+                                ).exists(),
+                                PickingHistory.objects.filter(location_scanned=shelf.location).exists(),
+                                ReceivingHistory.objects.filter(location=shelf.location).exists(),
+                                DocumentItem.objects.filter(location=shelf.location).exists(),
+                                Location.objects.filter(parent=shelf.location).exists()
+                            ])
+                            if not has_other_relations:
+                                shelf.location._deleting_from_builder = True
+                                shelf.location.delete()
+                    
+                    # Usuń Location dla regału (jeśli nie ma innych powiązań poza child locations)
+                    if rack.location:
+                        has_other_relations = any([
+                            Stock.objects.filter(location=rack.location).exists(),
+                            StockMovement.objects.filter(
+                                Q(source_location=rack.location) | Q(target_location=rack.location)
+                            ).exists(),
+                            PickingHistory.objects.filter(location_scanned=rack.location).exists(),
+                            ReceivingHistory.objects.filter(location=rack.location).exists(),
+                            DocumentItem.objects.filter(location=rack.location).exists(),
+                            # Child locations już usunęliśmy powyżej
+                        ])
+                        if not has_other_relations:
+                            rack.location._deleting_from_builder = True
+                            rack.location.delete()
+                
+                # Teraz sprawdź czy Location strefy jest pusta
+                if not self.is_location_empty():
+                    raise ValidationError(
+                        f"Nie można usunąć strefy '{self.name}' - powiązana lokalizacja '{self.location.name}' "
+                        f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
+                    )
+                # Oznacz Location że jest usuwane z powodu usuwania elementu buildera
+                # (zapobiega cyklicznemu usuwaniu w sygnale)
+                self.location._deleting_from_builder = True
+                # Usuń Location jeśli jest pusta
+                location_name = self.location.name
+                self.location.delete()
+                if deleted_items is not None:
+                    deleted_items.append({'type': 'zone_location', 'name': location_name})
+        
+        # Ręcznie usuń wszystkie regały (aby ich metody delete() były wywoływane i zbierały deleted_items)
+        # Zamiast polegać na CASCADE, który nie wywołuje metody delete()
+        # Location dla regałów i półek są już usunięte powyżej, więc metody delete() nie będą próbowały usuwać Location ponownie
+        racks_to_delete = list(self.racks.all())
+        for rack in racks_to_delete:
+            rack.delete(deleted_items=deleted_items)
+        
+        zone_name = self.name
         super().delete(*args, **kwargs)
+        if deleted_items is not None:
+            deleted_items.append({'type': 'zone', 'name': zone_name})
 
 
 class WarehouseRack(models.Model):
@@ -271,8 +366,14 @@ class WarehouseRack(models.Model):
             return True
         return self.is_location_empty()
     
-    def sync_to_location(self, barcode):
-        """Synchronizuje regał do Location w WMS"""
+    def sync_to_location(self, barcode, sync_children=True, _syncing=False):
+        """Synchronizuje regał do Location w WMS oraz nadrzędną strefę jeśli nie jest zsynchronizowana
+        
+        Args:
+            barcode: Kod kreskowy dla Location
+            sync_children: Jeśli True, automatycznie synchronizuje wszystkie półki w regale
+            _syncing: Flaga wewnętrzna zapobiegająca cyklicznym wywołaniom
+        """
         from wms.models import Location
         
         if not barcode:
@@ -283,7 +384,13 @@ class WarehouseRack(models.Model):
         if existing_location and existing_location != self.location:
             raise ValueError(f"Barcode '{barcode}' jest już używany przez inną lokalizację")
         
-        # Określ parent (strefa jeśli ma Location)
+        # Synchronizuj nadrzędną strefę jeśli nie jest zsynchronizowana (bez synchronizacji dzieci, aby uniknąć rekurencji)
+        if not self.zone.location and not _syncing:
+            # Generuj barcode dla strefy na podstawie nazwy strefy lub ID
+            zone_barcode = f"ZONE-{self.zone.id}"
+            self.zone.sync_to_location(zone_barcode, sync_children=False, _syncing=True)
+        
+        # Określ parent (strefa powinna mieć Location po synchronizacji powyżej)
         parent_location = None
         if self.zone.location:
             parent_location = self.zone.location
@@ -307,19 +414,77 @@ class WarehouseRack(models.Model):
             )
             self.save(update_fields=['location'])
         
+        # Synchronizuj wszystkie półki w regale (automatycznie generuj barcode jeśli nie są zsynchronizowane)
+        if sync_children and not _syncing:
+            for shelf in self.shelves.all():
+                if not shelf.location:
+                    # Generuj barcode dla półki
+                    shelf_barcode = f"{barcode}-S{shelf.id}"
+                    shelf.sync_to_location(shelf_barcode, _syncing=True)
+                else:
+                    # Zaktualizuj parent jeśli półka już jest zsynchronizowana
+                    shelf.location.parent = self.location
+                    shelf.location.save(update_fields=['parent'])
+        
         return self.location
     
     def delete(self, *args, **kwargs):
         """Usuwa regał, sprawdzając czy Location jest pusta"""
+        deleted_items = kwargs.pop('deleted_items', None)  # Lista do zbierania informacji o usuniętych elementach
+        
         if self.location:
-            if not self.is_location_empty():
-                raise ValidationError(
-                    f"Nie można usunąć regału '{self.name}' - powiązana lokalizacja '{self.location.name}' "
-                    f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
-                )
-            # Usuń Location jeśli jest pusta
-            self.location.delete()
+            # Jeśli Location jest już w trakcie usuwania, po prostu odłącz relację
+            if hasattr(self.location, '_deleting_from_builder') and self.location._deleting_from_builder:
+                self.location = None
+                self.save(update_fields=['location'])
+            else:
+                from wms.models import Stock, StockMovement, PickingHistory, ReceivingHistory, DocumentItem, Location
+                
+                # Najpierw usuń Location dla wszystkich półek w regale
+                # (child locations blokują usunięcie Location regału)
+                # Nie dodawaj ich do deleted_items tutaj - zostaną dodane podczas usuwania samych półek
+                for shelf in self.shelves.all():
+                    if shelf.location:
+                        # Sprawdź czy Location półki nie ma innych powiązań
+                        has_other_relations = any([
+                            Stock.objects.filter(location=shelf.location).exists(),
+                            StockMovement.objects.filter(
+                                Q(source_location=shelf.location) | Q(target_location=shelf.location)
+                            ).exists(),
+                            PickingHistory.objects.filter(location_scanned=shelf.location).exists(),
+                            ReceivingHistory.objects.filter(location=shelf.location).exists(),
+                            DocumentItem.objects.filter(location=shelf.location).exists(),
+                            Location.objects.filter(parent=shelf.location).exists()
+                        ])
+                        if not has_other_relations:
+                            shelf.location._deleting_from_builder = True
+                            shelf.location.delete()
+                
+                # Teraz sprawdź czy Location regału jest pusta
+                if not self.is_location_empty():
+                    raise ValidationError(
+                        f"Nie można usunąć regału '{self.name}' - powiązana lokalizacja '{self.location.name}' "
+                        f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
+                    )
+                # Oznacz Location że jest usuwane z powodu usuwania elementu buildera
+                # (zapobiega cyklicznemu usuwaniu w sygnale)
+                self.location._deleting_from_builder = True
+                # Usuń Location jeśli jest pusta
+                location_name = self.location.name
+                self.location.delete()
+                if deleted_items is not None:
+                    deleted_items.append({'type': 'rack_location', 'name': location_name})
+        
+        # Ręcznie usuń wszystkie półki (aby ich metody delete() były wywoływane i zbierały deleted_items)
+        # Zamiast polegać na CASCADE, który nie wywołuje metody delete()
+        shelves_to_delete = list(self.shelves.all())
+        for shelf in shelves_to_delete:
+            shelf.delete(deleted_items=deleted_items)
+        
+        rack_name = self.name
         super().delete(*args, **kwargs)
+        if deleted_items is not None:
+            deleted_items.append({'type': 'rack', 'name': rack_name})
 
 
 class WarehouseShelf(models.Model):
@@ -413,8 +578,13 @@ class WarehouseShelf(models.Model):
             return True
         return self.is_location_empty()
     
-    def sync_to_location(self, barcode):
-        """Synchronizuje półkę do Location w WMS"""
+    def sync_to_location(self, barcode, _syncing=False):
+        """Synchronizuje półkę do Location w WMS oraz nadrzędny regał i strefę jeśli nie są zsynchronizowane
+        
+        Args:
+            barcode: Kod kreskowy dla Location
+            _syncing: Flaga wewnętrzna zapobiegająca cyklicznym wywołaniom
+        """
         from wms.models import Location
         
         if not barcode:
@@ -425,7 +595,19 @@ class WarehouseShelf(models.Model):
         if existing_location and existing_location != self.location:
             raise ValueError(f"Barcode '{barcode}' jest już używany przez inną lokalizację")
         
-        # Określ parent (regał jeśli ma Location, w przeciwnym razie strefa)
+        # Synchronizuj nadrzędną strefę jeśli nie jest zsynchronizowana (bez synchronizacji dzieci, aby uniknąć rekurencji)
+        if not self.rack.zone.location and not _syncing:
+            # Generuj barcode dla strefy
+            zone_barcode = f"ZONE-{self.rack.zone.id}"
+            self.rack.zone.sync_to_location(zone_barcode, sync_children=False, _syncing=True)
+        
+        # Synchronizuj nadrzędny regał jeśli nie jest zsynchronizowany (bez synchronizacji dzieci, aby uniknąć rekurencji)
+        if not self.rack.location and not _syncing:
+            # Generuj barcode dla regału
+            rack_barcode = f"{self.rack.zone.location.barcode}-R{self.rack.id}"
+            self.rack.sync_to_location(rack_barcode, sync_children=False, _syncing=True)
+        
+        # Określ parent (regał powinien mieć Location po synchronizacji powyżej)
         parent_location = None
         if self.rack.location:
             parent_location = self.rack.location
@@ -455,13 +637,30 @@ class WarehouseShelf(models.Model):
     
     def delete(self, *args, **kwargs):
         """Usuwa półkę, sprawdzając czy Location jest pusta"""
+        deleted_items = kwargs.pop('deleted_items', None)  # Lista do zbierania informacji o usuniętych elementach
+        
         if self.location:
-            if not self.is_location_empty():
-                raise ValidationError(
-                    f"Nie można usunąć półki '{self.name}' - powiązana lokalizacja '{self.location.name}' "
-                    f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
-                )
-            # Usuń Location jeśli jest pusta
-            self.location.delete()
+            # Jeśli Location jest już w trakcie usuwania, po prostu odłącz relację
+            if hasattr(self.location, '_deleting_from_builder') and self.location._deleting_from_builder:
+                self.location = None
+                self.save(update_fields=['location'])
+            else:
+                if not self.is_location_empty():
+                    raise ValidationError(
+                        f"Nie można usunąć półki '{self.name}' - powiązana lokalizacja '{self.location.name}' "
+                        f"ma powiązania z innymi obiektami (Stock, StockMovement, PickingHistory, itp.)"
+                    )
+                # Oznacz Location że jest usuwane z powodu usuwania elementu buildera
+                # (zapobiega cyklicznemu usuwaniu w sygnale)
+                self.location._deleting_from_builder = True
+                # Usuń Location jeśli jest pusta
+                location_name = self.location.name
+                self.location.delete()
+                if deleted_items is not None:
+                    deleted_items.append({'type': 'shelf_location', 'name': location_name})
+        
+        shelf_name = self.name
         super().delete(*args, **kwargs)
+        if deleted_items is not None:
+            deleted_items.append({'type': 'shelf', 'name': shelf_name})
 

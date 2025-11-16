@@ -1362,9 +1362,31 @@ class WarehouseBuilder {
         if (!rackId) {
             return;
         }
+        
+        // Sprawdź czy jesteśmy w widoku tego regału
+        const isInRackDetailView = this.rackMode.activeRackId === rackId;
+        const zoneId = rackGroup.closest('.draggable-zone')?.getAttribute('data-zone-id');
+        
         this.performDeleteRequest(`/wms-builder/racks/${rackId}/delete/`, {
             onSuccess: () => {
                 rackGroup.remove();
+                if (isInRackDetailView && zoneId) {
+                    // Jeśli jesteśmy w widoku szczegółowym tego regału, przekieruj do widoku strefy
+                    // Zapisuj toast w sessionStorage przed przekierowaniem
+                    if (typeof htmx !== 'undefined') {
+                        htmx.trigger(document.body, 'toastMessage', {
+                            value: 'Regał został usunięty. Zostałeś przekierowany do widoku strefy.',
+                            type: 'info'
+                        });
+                        sessionStorage.setItem('deleteToast', JSON.stringify({
+                            value: 'Regał został usunięty. Zostałeś przekierowany do widoku strefy.',
+                            type: 'info'
+                        }));
+                    }
+                    // Przekieruj do widoku strefy
+                    window.location.href = `/wms-builder/warehouses/${this.warehouseId}/zones/${zoneId}/?not_found=rack`;
+                    return;
+                }
                 if (this.rackMode.activeRackId === rackId) {
                     this.setRackMode(null);
                 }
@@ -1386,9 +1408,34 @@ class WarehouseBuilder {
         if (!shelfId) {
             return;
         }
+        
+        // Sprawdź czy jesteśmy w widoku regału, który zawiera tę półkę
+        const rackGroup = shelfGroup.closest('.draggable-rack');
+        const rackId = rackGroup ? rackGroup.getAttribute('data-rack-id') : null;
+        const isInRackDetailView = rackId && this.rackMode.activeRackId === rackId;
+        const zoneId = rackGroup ? rackGroup.closest('.draggable-zone')?.getAttribute('data-zone-id') : null;
+        
         this.performDeleteRequest(`/wms-builder/shelves/${shelfId}/delete/`, {
             onSuccess: () => {
                 shelfGroup.remove();
+                if (isInRackDetailView && zoneId && rackId) {
+                    // Jeśli jesteśmy w widoku szczegółowym regału, który zawiera tę półkę, 
+                    // przekieruj do widoku regału (półka już została usunięta)
+                    // Zapisuj toast w sessionStorage przed przekierowaniem
+                    if (typeof htmx !== 'undefined') {
+                        htmx.trigger(document.body, 'toastMessage', {
+                            value: 'Półka została usunięta. Zostałeś przekierowany do widoku regału.',
+                            type: 'info'
+                        });
+                        sessionStorage.setItem('deleteToast', JSON.stringify({
+                            value: 'Półka została usunięta. Zostałeś przekierowany do widoku regału.',
+                            type: 'info'
+                        }));
+                    }
+                    // Przekieruj do widoku regału
+                    window.location.href = `/wms-builder/warehouses/${this.warehouseId}/zones/${zoneId}/racks/${rackId}/?not_found=shelf`;
+                    return;
+                }
                 this.clearSelection();
             },
             successMessage: 'Półka została usunięta.',
@@ -1405,21 +1452,48 @@ class WarehouseBuilder {
         formData.append('csrfmiddlewaretoken', this.getCsrfToken());
         fetch(url, {
             method: 'POST',
-            body: formData
+            body: formData,
+            headers: {
+                'X-CSRFToken': this.getCsrfToken()
+            }
         }).then(response => {
-            if (!response.ok) {
+            if (response.status === 204) {
+                // Odczytaj HX-Trigger header i wywołaj eventy
+                const triggerHeader = response.headers.get('HX-Trigger');
+                if (triggerHeader && typeof htmx !== 'undefined') {
+                    try {
+                        const triggers = JSON.parse(triggerHeader);
+                        // Obsługa toastMessage (pojedynczy lub lista)
+                        if (triggers.toastMessage) {
+                            htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                        }
+                        if (triggers.toastMessageList) {
+                            htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing HX-Trigger:', e);
+                    }
+                }
+                if (typeof onSuccess === 'function') {
+                    onSuccess();
+                }
+                // Jeśli successMessage jest podany jako fallback (dla kompatybilności wstecznej)
+                if (successMessage && !triggerHeader && typeof htmx !== 'undefined') {
+                    htmx.trigger(document.body, 'toastMessage', {
+                        value: successMessage,
+                        type: 'success'
+                    });
+                }
+            } else if (!response.ok) {
                 throw new Error(`Delete request failed: ${url}`);
-            }
-            if (typeof onSuccess === 'function') {
-                onSuccess();
-            }
-            if (successMessage) {
-                this.showToast(successMessage, 'success');
             }
         }).catch(error => {
             console.error(error);
-            if (errorMessage) {
-                this.showToast(errorMessage, 'danger');
+            if (errorMessage && typeof htmx !== 'undefined') {
+                htmx.trigger(document.body, 'toastMessage', {
+                    value: errorMessage,
+                    type: 'danger'
+                });
             }
         });
     }
@@ -2230,9 +2304,51 @@ class WarehouseBuilder {
                                 formData.append('csrfmiddlewaretoken', this.getCsrfToken());
                                 fetch(`/wms-builder/zones/${zoneId}/delete/`, {
                                     method: 'POST',
-                                    body: formData
-                                }).then(() => {
-                                    window.location.reload();
+                                    body: formData,
+                                    headers: {
+                                        'X-CSRFToken': this.getCsrfToken()
+                                    }
+                                }).then(response => {
+                                    if (response.status === 204) {
+                                        // Usuń strefę z DOM
+                                        if (zoneGroup) {
+                                            zoneGroup.remove();
+                                        }
+                                        // Sprawdź czy jesteśmy w tej strefie - jeśli tak, przejdź do widoku magazynu
+                                        if (this.zoneMode.activeZoneId === zoneId) {
+                                            this.setZoneMode(null);
+                                        }
+                                        // Usuń opcję z selecta jeśli istnieje
+                                        if (this.zoneModeSelect) {
+                                            const option = this.zoneModeSelect.querySelector(`option[value="${zoneId}"]`);
+                                            if (option) {
+                                                option.remove();
+                                            }
+                                        }
+                                        // Wyczyść selekcję
+                                        this.clearSelection();
+                                        // Odśwież widoczność stref
+                                        if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                                            this.zoneMode.updateZonesVisibility();
+                                        }
+                                        // Odczytaj HX-Trigger header i wywołaj eventy
+                                        const triggerHeader = response.headers.get('HX-Trigger');
+                                        if (triggerHeader && typeof htmx !== 'undefined') {
+                                            try {
+                                                const triggers = JSON.parse(triggerHeader);
+                                                if (triggers.toastMessage) {
+                                                    htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                                                }
+                                                if (triggers.toastMessageList) {
+                                                    htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                                                }
+                                            } catch (e) {
+                                                console.error('Error parsing HX-Trigger:', e);
+                                            }
+                                        }
+                                    }
+                                }).catch(error => {
+                                    console.error('Error deleting zone:', error);
                                 });
                             }
                         }
@@ -2298,9 +2414,64 @@ class WarehouseBuilder {
                                 formData.append('csrfmiddlewaretoken', this.getCsrfToken());
                                 fetch(`/wms-builder/racks/${rackId}/delete/`, {
                                     method: 'POST',
-                                    body: formData
-                                }).then(() => {
-                                    window.location.reload();
+                                    body: formData,
+                                    headers: {
+                                        'X-CSRFToken': this.getCsrfToken()
+                                    }
+                                }).then(response => {
+                                    if (response.status === 204) {
+                                        // Usuń regał z DOM
+                                        if (rackGroup) {
+                                            rackGroup.remove();
+                                        }
+                                        // Sprawdź czy jesteśmy w tym regale - jeśli tak, przekieruj do widoku strefy z toastem
+                                        const isInRackDetailView = this.rackMode.activeRackId === rackId;
+                                        const zoneIdForRedirect = rackGroup ? rackGroup.closest('.draggable-zone')?.getAttribute('data-zone-id') : null;
+                                        
+                                        if (isInRackDetailView && zoneIdForRedirect) {
+                                            // Jeśli jesteśmy w widoku szczegółowym tego regału, przekieruj do widoku strefy
+                                            if (typeof htmx !== 'undefined') {
+                                                htmx.trigger(document.body, 'toastMessage', {
+                                                    value: 'Regał został usunięty. Zostałeś przekierowany do widoku strefy.',
+                                                    type: 'info'
+                                                });
+                                                sessionStorage.setItem('deleteToast', JSON.stringify({
+                                                    value: 'Regał został usunięty. Zostałeś przekierowany do widoku strefy.',
+                                                    type: 'info'
+                                                }));
+                                            }
+                                            // Przekieruj do widoku strefy
+                                            window.location.href = `/wms-builder/warehouses/${this.warehouseId}/zones/${zoneIdForRedirect}/?not_found=rack`;
+                                            return;
+                                        }
+                                        
+                                        if (this.rackMode.activeRackId === rackId) {
+                                            this.setRackMode(null);
+                                        }
+                                        // Wyczyść selekcję
+                                        this.clearSelection();
+                                        // Odśwież widoczność stref/regalów
+                                        if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                                            this.zoneMode.updateZonesVisibility();
+                                        }
+                                        // Odczytaj HX-Trigger header i wywołaj eventy
+                                        const triggerHeader = response.headers.get('HX-Trigger');
+                                        if (triggerHeader && typeof htmx !== 'undefined') {
+                                            try {
+                                                const triggers = JSON.parse(triggerHeader);
+                                                if (triggers.toastMessage) {
+                                                    htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                                                }
+                                                if (triggers.toastMessageList) {
+                                                    htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                                                }
+                                            } catch (e) {
+                                                console.error('Error parsing HX-Trigger:', e);
+                                            }
+                                        }
+                                    }
+                                }).catch(error => {
+                                    console.error('Error deleting rack:', error);
                                 });
                             }
                         }
@@ -2347,9 +2518,61 @@ class WarehouseBuilder {
                                 formData.append('csrfmiddlewaretoken', this.getCsrfToken());
                                 fetch(`/wms-builder/shelves/${shelfId}/delete/`, {
                                     method: 'POST',
-                                    body: formData
-                                }).then(() => {
-                                    window.location.reload();
+                                    body: formData,
+                                    headers: {
+                                        'X-CSRFToken': this.getCsrfToken()
+                                    }
+                                }).then(response => {
+                                    if (response.status === 204) {
+                                        // Usuń półkę z DOM
+                                        if (shelfGroup) {
+                                            shelfGroup.remove();
+                                        }
+                                        
+                                        // Sprawdź czy jesteśmy w widoku regału, który zawiera tę półkę
+                                        const rackGroupForShelf = shelfGroup ? shelfGroup.closest('.draggable-rack') : null;
+                                        const rackIdForShelf = rackGroupForShelf ? rackGroupForShelf.getAttribute('data-rack-id') : null;
+                                        const isInRackDetailView = rackIdForShelf && this.rackMode.activeRackId === rackIdForShelf;
+                                        const zoneIdForShelf = rackGroupForShelf ? rackGroupForShelf.closest('.draggable-zone')?.getAttribute('data-zone-id') : null;
+                                        
+                                        if (isInRackDetailView && zoneIdForShelf && rackIdForShelf) {
+                                            // Jeśli jesteśmy w widoku szczegółowym regału, który zawiera tę półkę,
+                                            // przekieruj do widoku regału z toastem
+                                            if (typeof htmx !== 'undefined') {
+                                                htmx.trigger(document.body, 'toastMessage', {
+                                                    value: 'Półka została usunięta. Zostałeś przekierowany do widoku regału.',
+                                                    type: 'info'
+                                                });
+                                                sessionStorage.setItem('deleteToast', JSON.stringify({
+                                                    value: 'Półka została usunięta. Zostałeś przekierowany do widoku regału.',
+                                                    type: 'info'
+                                                }));
+                                            }
+                                            // Przekieruj do widoku regału
+                                            window.location.href = `/wms-builder/warehouses/${this.warehouseId}/zones/${zoneIdForShelf}/racks/${rackIdForShelf}/?not_found=shelf`;
+                                            return;
+                                        }
+                                        
+                                        // Wyczyść selekcję
+                                        this.clearSelection();
+                                        // Odczytaj HX-Trigger header i wywołaj eventy
+                                        const triggerHeader = response.headers.get('HX-Trigger');
+                                        if (triggerHeader && typeof htmx !== 'undefined') {
+                                            try {
+                                                const triggers = JSON.parse(triggerHeader);
+                                                if (triggers.toastMessage) {
+                                                    htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                                                }
+                                                if (triggers.toastMessageList) {
+                                                    htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                                                }
+                                            } catch (e) {
+                                                console.error('Error parsing HX-Trigger:', e);
+                                            }
+                                        }
+                                    }
+                                }).catch(error => {
+                                    console.error('Error deleting shelf:', error);
                                 });
                             }
                         }
@@ -2390,9 +2613,49 @@ class WarehouseBuilder {
                                     formData.append('csrfmiddlewaretoken', this.getCsrfToken());
                                     fetch(`/wms-builder/zones/${zoneId}/delete/`, {
                                         method: 'POST',
-                                        body: formData
-                                    }).then(() => {
-                                        this.navigateToZone(null);
+                                        body: formData,
+                                        headers: {
+                                            'X-CSRFToken': this.getCsrfToken()
+                                        }
+                                    }).then(response => {
+                                        if (response.status === 204) {
+                                            // Usuń strefę z DOM
+                                            if (focusedZone) {
+                                                focusedZone.remove();
+                                            }
+                                            // Usuń opcję z selecta jeśli istnieje
+                                            if (this.zoneModeSelect) {
+                                                const option = this.zoneModeSelect.querySelector(`option[value="${zoneId}"]`);
+                                                if (option) {
+                                                    option.remove();
+                                                }
+                                            }
+                                            // Wyczyść selekcję
+                                            this.clearSelection();
+                                            // Przejdź do widoku magazynu
+                                            this.navigateToZone(null);
+                                            // Odśwież widoczność stref
+                                            if (typeof this.zoneMode.updateZonesVisibility === 'function') {
+                                                this.zoneMode.updateZonesVisibility();
+                                            }
+                                            // Odczytaj HX-Trigger header i wywołaj eventy
+                                            const triggerHeader = response.headers.get('HX-Trigger');
+                                            if (triggerHeader && typeof htmx !== 'undefined') {
+                                                try {
+                                                    const triggers = JSON.parse(triggerHeader);
+                                                    if (triggers.toastMessage) {
+                                                        htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                                                    }
+                                                    if (triggers.toastMessageList) {
+                                                        htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                                                    }
+                                                } catch (e) {
+                                                    console.error('Error parsing HX-Trigger:', e);
+                                                }
+                                            }
+                                        }
+                                    }).catch(error => {
+                                        console.error('Error deleting zone:', error);
                                     });
                                 }
                             }
@@ -3437,54 +3700,171 @@ class WarehouseBuilder {
     }
 
     syncZone(zoneId) {
-        if (typeof htmx !== 'undefined') {
-            htmx.ajax('GET', `/wms-builder/zones/${zoneId}/sync-to-location/`, {
-                target: '#modalBody',
-                swap: 'innerHTML'
-            }).then(() => {
-                const modalElement = document.getElementById('dynamicModal');
-                if (modalElement) {
-                    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                    modal.show();
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+        
+        fetch(`/wms-builder/zones/${zoneId}/sync-to-location/`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': this.getCsrfToken()
+            }
+        }).then(response => {
+            if (response.status === 204) {
+                // Odczytaj HX-Trigger header i wywołaj eventy
+                const triggerHeader = response.headers.get('HX-Trigger');
+                if (triggerHeader && typeof htmx !== 'undefined') {
+                    try {
+                        const triggers = JSON.parse(triggerHeader);
+                        if (triggers.toastMessage) {
+                            // Wyświetl toast message przed odświeżeniem
+                            htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                            // Zapisz toast w sessionStorage na wypadek odświeżenia
+                            sessionStorage.setItem('syncToast', JSON.stringify(triggers.toastMessage));
+                        }
+                        if (triggers.modalHide) {
+                            htmx.trigger(document.body, 'modalHide');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing HX-Trigger:', e);
+                    }
                 }
-            }).catch(error => {
-                console.error('Error loading zone sync form:', error);
-            });
-        }
+                // Odśwież stronę z opóźnieniem, aby toast zdążył się wyświetlić
+                if (response.headers.get('HX-Refresh') === 'true') {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500); // 500ms opóźnienia, aby toast był widoczny
+                }
+            } else {
+                // Jeśli błąd, wyświetl toast z błędem
+                if (typeof htmx !== 'undefined') {
+                    htmx.trigger(document.body, 'toastMessage', {
+                        value: 'Błąd podczas synchronizacji strefy',
+                        type: 'danger'
+                    });
+                }
+            }
+        }).catch(error => {
+            console.error('Error synchronizing zone:', error);
+            if (typeof htmx !== 'undefined') {
+                htmx.trigger(document.body, 'toastMessage', {
+                    value: 'Błąd podczas synchronizacji strefy',
+                    type: 'danger'
+                });
+            }
+        });
     }
 
     syncRack(rackId) {
-        if (typeof htmx !== 'undefined') {
-            htmx.ajax('GET', `/wms-builder/racks/${rackId}/sync-to-location/`, {
-                target: '#modalBody',
-                swap: 'innerHTML'
-            }).then(() => {
-                const modalElement = document.getElementById('dynamicModal');
-                if (modalElement) {
-                    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                    modal.show();
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+        
+        fetch(`/wms-builder/racks/${rackId}/sync-to-location/`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': this.getCsrfToken()
+            }
+        }).then(response => {
+            if (response.status === 204) {
+                // Odczytaj HX-Trigger header i wywołaj eventy
+                const triggerHeader = response.headers.get('HX-Trigger');
+                if (triggerHeader && typeof htmx !== 'undefined') {
+                    try {
+                        const triggers = JSON.parse(triggerHeader);
+                        if (triggers.toastMessage) {
+                            // Wyświetl toast message przed odświeżeniem
+                            htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                            // Zapisz toast w sessionStorage na wypadek odświeżenia
+                            sessionStorage.setItem('syncToast', JSON.stringify(triggers.toastMessage));
+                        }
+                        if (triggers.modalHide) {
+                            htmx.trigger(document.body, 'modalHide');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing HX-Trigger:', e);
+                    }
                 }
-            }).catch(error => {
-                console.error('Error loading rack sync form:', error);
-            });
-        }
+                // Odśwież stronę z opóźnieniem, aby toast zdążył się wyświetlić
+                if (response.headers.get('HX-Refresh') === 'true') {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500); // 500ms opóźnienia, aby toast był widoczny
+                }
+            } else {
+                // Jeśli błąd, wyświetl toast z błędem
+                if (typeof htmx !== 'undefined') {
+                    htmx.trigger(document.body, 'toastMessage', {
+                        value: 'Błąd podczas synchronizacji regału',
+                        type: 'danger'
+                    });
+                }
+            }
+        }).catch(error => {
+            console.error('Error synchronizing rack:', error);
+            if (typeof htmx !== 'undefined') {
+                htmx.trigger(document.body, 'toastMessage', {
+                    value: 'Błąd podczas synchronizacji regału',
+                    type: 'danger'
+                });
+            }
+        });
     }
 
     syncShelf(shelfId) {
-        if (typeof htmx !== 'undefined') {
-            htmx.ajax('GET', `/wms-builder/shelves/${shelfId}/sync-to-location/`, {
-                target: '#modalBody',
-                swap: 'innerHTML'
-            }).then(() => {
-                const modalElement = document.getElementById('dynamicModal');
-                if (modalElement) {
-                    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-                    modal.show();
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.getCsrfToken());
+        
+        fetch(`/wms-builder/shelves/${shelfId}/sync-to-location/`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': this.getCsrfToken()
+            }
+        }).then(response => {
+            if (response.status === 204) {
+                // Odczytaj HX-Trigger header i wywołaj eventy
+                const triggerHeader = response.headers.get('HX-Trigger');
+                if (triggerHeader && typeof htmx !== 'undefined') {
+                    try {
+                        const triggers = JSON.parse(triggerHeader);
+                        if (triggers.toastMessage) {
+                            // Wyświetl toast message przed odświeżeniem
+                            htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                            // Zapisz toast w sessionStorage na wypadek odświeżenia
+                            sessionStorage.setItem('syncToast', JSON.stringify(triggers.toastMessage));
+                        }
+                        if (triggers.modalHide) {
+                            htmx.trigger(document.body, 'modalHide');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing HX-Trigger:', e);
+                    }
                 }
-            }).catch(error => {
-                console.error('Error loading shelf sync form:', error);
-            });
-        }
+                // Odśwież stronę z opóźnieniem, aby toast zdążył się wyświetlić
+                if (response.headers.get('HX-Refresh') === 'true') {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500); // 500ms opóźnienia, aby toast był widoczny
+                }
+            } else {
+                // Jeśli błąd, wyświetl toast z błędem
+                if (typeof htmx !== 'undefined') {
+                    htmx.trigger(document.body, 'toastMessage', {
+                        value: 'Błąd podczas synchronizacji półki',
+                        type: 'danger'
+                    });
+                }
+            }
+        }).catch(error => {
+            console.error('Error synchronizing shelf:', error);
+            if (typeof htmx !== 'undefined') {
+                htmx.trigger(document.body, 'toastMessage', {
+                    value: 'Błąd podczas synchronizacji półki',
+                    type: 'danger'
+                });
+            }
+        });
     }
 
     getCsrfToken() {

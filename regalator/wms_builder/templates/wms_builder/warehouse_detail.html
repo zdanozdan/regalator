@@ -360,12 +360,84 @@
         }
     }
     
+    // Sprawdź czy jest zapisany toast message w sessionStorage i wyświetl go
+    function checkAndShowSyncToast() {
+        if (typeof htmx !== 'undefined' && typeof sessionStorage !== 'undefined') {
+            try {
+                // Sprawdź toast z synchronizacji
+                const syncToast = sessionStorage.getItem('syncToast');
+                if (syncToast) {
+                    const toastData = JSON.parse(syncToast);
+                    // Wyświetl toast message po załadowaniu strony
+                    setTimeout(() => {
+                        htmx.trigger(document.body, 'toastMessage', toastData);
+                    }, 100);
+                    // Usuń toast z sessionStorage po wyświetleniu
+                    sessionStorage.removeItem('syncToast');
+                }
+                
+                // Sprawdź toast z usuwania (pojedynczy)
+                const deleteToast = sessionStorage.getItem('deleteToast');
+                if (deleteToast) {
+                    const toastData = JSON.parse(deleteToast);
+                    setTimeout(() => {
+                        htmx.trigger(document.body, 'toastMessage', toastData);
+                    }, 100);
+                    sessionStorage.removeItem('deleteToast');
+                }
+                
+                // Sprawdź toasty z usuwania (lista)
+                const deleteToastList = sessionStorage.getItem('deleteToastList');
+                if (deleteToastList) {
+                    const toastListData = JSON.parse(deleteToastList);
+                    setTimeout(() => {
+                        htmx.trigger(document.body, 'toastMessageList', toastListData);
+                    }, 100);
+                    sessionStorage.removeItem('deleteToastList');
+                }
+                
+                // Sprawdź parametr not_found w URL (gdy element został usunięty i nastąpiło przekierowanie)
+                const urlParams = new URLSearchParams(window.location.search);
+                const notFound = urlParams.get('not_found');
+                if (notFound) {
+                    let toastMessage = '';
+                    if (notFound === 'rack') {
+                        toastMessage = 'Regał nie został znaleziony (został usunięty). Zostałeś przekierowany do widoku strefy.';
+                    } else if (notFound === 'shelf') {
+                        toastMessage = 'Półka nie została znaleziona (została usunięta). Zostałeś przekierowany do widoku regału.';
+                    }
+                    
+                    if (toastMessage && typeof htmx !== 'undefined') {
+                        setTimeout(() => {
+                            htmx.trigger(document.body, 'toastMessage', {
+                                value: toastMessage,
+                                type: 'warning'
+                            });
+                        }, 200);
+                        
+                        // Usuń parametr z URL bez przeładowania strony
+                        urlParams.delete('not_found');
+                        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+                        window.history.replaceState({}, '', newUrl);
+                    }
+                }
+            } catch (e) {
+                console.error('Error reading toast from sessionStorage:', e);
+                sessionStorage.removeItem('syncToast');
+                sessionStorage.removeItem('deleteToast');
+                sessionStorage.removeItem('deleteToastList');
+            }
+        }
+    }
+    
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
+            checkAndShowSyncToast();
             setTimeout(waitForSVG, 100);
         });
     } else {
         // DOM is already ready
+        checkAndShowSyncToast();
         setTimeout(waitForSVG, 100);
     }
 </script>
