@@ -124,24 +124,17 @@ class LocationEditForm(forms.ModelForm):
     
     class Meta:
         model = Location
-        fields = ['name', 'location_type', 'barcode', 'parent', 'description', 'is_active']
+        fields = ['name', 'barcode', 'description', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Wprowadź nazwę lokalizacji',
                 'required': True
             }),
-            'location_type': forms.Select(attrs={
-                'class': 'form-select',
-                'required': True
-            }),
             'barcode': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Wprowadź kod kreskowy',
                 'required': True
-            }),
-            'parent': forms.Select(attrs={
-                'class': 'form-select'
             }),
             'description': forms.Textarea(attrs={
                 'class': 'form-control',
@@ -157,41 +150,26 @@ class LocationEditForm(forms.ModelForm):
         self.location = kwargs.pop('location', None)
         super().__init__(*args, **kwargs)
         
-        available_parents = Location.objects.filter(is_active=True)
-        if self.location:
-            available_parents = available_parents.exclude(id=self.location.id)
-
-        default_parent = self._get_default_company_location(
-            exclude_id=self.location.id if self.location else None
-        )
-
-        parent_choices = []
-
-        if default_parent:
-            parent_choices.append((default_parent.id, f"{default_parent.barcode} - {default_parent.name}"))
-            available_parents = available_parents.exclude(id=default_parent.id)
-        else:
-            parent_choices.append(('', 'Brak'))
-
-        parent_choices.extend([
-                (loc.id, f"{loc.barcode} - {loc.name}") for loc in available_parents
-        ])
-
-        self.fields['parent'].choices = parent_choices
-
-        if self.location and self.location.parent_id:
-            self.fields['parent'].initial = self.location.parent_id
-        elif default_parent:
-            self.fields['parent'].initial = default_parent.id
-        else:
-            self.fields['parent'].initial = ''
-
         # Hide is_active from the modal form but keep its value
         self.fields['is_active'].widget = forms.HiddenInput()
         if self.instance and self.instance.pk:
             self.fields['is_active'].initial = self.instance.is_active
         else:
             self.fields['is_active'].initial = True
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        # Zachowaj location_type i parent z istniejącej instancji (jeśli edycja)
+        if self.instance and self.instance.pk:
+            # Przy edycji zachowaj wartości location_type i parent
+            instance.location_type = self.instance.location_type
+            instance.parent = self.instance.parent
+        # Jeśli tworzenie nowej lokalizacji, te pola nie są wymagane w formularzu
+        # ale muszą być ustawione przed zapisem jeśli są wymagane przez model
+        # (pomijamy to, ponieważ location_type ma default='shelf' w modelu)
+        if commit:
+            instance.save()
+        return instance
     
     
     def clean_barcode(self):

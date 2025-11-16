@@ -6,7 +6,37 @@
 </div>
 {% endif %}
 
-<form class="location-edit-form" hx-post="{% if location %}{% url 'wms:htmx_location_edit' location.id %}{% else %}{% url 'wms:htmx_location_create' %}{% endif %}" hx-swap="outerHTML">
+{# Breadcrumbs dla bieżącej lokalizacji #}
+{% if location_breadcrumbs %}
+<nav aria-label="Ścieżka lokalizacji" class="mb-4 pb-3 border-bottom">
+    <ol class="breadcrumb small mb-0">
+        {% for crumb in location_breadcrumbs %}
+            <li class="breadcrumb-item {% if forloop.last %}active{% endif %}" {% if forloop.last %}aria-current="page"{% endif %}>
+                <a href="#"
+                   class="{% if forloop.last %}text-body{% else %}text-muted{% endif %}"
+                   style="text-decoration: none;"
+                   hx-get="{% url 'wms:htmx_location_edit' crumb.id %}"
+                   hx-target="#modalBody"
+                   hx-swap="innerHTML"
+                   hx-trigger="click">
+                    {% if crumb.location_type == 'zone' %}
+                        <i class="fas fa-map me-1"></i>
+                    {% elif crumb.location_type == 'rack' %}
+                        <i class="fas fa-cubes me-1"></i>
+                    {% elif crumb.location_type == 'shelf' %}
+                        <i class="fas fa-layer-group me-1"></i>
+                    {% else %}
+                        <i class="fas fa-map-marker-alt me-1"></i>
+                    {% endif %}
+                    {{ crumb.name }}
+                </a>
+            </li>
+        {% endfor %}
+    </ol>
+</nav>
+{% endif %}
+
+<form class="location-edit-form mt-3" hx-post="{% if location %}{% url 'wms:htmx_location_edit' location.id %}{% else %}{% url 'wms:htmx_location_create' %}{% endif %}" hx-swap="outerHTML">
     {% csrf_token %}
     {{ form.is_active }}
     <div class="row g-3">
@@ -29,28 +59,6 @@
             {% if form.barcode.errors %}
                 <div class="invalid-feedback d-block">
                     {% for error in form.barcode.errors %}
-                        {{ error }}
-                    {% endfor %}
-                </div>
-            {% endif %}
-        </div>
-        <div class="col-md-6">
-            <label for="{{ form.location_type.id_for_label }}" class="form-label">{{ form.location_type.label }}</label>
-            {% render_field form.location_type %}
-            {% if form.location_type.errors %}
-                <div class="invalid-feedback d-block">
-                    {% for error in form.location_type.errors %}
-                        {{ error }}
-                    {% endfor %}
-                </div>
-            {% endif %}
-        </div>
-        <div class="col-md-6">
-            <label for="{{ form.parent.id_for_label }}" class="form-label">{{ form.parent.label }}</label>
-            {% render_field form.parent %}
-            {% if form.parent.errors %}
-                <div class="invalid-feedback d-block">
-                    {% for error in form.parent.errors %}
                         {{ error }}
                     {% endfor %}
                 </div>

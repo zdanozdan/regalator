@@ -230,6 +230,7 @@ class Location(models.Model):
         ('shelf', 'Półka'),
         ('rack', 'Regał'),
         ('zone', 'Strefa'),
+        ('warehouse', 'Magazyn'),
     ]
     
     name = models.CharField(max_length=200, verbose_name="Nazwa lokalizacji")

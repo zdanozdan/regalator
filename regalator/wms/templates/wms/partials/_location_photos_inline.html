@@ -1,6 +1,6 @@
-{% if photos %}
-<tr class="location-photos-row" id="location-photos-{{ location.id }}">
-    <td colspan="8" class="p-0">
+{% if is_tree_view %}
+    {# Widok drzewa - używamy div z pełną szerokością #}
+    <div class="location-photos-row w-100" id="location-photos-{{ location.id }}" data-location-id="{{ location.id }}">
         <div class="card m-2">
             <div class="card-header bg-light py-2">
                 <h6 class="mb-0">
@@ -12,62 +12,109 @@
                 </h6>
             </div>
             <div class="card-body p-3">
-                <div class="row g-3">
-                    {% for photo in photos %}
-                    <div class="col-md-3 col-sm-4 col-6">
-                        <div class="text-center">
-                            <img src="{{ photo.image.url }}" 
-                                 alt="Zdjęcie {{ photo.title|default:location.name }}"
-                                 class="img-thumbnail"
-                                 style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;"
-                                 title="{{ photo.title|default:location.name }}"
-                                 onclick="openPhotoModal('{{ photo.image.url }}', '{{ photo.title|default:location.name }}')">
-                            {% if photo.is_primary %}
-                                <div class="mt-1">
-                                    <span class="badge bg-success">
-                                        <i class="fas fa-star me-1"></i>Główne
-                                    </span>
-                                </div>
-                            {% endif %}
-                            {% if photo.title %}
-                                <div class="mt-1">
-                                    <small class="text-muted">{{ photo.title }}</small>
-                                </div>
-                            {% endif %}
+                {% if photos %}
+                    <div class="row g-3">
+                        {% for photo in photos %}
+                        <div class="col-md-3 col-sm-4 col-6">
+                            <div class="text-center">
+                                <img src="{{ photo.image.url }}" 
+                                     alt="Zdjęcie {{ photo.title|default:location.name }}"
+                                     class="img-thumbnail"
+                                     style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;"
+                                     title="{{ photo.title|default:location.name }}"
+                                     onclick="openPhotoModal('{{ photo.image.url }}', '{{ photo.title|default:location.name }}')">
+                                {% if photo.is_primary %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-star me-1"></i>Główne
+                                        </span>
+                                    </div>
+                                {% endif %}
+                                {% if photo.title %}
+                                    <div class="mt-1">
+                                        <small class="text-muted">{{ photo.title }}</small>
+                                    </div>
+                                {% endif %}
+                            </div>
                         </div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
-                </div>
-                {% if not photos %}
-                <div class="text-center py-3">
-                    <i class="fas fa-image fa-2x text-muted mb-2"></i>
-                    <p class="text-muted mb-0">Brak zdjęć dla tej lokalizacji</p>
-                </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-image fa-2x text-muted mb-2"></i>
+                        <p class="text-muted mb-0">Brak zdjęć dla tej lokalizacji</p>
+                    </div>
                 {% endif %}
             </div>
         </div>
-    </td>
-</tr>
+    </div>
 {% else %}
-<tr class="location-photos-row" id="location-photos-{{ location.id }}">
-    <td colspan="8" class="p-0">
-        <div class="card m-2">
-            <div class="card-header bg-light py-2">
-                <h6 class="mb-0">
-                    <i class="fas fa-images me-2"></i>Zdjęcia lokalizacji: {{ location.name }}
-                    <button class="btn btn-sm btn-outline-secondary float-end" 
-                            onclick="this.closest('.location-photos-row').remove()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </h6>
+    {# Widok tabeli - używamy tr z colspan #}
+    {% if photos %}
+    <tr class="location-photos-row" id="location-photos-{{ location.id }}">
+        <td colspan="8" class="p-0">
+            <div class="card m-2">
+                <div class="card-header bg-light py-2">
+                    <h6 class="mb-0">
+                        <i class="fas fa-images me-2"></i>Zdjęcia lokalizacji: {{ location.name }}
+                        <button class="btn btn-sm btn-outline-secondary float-end" 
+                                onclick="this.closest('.location-photos-row').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </h6>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row g-3">
+                        {% for photo in photos %}
+                        <div class="col-md-3 col-sm-4 col-6">
+                            <div class="text-center">
+                                <img src="{{ photo.image.url }}" 
+                                     alt="Zdjęcie {{ photo.title|default:location.name }}"
+                                     class="img-thumbnail"
+                                     style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;"
+                                     title="{{ photo.title|default:location.name }}"
+                                     onclick="openPhotoModal('{{ photo.image.url }}', '{{ photo.title|default:location.name }}')">
+                                {% if photo.is_primary %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-star me-1"></i>Główne
+                                        </span>
+                                    </div>
+                                {% endif %}
+                                {% if photo.title %}
+                                    <div class="mt-1">
+                                        <small class="text-muted">{{ photo.title }}</small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
-            <div class="card-body text-center py-3">
-                <i class="fas fa-image fa-2x text-muted mb-2"></i>
-                <p class="text-muted mb-0">Brak zdjęć dla tej lokalizacji</p>
+        </td>
+    </tr>
+    {% else %}
+    <tr class="location-photos-row" id="location-photos-{{ location.id }}">
+        <td colspan="8" class="p-0">
+            <div class="card m-2">
+                <div class="card-header bg-light py-2">
+                    <h6 class="mb-0">
+                        <i class="fas fa-images me-2"></i>Zdjęcia lokalizacji: {{ location.name }}
+                        <button class="btn btn-sm btn-outline-secondary float-end" 
+                                onclick="this.closest('.location-photos-row').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </h6>
+                </div>
+                <div class="card-body text-center py-3">
+                    <i class="fas fa-image fa-2x text-muted mb-2"></i>
+                    <p class="text-muted mb-0">Brak zdjęć dla tej lokalizacji</p>
+                </div>
             </div>
-        </div>
-    </td>
-</tr>
+        </td>
+    </tr>
+    {% endif %}
 {% endif %}
 
 <script>
