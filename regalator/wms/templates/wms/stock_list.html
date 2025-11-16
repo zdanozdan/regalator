@@ -219,7 +219,7 @@
                                                 </li>
                                                 {% endif %}
                                                 <li>
-                                                    <a class="dropdown-item" href="{% url 'wms:stock_transfer' stock.id %}">
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_transfer' stock.id %}{% if location_filter %}?return_location={{ location_filter|urlencode }}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}{% elif subiekt_id_filter %}?subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                                         <i class="fas fa-exchange-alt me-2"></i>Przesuń
                                                     </a>
                                                 </li>
@@ -328,7 +328,7 @@
                         {% endif %}
                         {% with first_stock=page_obj|first %}
                             {% if first_stock %}
-                                <a class="btn btn-outline-primary" href="{% url 'wms:stock_transfer' first_stock.id %}">
+                                <a class="btn btn-outline-primary" href="{% url 'wms:stock_transfer' first_stock.id %}{% if location_filter %}?return_location={{ location_filter|urlencode }}{% if subiekt_id_filter %}&subiekt_id={{ subiekt_id_filter }}{% endif %}{% elif subiekt_id_filter %}?subiekt_id={{ subiekt_id_filter }}{% endif %}">
                                     <i class="fas fa-exchange-alt me-2"></i>Przesuń
                                 </a>
                             {% endif %}
@@ -469,6 +469,20 @@ document.addEventListener('barcode:scanned', function(e) {
         // no-op
     }
 });
+
+// Wyświetl toast message z transferu stock (jeśli jest)
+{% if stock_transfer_toast %}
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof htmx !== 'undefined') {
+        setTimeout(function() {
+            htmx.trigger(document.body, 'toastMessage', {
+                value: '{{ stock_transfer_toast.value|escapejs }}',
+                type: '{{ stock_transfer_toast.type|escapejs }}'
+            });
+        }, 100);
+    }
+});
+{% endif %}
 
 </script>
 {% endblock %}

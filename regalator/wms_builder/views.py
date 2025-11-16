@@ -447,7 +447,21 @@ def htmx_zone_delete(request, zone_id):
         response['HX-Trigger'] = json.dumps(triggers)
         return response
     except ValidationError as e:
-        error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
+        # ValidationError.messages może być listą, więc wyodrębnij pierwszy komunikat
+        if hasattr(e, 'messages') and e.messages:
+            error_message = e.messages[0] if isinstance(e.messages, list) else str(e.messages)
+        else:
+            error_message = str(e)
+            # Jeśli str(e) zwraca listę jako string, spróbuj wyodrębnić pierwszy element
+            if error_message.startswith('[') and error_message.endswith(']'):
+                try:
+                    import ast
+                    parsed = ast.literal_eval(error_message)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        error_message = parsed[0]
+                except:
+                    pass
+        
         response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
@@ -647,7 +661,21 @@ def htmx_rack_delete(request, rack_id):
         response['HX-Trigger'] = json.dumps(triggers)
         return response
     except ValidationError as e:
-        error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
+        # ValidationError.messages może być listą, więc wyodrębnij pierwszy komunikat
+        if hasattr(e, 'messages') and e.messages:
+            error_message = e.messages[0] if isinstance(e.messages, list) else str(e.messages)
+        else:
+            error_message = str(e)
+            # Jeśli str(e) zwraca listę jako string, spróbuj wyodrębnić pierwszy element
+            if error_message.startswith('[') and error_message.endswith(']'):
+                try:
+                    import ast
+                    parsed = ast.literal_eval(error_message)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        error_message = parsed[0]
+                except:
+                    pass
+        
         response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
@@ -831,6 +859,7 @@ def htmx_shelf_edit(request, shelf_id):
 def htmx_shelf_delete(request, shelf_id):
     """Delete shelf"""
     shelf = get_object_or_404(WarehouseShelf, id=shelf_id)
+    print(f"Deleting shelf: {shelf.name}")
     try:
         deleted_items = []
         shelf.delete(deleted_items=deleted_items)
@@ -841,7 +870,22 @@ def htmx_shelf_delete(request, shelf_id):
         response['HX-Trigger'] = json.dumps(triggers)
         return response
     except ValidationError as e:
-        error_message = str(e) if hasattr(e, '__str__') else (e.messages[0] if hasattr(e, 'messages') and e.messages else 'Błąd walidacji')
+        print(f"Error deleting shelf: {e}")
+        # ValidationError.messages może być listą, więc wyodrębnij pierwszy komunikat
+        if hasattr(e, 'messages') and e.messages:
+            error_message = e.messages[0] if isinstance(e.messages, list) else str(e.messages)
+        else:
+            error_message = str(e)
+            # Jeśli str(e) zwraca listę jako string, spróbuj wyodrębnić pierwszy element
+            if error_message.startswith('[') and error_message.endswith(']'):
+                try:
+                    import ast
+                    parsed = ast.literal_eval(error_message)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        error_message = parsed[0]
+                except:
+                    pass
+        
         response = HttpResponse(
             f'<div class="alert alert-danger">{error_message}</div>',
             status=400
@@ -853,6 +897,7 @@ def htmx_shelf_delete(request, shelf_id):
             }
         }
         response['HX-Trigger'] = json.dumps(toast_message)
+        print(f"Sending toast message: {toast_message}")
         return response
 
 

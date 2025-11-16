@@ -769,7 +769,12 @@ def _apply_picking_operation(picking_order, picking_item, location, quantity, us
         # Aktualizacja stanu magazynowego
         if stock and delta != 0:
             stock.quantity -= delta
-            stock.save(update_fields=['quantity'])
+            
+            # Usuń rekord Stock jeśli quantity i reserved_quantity są równe 0
+            if stock.quantity == 0 and stock.reserved_quantity == 0:
+                stock.delete()
+            else:
+                stock.save(update_fields=['quantity'])
 
         # Aktualizacja pozycji zamówienia
         order_item = picking_item.order_item
@@ -1541,13 +1546,67 @@ def htmx_stock_row(request, product_id):
     response.content = render(request, 'wms/stock_list.html#stock-row-partial', context)
     return response
 
+def _build_location_tree(locations, search_query=None):
+    """
+    Buduje strukturę drzewa z lokalizacji.
+    Zwraca listę krotek: (location, level, has_matches_in_subtree, should_expand)
+    """
+    # Pobierz root locations (parent=None)
+    root_locations = [loc for loc in locations if loc.parent is None]
+    
+    # Zbuduj mapę parent -> children
+    location_map = {loc.id: [] for loc in locations}
+    for loc in locations:
+        if loc.parent:
+            location_map[loc.parent.id].append(loc)
+    
+    # Znajdź pasujące lokalizacje jeśli search_query
+    matching_ids = set()
+    if search_query:
+        search_lower = search_query.lower()
+        for loc in locations:
+            if search_lower in loc.name.lower() or search_lower in loc.barcode.lower():
+                matching_ids.add(loc.id)
+    
+    # Znajdź przodków pasujących lokalizacji (do rozwinięcia)
+    expanded_ids = set()
+    if matching_ids:
+        # Tworzymy mapę ID -> Location dla szybkiego dostępu
+        location_dict = {loc.id: loc for loc in locations}
+        for loc_id in matching_ids:
+            loc = location_dict.get(loc_id)
+            while loc and loc.parent:
+                expanded_ids.add(loc.parent.id)
+                loc = loc.parent
+    
+    # Rekurencyjnie buduj drzewo
+    result = []
+    def build_tree(locs, level=0, is_last_sibling=False, parent_id=None):
+        for idx, loc in enumerate(sorted(locs, key=lambda x: x.name)):
+            has_matches = loc.id in matching_ids
+            should_expand = loc.id in expanded_ids or loc.id in matching_ids
+            is_last = (idx == len(locs) - 1)
+            has_children = loc.id in location_map and len(location_map[loc.id]) > 0
+            padding_left = level * 30
+            result.append((loc, level, has_matches, should_expand, padding_left, is_last, has_children, parent_id))
+            if should_expand and loc.id in location_map:
+                build_tree(location_map[loc.id], level + 1, is_last, loc.id)
+            elif loc.id in location_map:
+                # Jeśli nie jest rozwinięte, dodaj dzieci jako ukryte (dla struktury DOM)
+                build_tree(location_map[loc.id], level + 1, is_last, loc.id)
+    
+    build_tree(root_locations)
+    return result, expanded_ids
+
+
 @login_required
 def location_list(request):
     """Lista lokalizacji"""
     search_query = request.GET.get('search', '')
     location_type = request.GET.get('type', '')
+    view_mode = request.GET.get('view', 'tree')  # Domyślnie 'tree'
 
-    locations = Location.objects.prefetch_related('images')
+    locations = Location.objects.prefetch_related('images').select_related('parent')
     
     if search_query:
         locations = locations.filter(
@@ -1558,25 +1617,47 @@ def location_list(request):
     if location_type:
         locations = locations.filter(location_type=location_type)
     
-    locations = locations.order_by('barcode')
-    
-    # Paginacja
-    paginator = Paginator(locations, 50)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-    
-    context = {
-        'page_obj': page_obj,
-        'search_query': search_query,
-        'location_type': location_type,
-        'location_types': Location.LOCATION_TYPES,
-    }
+    if view_mode == 'tree':
+        # Dla widoku drzewa pobierz wszystkie lokalizacje i zbuduj drzewo
+        all_locations = list(locations.order_by('name'))
+        location_tree, expanded_locations = _build_location_tree(all_locations, search_query)
+        context = {
+            'location_tree': location_tree,
+            'expanded_locations': expanded_locations,
+            'search_query': search_query,
+            'location_type': location_type,
+            'location_types': Location.LOCATION_TYPES,
+            'view_mode': view_mode,
+            'total_count': len(all_locations),
+        }
+        
+        # Check if request comes from HTMX
+        if request.headers.get('HX-Request'):
+            return render(request, 'wms/location_list.html#location-tree', context)
+        
+        return render(request, 'wms/location_list.html', context)
+    else:
+        # Dla widoku tabeli - paginacja
+        locations = locations.order_by('barcode')
+        
+        # Paginacja
+        paginator = Paginator(locations, 50)
+        page_number = request.GET.get('page')
+        page_obj = paginator.get_page(page_number)
+        
+        context = {
+            'page_obj': page_obj,
+            'search_query': search_query,
+            'location_type': location_type,
+            'location_types': Location.LOCATION_TYPES,
+            'view_mode': view_mode,
+        }
 
-    # Check if request comes from HTMX
-    if request.headers.get('HX-Request'):
-        return render(request, 'wms/location_list.html#location-table', context)
-    
-    return render(request, 'wms/location_list.html', context)
+        # Check if request comes from HTMX
+        if request.headers.get('HX-Request'):
+            return render(request, 'wms/location_list.html#location-table', context)
+        
+        return render(request, 'wms/location_list.html', context)
 
 
 @login_required
@@ -1675,6 +1756,15 @@ def stock_list(request):
             .order_by('-created_at')[:10]
         )
     
+    # Sprawdź czy jest zapisany toast message z transferu
+    stock_transfer_toast = None
+    if 'stock_transfer_toast' in request.session:
+        try:
+            stock_transfer_toast = json.loads(request.session.pop('stock_transfer_toast'))
+            request.session.modified = True
+        except (json.JSONDecodeError, KeyError):
+            pass
+    
     context = {
         'page_obj': page_obj,
         'search_query': search_query,
@@ -1684,6 +1774,7 @@ def stock_list(request):
         'product': product,
         'locations': locations,
         'recent_movements': recent_movements,
+        'stock_transfer_toast': stock_transfer_toast,
     }
 
     # Check if request comes from HTMX
@@ -1700,6 +1791,10 @@ def stock_transfer(request, stock_id):
         Stock.objects.select_related('product', 'location'),
         id=stock_id
     )
+
+    # Pobierz parametr return_location z GET lub POST (dla zachowania filtru lokalizacji)
+    return_location = request.GET.get('return_location') or request.POST.get('return_location', '')
+    subiekt_id_filter = request.GET.get('subiekt_id') or request.POST.get('subiekt_id', '')
 
     form = StockTransferForm(stock=stock)
     if request.method == 'POST':
@@ -1718,7 +1813,12 @@ def stock_transfer(request, stock_id):
                     form.add_error('quantity', 'Brak wystarczającej ilości w lokalizacji źródłowej.')
                 else:
                     source_stock.quantity = source_stock.quantity - quantity
-                    source_stock.save(update_fields=['quantity', 'updated_at'])
+                    
+                    # Usuń rekord Stock jeśli cały stan został przeniesiony (i nie ma rezerwacji)
+                    if source_stock.quantity == 0 and source_stock.reserved_quantity == 0:
+                        source_stock.delete()
+                    else:
+                        source_stock.save(update_fields=['quantity', 'updated_at'])
 
                     target_stock = Stock.objects.select_for_update().filter(
                         product=source_stock.product,
@@ -1748,11 +1848,25 @@ def stock_transfer(request, stock_id):
                     transfer_successful = True
 
             if transfer_successful:
-                messages.success(
-                    request,
-                    f'Przeniesiono {quantity} {stock.product.unit} z {stock.location.name} do {target_location.name}.'
-                )
-                redirect_url = f"{reverse('wms:stock_list')}?product_id={stock.product.id}"
+                # Buduj URL powrotu z parametrem location (jeśli był przekazany)
+                redirect_params = []
+                if return_location:
+                    redirect_params.append(f'location={return_location}')
+                if subiekt_id_filter:
+                    redirect_params.append(f'subiekt_id={subiekt_id_filter}')
+                
+                redirect_url = reverse('wms:stock_list')
+                if redirect_params:
+                    redirect_url += '?' + '&'.join(redirect_params)
+                
+                # Zapisz toast message w session (będzie odczytany przez JavaScript po redirect)
+                toast_data = {
+                    'value': f'Przeniesiono {quantity} {stock.product.unit} z {stock.location.name} do {target_location.name}.',
+                    'type': 'success'
+                }
+                request.session['stock_transfer_toast'] = json.dumps(toast_data)
+                request.session.modified = True
+                
                 return redirect(redirect_url)
 
     recent_movements = StockMovement.objects.filter(product=stock.product).select_related(
@@ -1763,6 +1877,8 @@ def stock_transfer(request, stock_id):
         'stock': stock,
         'form': form,
         'recent_movements': recent_movements,
+        'return_location': return_location,
+        'subiekt_id_filter': subiekt_id_filter,
     }
 
     return render(request, 'wms/stock_transfer.html', context)
@@ -2979,7 +3095,12 @@ def htmx_receiving_remove_item(request, receiving_id, item_id):
                 stock = Stock.objects.filter(product=receiving_item.product, location=location).first()
                 if stock:
                     stock.quantity = max(Decimal('0'), stock.quantity - quantity)
-                    stock.save(update_fields=['quantity'])
+                    
+                    # Usuń rekord Stock jeśli quantity i reserved_quantity są równe 0
+                    if stock.quantity == 0 and stock.reserved_quantity == 0:
+                        stock.delete()
+                    else:
+                        stock.save(update_fields=['quantity'])
 
             _update_supplier_order_status(receiving_order.supplier_order)
 
@@ -3519,12 +3640,22 @@ def htmx_location_edit(request, location_id=None):
     if location_id:
         location = get_object_or_404(Location, id=location_id)
     
+    # Zbuduj breadcrumbs dla bieżącej lokalizacji (łańcuch parentów)
+    location_breadcrumbs = []
+    if location:
+        current = location
+        while current is not None:
+            location_breadcrumbs.append(current)
+            current = current.parent
+        location_breadcrumbs.reverse()
+    
     if request.method == 'GET':
         form = LocationEditForm(instance=location, location=location)
         
         context = {
             'form': form,
             'location': location,
+            'location_breadcrumbs': location_breadcrumbs,
         }
 
         response = HttpResponse(status=200)
@@ -3544,9 +3675,10 @@ def htmx_location_edit(request, location_id=None):
         form = LocationEditForm(request.POST, instance=location, location=location)
 
         context = {
-                'form': form,
-                'location': location,
-            }
+            'form': form,
+            'location': location,
+            'location_breadcrumbs': location_breadcrumbs,
+        }
         
         if form.is_valid():
             try:
@@ -3590,8 +3722,12 @@ def htmx_location_delete(request, location_id):
     try:
         location = get_object_or_404(Location, id=location_id)
         
-        # Check if location has any stock
-        if Stock.objects.filter(location=location).exists():
+        # Check if location has any stock with quantity > 0 or reserved_quantity > 0
+        if Stock.objects.filter(
+            location=location
+        ).filter(
+            Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+        ).exists():
             response = HttpResponse(status=400)
             toast_message = {
                 "toastMessage": {
@@ -3974,9 +4110,14 @@ def htmx_location_photos_inline(request, location_id):
         location = get_object_or_404(Location, id=location_id)
         photos = location.images.all().order_by('created_at')
         
+        # Sprawdź czy to widok drzewa czy tabeli (z referera lub parametru)
+        referer = request.META.get('HTTP_REFERER', '')
+        is_tree_view = 'view=tree' in referer or request.GET.get('view') == 'tree'
+        
         context = {
             'location': location,
             'photos': photos,
+            'is_tree_view': is_tree_view,
         }
         
         # Return HTML content directly for inline display

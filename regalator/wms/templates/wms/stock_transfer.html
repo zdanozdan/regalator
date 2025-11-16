@@ -62,6 +62,12 @@
             <div class="card-body">
                 <form method="post" novalidate>
                     {% csrf_token %}
+                    {% if return_location %}
+                        <input type="hidden" name="return_location" value="{{ return_location }}">
+                    {% endif %}
+                    {% if subiekt_id_filter %}
+                        <input type="hidden" name="subiekt_id" value="{{ subiekt_id_filter }}">
+                    {% endif %}
 
                     <div class="mb-3">
                         <label class="form-label" for="{{ form.target_location.id_for_label }}">{{ form.target_location.label }}</label>

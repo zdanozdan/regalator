@@ -1457,23 +1457,31 @@ class WarehouseBuilder {
                 'X-CSRFToken': this.getCsrfToken()
             }
         }).then(response => {
-            if (response.status === 204) {
-                // Odczytaj HX-Trigger header i wywołaj eventy
-                const triggerHeader = response.headers.get('HX-Trigger');
-                if (triggerHeader && typeof htmx !== 'undefined') {
-                    try {
-                        const triggers = JSON.parse(triggerHeader);
-                        // Obsługa toastMessage (pojedynczy lub lista)
-                        if (triggers.toastMessage) {
-                            htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
-                        }
-                        if (triggers.toastMessageList) {
-                            htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
-                        }
-                    } catch (e) {
-                        console.error('Error parsing HX-Trigger:', e);
+            // Odczytaj HX-Trigger header i wywołaj eventy (dla wszystkich statusów)
+            const triggerHeader = response.headers.get('HX-Trigger');
+            console.log('Delete response status:', response.status);
+            console.log('HX-Trigger header:', triggerHeader);
+            if (triggerHeader && typeof htmx !== 'undefined') {
+                try {
+                    const triggers = JSON.parse(triggerHeader);
+                    console.log('Parsed triggers:', triggers);
+                    // Obsługa toastMessage (pojedynczy lub lista)
+                    if (triggers.toastMessage) {
+                        console.log('Triggering toastMessage:', triggers.toastMessage);
+                        htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
                     }
+                    if (triggers.toastMessageList) {
+                        console.log('Triggering toastMessageList:', triggers.toastMessageList);
+                        htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                    }
+                } catch (e) {
+                    console.error('Error parsing HX-Trigger:', e, triggerHeader);
                 }
+            } else {
+                console.warn('No HX-Trigger header or htmx not available');
+            }
+            
+            if (response.status === 204) {
                 if (typeof onSuccess === 'function') {
                     onSuccess();
                 }
@@ -1484,11 +1492,16 @@ class WarehouseBuilder {
                         type: 'success'
                     });
                 }
+            } else if (response.status === 400) {
+                // Status 400 - błąd walidacji, toast message już został wyświetlony przez HX-Trigger
+                // Nie wywołuj onSuccess i nie rzucaj błędu
+                return;
             } else if (!response.ok) {
                 throw new Error(`Delete request failed: ${url}`);
             }
         }).catch(error => {
             console.error(error);
+            // Wyświetl ogólny komunikat błędu tylko jeśli nie było HX-Trigger
             if (errorMessage && typeof htmx !== 'undefined') {
                 htmx.trigger(document.body, 'toastMessage', {
                     value: errorMessage,
@@ -2523,6 +2536,25 @@ class WarehouseBuilder {
                                         'X-CSRFToken': this.getCsrfToken()
                                     }
                                 }).then(response => {
+                                    // Odczytaj HX-Trigger header i wywołaj eventy (dla wszystkich statusów)
+                                    const triggerHeader = response.headers.get('HX-Trigger');
+                                    console.log('Shelf delete response status:', response.status);
+                                    console.log('HX-Trigger header:', triggerHeader);
+                                    
+                                    if (triggerHeader && typeof htmx !== 'undefined') {
+                                        try {
+                                            const triggers = JSON.parse(triggerHeader);
+                                            if (triggers.toastMessage) {
+                                                htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
+                                            }
+                                            if (triggers.toastMessageList) {
+                                                htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
+                                            }
+                                        } catch (e) {
+                                            console.error('Error parsing HX-Trigger:', e);
+                                        }
+                                    }
+                                    
                                     if (response.status === 204) {
                                         // Usuń półkę z DOM
                                         if (shelfGroup) {
@@ -2555,24 +2587,20 @@ class WarehouseBuilder {
                                         
                                         // Wyczyść selekcję
                                         this.clearSelection();
-                                        // Odczytaj HX-Trigger header i wywołaj eventy
-                                        const triggerHeader = response.headers.get('HX-Trigger');
-                                        if (triggerHeader && typeof htmx !== 'undefined') {
-                                            try {
-                                                const triggers = JSON.parse(triggerHeader);
-                                                if (triggers.toastMessage) {
-                                                    htmx.trigger(document.body, 'toastMessage', triggers.toastMessage);
-                                                }
-                                                if (triggers.toastMessageList) {
-                                                    htmx.trigger(document.body, 'toastMessageList', triggers.toastMessageList);
-                                                }
-                                            } catch (e) {
-                                                console.error('Error parsing HX-Trigger:', e);
-                                            }
-                                        }
+                                    } else if (response.status === 400 || response.status === 200) {
+                                        // Status 400/200 - błąd walidacji, toast message już został wyświetlony przez HX-Trigger powyżej
+                                        // Nie usuwaj półki z DOM i nie przekierowuj
+                                        return;
                                     }
                                 }).catch(error => {
                                     console.error('Error deleting shelf:', error);
+                                    // Wyświetl ogólny komunikat błędu
+                                    if (typeof htmx !== 'undefined') {
+                                        htmx.trigger(document.body, 'toastMessage', {
+                                            value: 'Nie udało się usunąć półki.',
+                                            type: 'danger'
+                                        });
+                                    }
                                 });
                             }
                         }

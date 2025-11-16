@@ -110,7 +110,12 @@ class WarehouseZone(models.Model):
         from wms.models import Stock, StockMovement, PickingHistory, ReceivingHistory, DocumentItem, Location
         
         # Sprawdź wszystkie powiązania
-        has_stock = Stock.objects.filter(location=self.location).exists()
+        # Sprawdź tylko Stock z quantity > 0 lub reserved_quantity > 0
+        has_stock = Stock.objects.filter(
+            location=self.location
+        ).filter(
+            Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+        ).exists()
         has_movements = StockMovement.objects.filter(
             Q(source_location=self.location) | Q(target_location=self.location)
         ).exists()
@@ -217,8 +222,13 @@ class WarehouseZone(models.Model):
                     for shelf in rack.shelves.all():
                         if shelf.location:
                             # Sprawdź czy Location półki nie ma innych powiązań
+                            # Sprawdź tylko Stock z quantity > 0 lub reserved_quantity > 0
                             has_other_relations = any([
-                                Stock.objects.filter(location=shelf.location).exists(),
+                                Stock.objects.filter(
+                                    location=shelf.location
+                                ).filter(
+                                    Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+                                ).exists(),
                                 StockMovement.objects.filter(
                                     Q(source_location=shelf.location) | Q(target_location=shelf.location)
                                 ).exists(),
@@ -233,8 +243,13 @@ class WarehouseZone(models.Model):
                     
                     # Usuń Location dla regału (jeśli nie ma innych powiązań poza child locations)
                     if rack.location:
+                        # Sprawdź tylko Stock z quantity > 0 lub reserved_quantity > 0
                         has_other_relations = any([
-                            Stock.objects.filter(location=rack.location).exists(),
+                            Stock.objects.filter(
+                                location=rack.location
+                            ).filter(
+                                Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+                            ).exists(),
                             StockMovement.objects.filter(
                                 Q(source_location=rack.location) | Q(target_location=rack.location)
                             ).exists(),
@@ -342,7 +357,12 @@ class WarehouseRack(models.Model):
         from wms.models import Stock, StockMovement, PickingHistory, ReceivingHistory, DocumentItem, Location
         
         # Sprawdź wszystkie powiązania
-        has_stock = Stock.objects.filter(location=self.location).exists()
+        # Sprawdź tylko Stock z quantity > 0 lub reserved_quantity > 0
+        has_stock = Stock.objects.filter(
+            location=self.location
+        ).filter(
+            Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+        ).exists()
         has_movements = StockMovement.objects.filter(
             Q(source_location=self.location) | Q(target_location=self.location)
         ).exists()
@@ -554,7 +574,12 @@ class WarehouseShelf(models.Model):
         from wms.models import Stock, StockMovement, PickingHistory, ReceivingHistory, DocumentItem, Location
         
         # Sprawdź wszystkie powiązania
-        has_stock = Stock.objects.filter(location=self.location).exists()
+        # Sprawdź tylko Stock z quantity > 0 lub reserved_quantity > 0
+        has_stock = Stock.objects.filter(
+            location=self.location
+        ).filter(
+            Q(quantity__gt=0) | Q(reserved_quantity__gt=0)
+        ).exists()
         has_movements = StockMovement.objects.filter(
             Q(source_location=self.location) | Q(target_location=self.location)
         ).exists()
