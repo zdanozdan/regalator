@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse, HttpResponseNotAllowed
+from django.http import JsonResponse, HttpResponse, HttpResponseNotAllowed, HttpResponseBadRequest
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -1546,19 +1546,21 @@ def htmx_stock_row(request, product_id):
     response.content = render(request, 'wms/stock_list.html#stock-row-partial', context)
     return response
 
-def _build_location_tree(locations, search_query=None):
+def _build_location_tree(locations, search_query=None, expanded_ids_from_session=None):
     """
     Buduje strukturę drzewa z lokalizacji.
     Zwraca listę krotek: (location, level, has_matches_in_subtree, should_expand)
     """
-    # Pobierz root locations (parent=None)
-    root_locations = [loc for loc in locations if loc.parent is None]
-    
     # Zbuduj mapę parent -> children
     location_map = {loc.id: [] for loc in locations}
+    location_ids = {loc.id for loc in locations}
+    
     for loc in locations:
-        if loc.parent:
+        if loc.parent and loc.parent.id in location_map:
             location_map[loc.parent.id].append(loc)
+    
+    # Pobierz root locations (parent=None lub parent nie jest w filtrowanym zbiorze)
+    root_locations = [loc for loc in locations if loc.parent is None or loc.parent.id not in location_ids]
     
     # Znajdź pasujące lokalizacje jeśli search_query
     matching_ids = set()
@@ -1579,6 +1581,13 @@ def _build_location_tree(locations, search_query=None):
                 expanded_ids.add(loc.parent.id)
                 loc = loc.parent
     
+    # Dodaj ID z sesji (jeśli przekazane)
+    if expanded_ids_from_session:
+        if isinstance(expanded_ids_from_session, list):
+            expanded_ids.update(expanded_ids_from_session)
+        elif isinstance(expanded_ids_from_session, set):
+            expanded_ids.update(expanded_ids_from_session)
+    
     # Rekurencyjnie buduj drzewo
     result = []
     def build_tree(locs, level=0, is_last_sibling=False, parent_id=None):
@@ -1597,6 +1606,55 @@ def _build_location_tree(locations, search_query=None):
     
     build_tree(root_locations)
     return result, expanded_ids
+
+
+@login_required
+def htmx_location_tree_toggle(request):
+    """
+    HTMX endpoint do przełączania stanu rozwinięcia/zwinięcia węzła drzewa lokalizacji.
+    Zapisuje stan w sesji użytkownika.
+    """
+    if request.method != 'PUT':
+        return HttpResponseBadRequest("Only PUT method allowed")
+    
+    location_id = request.GET.get('location_id')
+    action = request.GET.get('action')  # 'expand' lub 'collapse'
+    
+    if not location_id or not action:
+        return HttpResponseBadRequest("Missing location_id or action")
+    
+    try:
+        location_id = int(location_id)
+    except ValueError:
+        return HttpResponseBadRequest("Invalid location_id")
+    
+    # Pobierz aktualny stan z sesji
+    expanded_locations = request.session.get('location_tree_expanded', [])
+    if not isinstance(expanded_locations, list):
+        # Konwertuj na listę jeśli nie jest listą
+        expanded_locations = list(expanded_locations) if expanded_locations else []
+    
+    # Konwertuj na set dla łatwiejszej manipulacji
+    expanded_set = set(expanded_locations)
+    
+    # Aktualizuj stan
+    if action == 'expand':
+        expanded_set.add(location_id)
+    elif action == 'collapse':
+        expanded_set.discard(location_id)
+        # Usuń również wszystkie dzieci (opcjonalnie - jeśli chcesz zwijać całe poddrzewo)
+        # location = Location.objects.get(id=location_id)
+        # children_ids = location.get_descendants().values_list('id', flat=True)
+        # expanded_set.difference_update(children_ids)
+    else:
+        return HttpResponseBadRequest("Invalid action. Use 'expand' or 'collapse'")
+    
+    # Zapisz z powrotem do sesji
+    request.session['location_tree_expanded'] = list(expanded_set)
+    request.session.modified = True
+    
+    # Zwróć pustą odpowiedź (HTMX nie potrzebuje zawartości, tylko aktualizuje UI)
+    return HttpResponse(status=204)  # No Content
 
 
 @login_required
@@ -1620,7 +1678,15 @@ def location_list(request):
     if view_mode == 'tree':
         # Dla widoku drzewa pobierz wszystkie lokalizacje i zbuduj drzewo
         all_locations = list(locations.order_by('name'))
-        location_tree, expanded_locations = _build_location_tree(all_locations, search_query)
+        
+        # Pobierz rozwinięte lokalizacje z sesji
+        expanded_ids_from_session = request.session.get('location_tree_expanded', [])
+        
+        location_tree, expanded_locations = _build_location_tree(
+            all_locations, 
+            search_query, 
+            expanded_ids_from_session
+        )
         context = {
             'location_tree': location_tree,
             'expanded_locations': expanded_locations,
@@ -1699,20 +1765,45 @@ def barcodes_list(request):
 
 
 @login_required
-def stock_list(request):
+def stock_list(request, product_id=None, location_id=None):
     """Lista stanów magazynowych"""
     search_query = request.GET.get('search', '')
     location_filter = request.GET.get('location', '')
     product_filter = request.GET.get('product', '')
-    product_id = request.GET.get('product_id', '')
+    # product_id może być w URL (jako parametr funkcji) lub w GET (dla kompatybilności wstecznej)
+    if not product_id:
+        product_id = request.GET.get('product_id', '')
+    # location_id może być w URL (jako parametr funkcji) lub w GET (dla kompatybilności wstecznej)
+    if not location_id:
+        location_id = request.GET.get('location_id', '')
+    # Konwertuj product_id na string dla dalszego użycia (jeśli jest int z URL)
+    product_id_str = str(product_id) if product_id else ''
     subiekt_id_filter = request.GET.get('subiekt_id', '')
-
+    
     try:
-        product = Product.objects.get(id=product_id)
+        product = Product.objects.get(id=product_id) if product_id else None
     except Product.DoesNotExist:
         product = None
     except ValueError:
         product = None
+    
+    try:
+        location = Location.objects.get(id=location_id) if location_id else None
+    except Location.DoesNotExist:
+        location = None
+    except ValueError:
+        location = None
+    
+    # Funkcja do pobierania wszystkich potomków lokalizacji (rekurencyjnie)
+    def get_location_descendants(location_id):
+        """Zwraca listę ID lokalizacji: sama lokalizacja + wszystkie jej dzieci (rekurencyjnie)"""
+        location_ids = [location_id]
+        # Znajdź bezpośrednie dzieci
+        children = Location.objects.filter(parent_id=location_id).values_list('id', flat=True)
+        for child_id in children:
+            # Rekurencyjnie znajdź dzieci tego dziecka
+            location_ids.extend(get_location_descendants(child_id))
+        return location_ids
     
     stocks = Stock.objects.select_related('product', 'location').filter(quantity__gt=0)
     
@@ -1724,7 +1815,12 @@ def stock_list(request):
             Q(product__codes__code__icontains=search_query)
         ).distinct()
     
-    if location_filter:
+    # Jeśli location_id jest w URL, użyj go zamiast location_filter (włącznie z wszystkimi dziećmi)
+    if location_id:
+        # Pobierz wszystkie ID lokalizacji: sama lokalizacja + wszystkie jej dzieci
+        all_location_ids = get_location_descendants(location_id)
+        stocks = stocks.filter(location__id__in=all_location_ids)
+    elif location_filter:
         stocks = stocks.filter(location__name__icontains=location_filter)
     
     if product_filter:
@@ -1756,6 +1852,15 @@ def stock_list(request):
             .order_by('-created_at')[:10]
         )
     
+    # Zbuduj breadcrumbs dla lokalizacji (jeśli location_id jest w URL)
+    location_breadcrumbs = []
+    if location:
+        current = location
+        while current is not None:
+            location_breadcrumbs.append(current)
+            current = current.parent
+        location_breadcrumbs.reverse()
+    
     # Sprawdź czy jest zapisany toast message z transferu
     stock_transfer_toast = None
     if 'stock_transfer_toast' in request.session:
@@ -1769,6 +1874,9 @@ def stock_list(request):
         'page_obj': page_obj,
         'search_query': search_query,
         'location_filter': location_filter,
+        'location_id': location_id,
+        'location': location,
+        'location_breadcrumbs': location_breadcrumbs,
         'product_filter': product_filter,
         'subiekt_id_filter': subiekt_id_filter,
         'product': product,

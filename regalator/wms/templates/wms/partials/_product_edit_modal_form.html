@@ -154,7 +154,7 @@
                     <a hx-get="{% url 'wms:htmx_edit_product_codes' form.instance.id %}" hx-swap="innerHTML" hx-target="#modalBody" class="btn btn-primary">
                         <i class="fas fa-barcode me-1"></i>Kody kreskowe
                     </a>
-                    <a href="{% url 'wms:stock_list' %}?product_id={{ form.instance.id }}" class="btn btn-primary">
+                    <a href="{% url 'wms:stock_list_by_product' form.instance.id %}" class="btn btn-primary">
                         <i class="fas fa-warehouse me-1"></i>Stany magazynowe
                     </a>
                 </div>

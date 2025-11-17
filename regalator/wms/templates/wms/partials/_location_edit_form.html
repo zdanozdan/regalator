@@ -85,7 +85,12 @@
                     <i class="fas fa-times me-1"></i>Anuluj
                 </button>
                 {% if location %}
-                <button type="button" class="btn btn-outline-primary ms-auto" 
+                <a href="{% url 'wms:stock_list_by_location' location.id %}" 
+                   class="btn btn-outline-primary ms-auto"
+                   target="_blank">
+                    <i class="fas fa-warehouse me-1"></i>Stany magazynowe
+                </a>
+                <button type="button" class="btn btn-outline-primary" 
                         hx-get="{% url 'wms:htmx_location_photos' location.id %}"
                         hx-swap="innerHTML"
                         hx-target="#modalBody">

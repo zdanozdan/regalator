@@ -36,14 +36,14 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <form method="get" class="row g-3" id="search-form">
+                <form method="get" class="row g-3 align-items-end" id="search-form">
                     <input type="hidden" name="view" value="{{ view_mode|default:'tree' }}">
-                    <div class="col-md-6">
+                    <div class="col-md-5">
                         <label for="search" class="form-label">Wyszukaj</label>
                         <input type="text" class="form-control barcode-field" id="search" name="search" 
                                value="{{ search_query }}" placeholder="Kod lub nazwa lokalizacji">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-5">
                         <label for="type" class="form-label">Typ lokalizacji</label>
                         <select class="form-select" id="type" name="type">
                             <option value="">Wszystkie</option>
@@ -54,22 +54,13 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="col-md-2">
+                        <button type="submit" form="search-form" class="btn btn-primary w-100">
+                            <i class="fas fa-search me-1"></i>Szukaj
+                        </button>
+                    </div>
                 </form>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Przyciski wyszukiwania -->
-<div class="row mb-3">
-    <div class="col-12">
-        <div class="d-flex justify-content-center">
-            <button type="submit" form="search-form" class="btn btn-primary btn-sm me-2">
-                <i class="fas fa-search me-1"></i>Szukaj
-            </button>
-            <a href="{% url 'wms:location_list' %}?view={{ view_mode|default:'tree' }}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-times me-1"></i>Wyczyść
-            </a>
         </div>
     </div>
 </div>
@@ -203,7 +194,13 @@
                                                        hx-swap="innerHTML">
                                                         <i class="fas fa-edit me-2"></i>Edytuj
                                                     </a>
-                                                </li>                                               
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_list_by_location' location.id %}">
+                                                        <i class="fas fa-warehouse me-2"></i>Stany magazynowe
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
                                                 <li>
                                                     <a class="dropdown-item text-danger" href="#" 
                                                        hx-delete="{% url 'wms:htmx_location_delete' location.id %}"
@@ -323,7 +320,12 @@
                                                     type="button"
                                                     data-location-id="{{ location.id }}"
                                                     style="width: 20px; height: 20px; line-height: 1; margin-right: 5px;"
-                                                    aria-label="{% if should_expand %}Zwiń{% else %}Rozwiń{% endif %}">
+                                                    aria-label="{% if should_expand %}Zwiń{% else %}Rozwiń{% endif %}"
+                                                    hx-put="{% url 'wms:htmx_location_tree_toggle' %}?location_id={{ location.id }}&action={% if should_expand %}collapse{% else %}expand{% endif %}"
+                                                    hx-trigger="click"
+                                                    hx-swap="none"
+                                                    hx-target="this"
+                                                    data-action="{% if should_expand %}collapse{% else %}expand{% endif %}">
                                                 <i class="fas fa-chevron-{% if should_expand %}down{% else %}right{% endif %} location-tree-icon"></i>
                                             </button>
                                         {% else %}
@@ -412,7 +414,13 @@
                                                        hx-swap="innerHTML">
                                                         <i class="fas fa-edit me-2"></i>Edytuj
                                                     </a>
-                                                </li>                                               
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item" href="{% url 'wms:stock_list_by_location' location.id %}">
+                                                        <i class="fas fa-warehouse me-2"></i>Stany magazynowe
+                                                    </a>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
                                                 <li>
                                                     <a class="dropdown-item text-danger" href="#" 
                                                        hx-delete="{% url 'wms:htmx_location_delete' location.id %}"
@@ -634,77 +642,202 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Obsługa rozwijania/zwijania drzewa
-    const treeContainer = document.querySelector('.location-tree-container');
-    if (treeContainer) {
-        treeContainer.addEventListener('click', function(e) {
-            const toggleBtn = e.target.closest('.location-tree-toggle');
-            if (!toggleBtn) return;
-            
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const locationId = toggleBtn.getAttribute('data-location-id');
-            const locationItem = document.querySelector(`[data-location-id="${locationId}"]`);
-            if (!locationItem) return;
-            
-            const isExpanded = locationItem.getAttribute('data-is-expanded') === 'true';
-            const icon = toggleBtn.querySelector('.location-tree-icon');
-            
-            // Znajdź wszystkie dzieci tego węzła
-            const children = document.querySelectorAll(`.location-tree-item[data-parent-id="${locationId}"]`);
-            
-            if (isExpanded) {
-                // Zwiń - ukryj wszystkie dzieci i ich potomków
-                children.forEach(function(child) {
-                    child.classList.add('d-none');
-                    // Ukryj również wszystkie dzieci tego dziecka (rekurencyjnie)
-                    const childId = child.getAttribute('data-location-id');
-                    const grandChildren = document.querySelectorAll(`.location-tree-item[data-parent-id="${childId}"]`);
-                    grandChildren.forEach(function(gc) {
-                        gc.classList.add('d-none');
-                        // Zresetuj stan rozwinięcia dzieci
-                        gc.setAttribute('data-is-expanded', 'false');
-                        const gcToggle = gc.querySelector('.location-tree-toggle');
-                        if (gcToggle) {
-                            const gcIcon = gcToggle.querySelector('.location-tree-icon');
-                            if (gcIcon) {
-                                gcIcon.classList.remove('fa-chevron-down');
-                                gcIcon.classList.add('fa-chevron-right');
-                            }
-                        }
-                    });
-                    child.setAttribute('data-is-expanded', 'false');
-                    const childToggle = child.querySelector('.location-tree-toggle');
-                    if (childToggle) {
-                        const childIcon = childToggle.querySelector('.location-tree-icon');
-                        if (childIcon) {
-                            childIcon.classList.remove('fa-chevron-down');
-                            childIcon.classList.add('fa-chevron-right');
-                        }
+    // Funkcja do przełączania węzła drzewa
+    function toggleTreeNode(locationId, isExpanding) {
+        console.log('toggleTreeNode called:', locationId, isExpanding);
+        // Użyj bardziej specyficznego selektora - tylko location-tree-item
+        const locationItem = document.querySelector(`.location-tree-item[data-location-id="${locationId}"]`);
+        if (!locationItem) {
+            console.log('locationItem not found for id:', locationId);
+            return;
+        }
+        
+        const toggleBtn = locationItem.querySelector('.location-tree-toggle');
+        if (!toggleBtn) {
+            console.log('toggleBtn not found');
+            return;
+        }
+        
+        const icon = toggleBtn.querySelector('.location-tree-icon');
+        // Upewnij się, że porównujemy stringi
+        const locationIdStr = String(locationId);
+        const children = document.querySelectorAll(`.location-tree-item[data-parent-id="${locationIdStr}"]`);
+        console.log('Found children:', children.length);
+        
+        if (isExpanding) {
+            // Rozwiń - pokaż bezpośrednie dzieci (rekurencyjnie, jeśli są rozwinięte)
+            children.forEach(function(child) {
+                const childParentId = child.getAttribute('data-parent-id');
+                if (childParentId === locationIdStr) {
+                    child.classList.remove('d-none');
+                    // Jeśli dziecko też jest rozwinięte, pokaż jego dzieci
+                    const childIsExpanded = child.getAttribute('data-is-expanded') === 'true';
+                    if (childIsExpanded) {
+                        const childId = child.getAttribute('data-location-id');
+                        const grandChildren = document.querySelectorAll(`.location-tree-item[data-parent-id="${childId}"]`);
+                        grandChildren.forEach(function(gc) {
+                            gc.classList.remove('d-none');
+                        });
                     }
-                });
-                locationItem.setAttribute('data-is-expanded', 'false');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-down');
-                    icon.classList.add('fa-chevron-right');
                 }
-            } else {
-                // Rozwiń - pokaż bezpośrednie dzieci
-                children.forEach(function(child) {
-                    const childParentId = child.getAttribute('data-parent-id');
-                    if (childParentId === locationId) {
-                        child.classList.remove('d-none');
+            });
+            locationItem.setAttribute('data-is-expanded', 'true');
+            if (icon) {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-down');
+            }
+            // Zaktualizuj URL w przycisku dla następnego kliknięcia
+            const currentUrl = toggleBtn.getAttribute('hx-put');
+            if (currentUrl) {
+                const newUrl = currentUrl.replace('action=expand', 'action=collapse');
+                toggleBtn.setAttribute('hx-put', newUrl);
+                toggleBtn.setAttribute('data-action', 'collapse');
+                toggleBtn.setAttribute('aria-label', 'Zwiń');
+            }
+        } else {
+            // Zwiń - ukryj wszystkie dzieci i ich potomków
+            children.forEach(function(child) {
+                child.classList.add('d-none');
+                // Ukryj również wszystkie dzieci tego dziecka (rekurencyjnie)
+                const childId = child.getAttribute('data-location-id');
+                const grandChildren = document.querySelectorAll(`.location-tree-item[data-parent-id="${childId}"]`);
+                grandChildren.forEach(function(gc) {
+                    gc.classList.add('d-none');
+                    // Zresetuj stan rozwinięcia dzieci
+                    gc.setAttribute('data-is-expanded', 'false');
+                    const gcToggle = gc.querySelector('.location-tree-toggle');
+                    if (gcToggle) {
+                        const gcIcon = gcToggle.querySelector('.location-tree-icon');
+                        if (gcIcon) {
+                            gcIcon.classList.remove('fa-chevron-down');
+                            gcIcon.classList.add('fa-chevron-right');
+                        }
+                        // Zaktualizuj URL w przycisku dziecka
+                        const gcUrl = gcToggle.getAttribute('hx-put');
+                        if (gcUrl) {
+                            gcToggle.setAttribute('hx-put', gcUrl.replace('action=collapse', 'action=expand'));
+                            gcToggle.setAttribute('data-action', 'expand');
+                            gcToggle.setAttribute('aria-label', 'Rozwiń');
+                        }
                     }
                 });
-                locationItem.setAttribute('data-is-expanded', 'true');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-right');
-                    icon.classList.add('fa-chevron-down');
+                child.setAttribute('data-is-expanded', 'false');
+                const childToggle = child.querySelector('.location-tree-toggle');
+                if (childToggle) {
+                    const childIcon = childToggle.querySelector('.location-tree-icon');
+                    if (childIcon) {
+                        childIcon.classList.remove('fa-chevron-down');
+                        childIcon.classList.add('fa-chevron-right');
+                    }
+                    // Zaktualizuj URL w przycisku dziecka
+                    const childUrl = childToggle.getAttribute('hx-put');
+                    if (childUrl) {
+                        childToggle.setAttribute('hx-put', childUrl.replace('action=collapse', 'action=expand'));
+                        childToggle.setAttribute('data-action', 'expand');
+                        childToggle.setAttribute('aria-label', 'Rozwiń');
+                    }
+                }
+            });
+            locationItem.setAttribute('data-is-expanded', 'false');
+            if (icon) {
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-right');
+            }
+            // Zaktualizuj URL w przycisku dla następnego kliknięcia
+            const newUrl = toggleBtn.getAttribute('hx-put').replace('action=collapse', 'action=expand');
+            toggleBtn.setAttribute('hx-put', newUrl);
+            toggleBtn.setAttribute('data-action', 'expand');
+            toggleBtn.setAttribute('aria-label', 'Rozwiń');
+        }
+    }
+    
+    // Obsługa rozwijania/zwijania drzewa przez HTMX
+    document.body.addEventListener('htmx:beforeRequest', function(event) {
+        // Zapisz aktualną akcję przed requestem
+        const toggleBtn = event.detail.elt;
+        if (toggleBtn && toggleBtn.classList.contains('location-tree-toggle')) {
+            const hxPut = toggleBtn.getAttribute('hx-put');
+            if (hxPut && hxPut.includes('htmx/location/tree/toggle')) {
+                try {
+                    const url = new URL(hxPut, window.location.origin);
+                    const action = url.searchParams.get('action');
+                    toggleBtn.setAttribute('data-current-action', action);
+                } catch (e) {
+                    // Jeśli URL jest względny, spróbuj inaczej
+                    const match = hxPut.match(/action=(\w+)/);
+                    if (match) {
+                        toggleBtn.setAttribute('data-current-action', match[1]);
+                    }
                 }
             }
-        });
-    }
+        }
+    });
+    
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        // Sprawdź czy to request do toggle drzewa
+        if (!event.detail) {
+            return;
+        }
+        
+        // Sprawdź URL requestu
+        const path = event.detail.path || (event.detail.xhr && event.detail.xhr.responseURL) || '';
+        if (!path || !path.includes('htmx/location/tree/toggle')) {
+            return;
+        }
+        
+        // Znajdź przycisk toggle - może być w event.detail.elt lub trzeba go znaleźć po URL
+        let toggleBtn = event.detail.elt;
+        
+        // Jeśli nie ma elt, spróbuj znaleźć przycisk po URL
+        if (!toggleBtn || !toggleBtn.classList.contains('location-tree-toggle')) {
+            try {
+                const urlParams = new URL(path, window.location.origin).searchParams;
+                const locationId = urlParams.get('location_id');
+                if (locationId) {
+                    toggleBtn = document.querySelector(`.location-tree-toggle[data-location-id="${locationId}"]`);
+                }
+            } catch (e) {
+                // Jeśli URL jest względny, spróbuj inaczej
+                const match = path.match(/location_id=(\d+)/);
+                if (match) {
+                    toggleBtn = document.querySelector(`.location-tree-toggle[data-location-id="${match[1]}"]`);
+                }
+            }
+        }
+        
+        if (!toggleBtn || !toggleBtn.classList.contains('location-tree-toggle')) {
+            console.log('Toggle button not found');
+            return;
+        }
+        
+        const locationId = toggleBtn.getAttribute('data-location-id');
+        let action = toggleBtn.getAttribute('data-current-action');
+        
+        // Jeśli nie ma action w data-current-action, spróbuj wyciągnąć z URL
+        if (!action) {
+            try {
+                const urlParams = new URL(path, window.location.origin).searchParams;
+                action = urlParams.get('action');
+            } catch (e) {
+                const match = path.match(/action=(\w+)/);
+                if (match) {
+                    action = match[1];
+                }
+            }
+        }
+        
+        // Sprawdź status odpowiedzi - dla 204 może być w xhr.status lub event.detail.successful
+        const isSuccess = (event.detail.xhr && (event.detail.xhr.status === 204 || event.detail.xhr.status === 200)) || 
+                         (event.detail.successful !== false);
+        
+        if (locationId && action && isSuccess) {
+            console.log('Calling toggleTreeNode:', locationId, action, 'isExpanding:', action === 'expand');
+            // Przełącz węzeł w UI tylko jeśli request się powiódł
+            toggleTreeNode(parseInt(locationId), action === 'expand');
+        } else {
+            console.log('Conditions not met:', {locationId, action, isSuccess, path});
+        }
+    });
     
     // Funkcja do ustawiania wcięcia dla wierszy ze zdjęciami
     function updateLocationPhotosIndent() {
@@ -729,11 +862,34 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Funkcja do przywracania stanu drzewa po załadowaniu strony
+    function restoreTreeStateOnLoad() {
+        // Znajdź wszystkie rozwinięte węzły (z data-is-expanded="true")
+        const expandedItems = document.querySelectorAll('.location-tree-item[data-is-expanded="true"]');
+        expandedItems.forEach(function(locationItem) {
+            const locationId = locationItem.getAttribute('data-location-id');
+            if (locationId) {
+                // Pokaż wszystkie dzieci tego węzła
+                const children = document.querySelectorAll(`.location-tree-item[data-parent-id="${locationId}"]`);
+                children.forEach(function(child) {
+                    child.classList.remove('d-none');
+                });
+            }
+        });
+    }
+    
+    // Przywróć stan drzewa przy załadowaniu strony
+    restoreTreeStateOnLoad();
+    
     // Ustaw wcięcie przy załadowaniu strony
     updateLocationPhotosIndent();
     
-    // Po aktualizacji przez HTMX, ponownie zainicjuj nasłuchiwanie
+    // Po aktualizacji przez HTMX, ponownie przywróć stan drzewa
     document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.target && (event.target.classList.contains('location-tree-container') || 
+            event.target.querySelector('.location-tree-container'))) {
+            restoreTreeStateOnLoad();
+        }
         if (event.target && event.target.classList.contains('location-tree-container')) {
             // Event listener jest już na kontenerze, więc nie trzeba dodawać ponownie
         }

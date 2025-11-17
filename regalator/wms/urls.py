@@ -68,7 +68,10 @@ urlpatterns = [
     path('htmx/location/<int:location_id>/photo/update/', views.htmx_location_photo_update, name='htmx_location_photo_update'),
     path('htmx/location/<int:location_id>/photo/set-primary/', views.htmx_location_photo_set_primary, name='htmx_location_photo_set_primary'),
     path('htmx/location/<int:location_id>/photo/delete/', views.htmx_location_photo_delete, name='htmx_location_photo_delete'),
+    path('htmx/location/tree/toggle/', views.htmx_location_tree_toggle, name='htmx_location_tree_toggle'),
     path('stock/', views.stock_list, name='stock_list'),
+    path('stock/product/<int:product_id>/', views.stock_list, name='stock_list_by_product'),
+    path('stock/location/<int:location_id>/', views.stock_list, name='stock_list_by_location'),
     path('stock/movements/', views.movement_list, name='movement_list'),
     path('stock/<int:stock_id>/transfer/', views.stock_transfer, name='stock_transfer'),
     

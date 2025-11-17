@@ -4,11 +4,60 @@
 {% block title %}Stany magazynowe - Regalator WMS{% endblock %}
 
 {% block content %}
+{# Breadcrumbs dla lokalizacji #}
+{% if location_breadcrumbs %}
+<nav aria-label="Ścieżka lokalizacji" class="mb-4 pb-3 border-bottom">
+    <ol class="breadcrumb small mb-0">
+        <li class="breadcrumb-item">
+            <a href="{% url 'wms:stock_list' %}" class="text-muted" style="text-decoration: none;">
+                <i class="fas fa-warehouse me-1"></i>Stany magazynowe
+            </a>
+        </li>
+        {% for crumb in location_breadcrumbs %}
+            <li class="breadcrumb-item {% if forloop.last %}active{% endif %}" {% if forloop.last %}aria-current="page"{% endif %}>
+                {% if forloop.last %}
+                    <span class="{% if forloop.last %}text-body{% else %}text-muted{% endif %}">
+                        {% if crumb.location_type == 'zone' %}
+                            <i class="fas fa-map me-1"></i>
+                        {% elif crumb.location_type == 'rack' %}
+                            <i class="fas fa-cubes me-1"></i>
+                        {% elif crumb.location_type == 'shelf' %}
+                            <i class="fas fa-layer-group me-1"></i>
+                        {% else %}
+                            <i class="fas fa-map-marker-alt me-1"></i>
+                        {% endif %}
+                        {{ crumb.name }}
+                    </span>
+                {% else %}
+                    <a href="{% url 'wms:stock_list_by_location' crumb.id %}"
+                       class="{% if forloop.last %}text-body{% else %}text-muted{% endif %}"
+                       style="text-decoration: none;">
+                        {% if crumb.location_type == 'zone' %}
+                            <i class="fas fa-map me-1"></i>
+                        {% elif crumb.location_type == 'rack' %}
+                            <i class="fas fa-cubes me-1"></i>
+                        {% elif crumb.location_type == 'shelf' %}
+                            <i class="fas fa-layer-group me-1"></i>
+                        {% else %}
+                            <i class="fas fa-map-marker-alt me-1"></i>
+                        {% endif %}
+                        {{ crumb.name }}
+                    </a>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+</nav>
+{% endif %}
+
 <div class="row">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="mb-0">
                 <i class="fas fa-warehouse me-2"></i>Stany magazynowe
+                {% if location %}
+                    <span class="text-muted small">- {{ location.name }}</span>
+                {% endif %}
             </h1>
             <div class="d-flex gap-2">
                 <a href="{% url 'wms:movement_list' %}" class="btn btn-outline-secondary">
@@ -24,13 +73,19 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <form method="get" class="row g-3" id="search-form">
-                    <div class="col-md-4">
+                <form method="get" class="row g-3 align-items-end" id="search-form" 
+                      {% if location_id %}action="{% url 'wms:stock_list_by_location' location_id %}"{% endif %}>
+                    {% if location_id %}
+                        {# Ukryte pole, żeby zachować location_id w URL #}
+                        <input type="hidden" name="location_id" value="{{ location_id }}">
+                    {% endif %}
+                    <div class="col-md-{% if location_id %}4{% else %}3{% endif %}">
                         <label for="search" class="form-label">Wyszukaj</label>
                         <input type="text" class="form-control" id="search" name="search" 
                                value="{{ search_query }}" placeholder="Nazwa produktu, kod lub lokalizacja">
                     </div>
-                    <div class="col-md-4">
+                    {% if not location_id %}
+                    <div class="col-md-3">
                         <label for="location" class="form-label">Lokalizacja</label>
                         <select class="form-select" id="location" name="location">
                             <option value="">Wszystkie lokalizacje</option>
@@ -41,33 +96,25 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    {% endif %}
+                    <div class="col-md-{% if location_id %}4{% else %}3{% endif %}">
                         <label for="subiekt_id" class="form-label">Subiekt ID</label>
                         <input type="number" class="form-control" id="subiekt_id" name="subiekt_id" 
                                value="{{ subiekt_id_filter }}" placeholder="ID produktu w Subiekcie">
                     </div>
+                    <div class="col-md-{% if location_id %}4{% else %}3{% endif %}">
+                        <button type="submit" form="search-form" class="btn btn-primary w-100">
+                            <i class="fas fa-search me-1"></i>Szukaj
+                        </button>
+                        {% if product_filter %}
+                            <a href="{% if location_id %}{% url 'wms:stock_list_by_location' location_id %}{% else %}{% url 'wms:stock_list' %}{% endif %}?search={{ search_query }}{% if not location_id %}&location={{ location_filter }}{% endif %}&subiekt_id={{ subiekt_id_filter }}" 
+                               class="btn btn-outline-info w-100 mt-2">
+                                <i class="fas fa-filter me-1"></i>Wyczyść filtr produktu
+                            </a>
+                        {% endif %}
+                    </div>
                 </form>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Przyciski wyszukiwania -->
-<div class="row mb-3">
-    <div class="col-12">
-        <div class="d-flex justify-content-center">
-            <button type="submit" form="search-form" class="btn btn-primary btn-sm me-2">
-                <i class="fas fa-search me-1"></i>Szukaj
-            </button>
-            <a href="{% url 'wms:stock_list' %}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-times me-1"></i>Wyczyść
-            </a>
-            {% if product_filter %}
-                <a href="{% url 'wms:stock_list' %}?search={{ search_query }}&location={{ location_filter }}&subiekt_id={{ subiekt_id_filter }}" 
-                   class="btn btn-outline-info btn-sm">
-                    <i class="fas fa-filter me-1"></i>Wyczyść filtr produktu
-                </a>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -83,7 +130,7 @@
 {% partialdef stock-table inline %}
 <!-- Lista stanów magazynowych -->
 <div class="row">
-<div class="row" hx-trigger="stock-list-updated from:body, location-list-updated from:body" hx-get="{% url 'wms:stock_list' %}" hx-swap="innerHTML" hx-indicator="#stock-list-spinner">
+<div class="row" hx-trigger="stock-list-updated from:body, location-list-updated from:body" hx-get="{% if location_id %}{% url 'wms:stock_list_by_location' location_id %}{% else %}{% url 'wms:stock_list' %}{% endif %}" hx-swap="innerHTML" hx-indicator="#stock-list-spinner">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -164,6 +211,25 @@
                                         <small class="text-muted">
                                             <i class="fas fa-barcode me-1"></i>{{ stock.location.barcode }}
                                         </small>
+                                        <div class="mt-1">
+                                            {% if stock.location.location_type == 'zone' %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-map me-1"></i>Strefa
+                                                </span>
+                                            {% elif stock.location.location_type == 'rack' %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-cubes me-1"></i>Regał
+                                                </span>
+                                            {% elif stock.location.location_type == 'shelf' %}
+                                                <span class="badge bg-info">
+                                                    <i class="fas fa-layer-group me-1"></i>Półka
+                                                </span>
+                                            {% elif stock.location.location_type == 'warehouse' %}
+                                                <span class="badge bg-primary">
+                                                    <i class="fas fa-warehouse me-1"></i>Magazyn
+                                                </span>
+                                            {% endif %}
+                                        </div>
                                     </td>
                                     <td>
                                         {{ stock.quantity }} {{ stock.product.unit }}
